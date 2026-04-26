@@ -1,9 +1,10 @@
-const firebaseConfig = {
-  apiKey: "AIzaSyD4fIG6D94cuwHA0ZC-diHBwWHs8woMbkc",
-  authDomain: "erp-admin-contable-supply.firebaseapp.com",
-  projectId: "erp-admin-contable-supply",
-  storageBucket: "erp-admin-contable-supply.firebasestorage.app",
-  messagingSenderId: "138985315880",
-  appId: "1:138985315880:web:534e8335f763589ac91f1d",
-  measurementId: "G-6N7D0QVYW7"
-};
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
+import "./banco.css";
+
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
