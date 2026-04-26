@@ -13,7 +13,7 @@ import {
   PointElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from "chart.js";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
-import "./banco.css";
+
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, LineElement,
