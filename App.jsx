@@ -5,7 +5,8 @@ import {
   BarChart3, Plus, X, Search, ChevronRight, AlertTriangle,
   CheckCircle, Clock, DollarSign, Download, Trash2,
   Banknote, PiggyBank, FileText, LineChart, Landmark,
-  TrendingDown
+  TrendingDown, Receipt, Package, ShoppingCart, Globe, 
+  Users, ArrowLeft, Blocks
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -531,6 +532,107 @@ function BancoApp() {
   );
 }
 
+// ============================================================================
+// PANEL DE CONTROL PRINCIPAL (HOME)
+// ============================================================================
+function MainDashboard({ onSelectModule }) {
+  const modules = [
+    { id: 'banco', name: 'Banco y Tesorería', icon: Building2, color: 'bg-blue-600', desc: 'Gestión de cuentas, flujo de caja, arqueos y conciliación bancaria' },
+    { id: 'facturacion', name: 'Facturación', icon: Receipt, color: 'bg-emerald-600', desc: 'Emisión de facturas, control de ventas y cuentas por cobrar' },
+    { id: 'inventario', name: 'Inventario y Producción', icon: Package, color: 'bg-amber-500', desc: 'Control de stock (KG), formulación, OPs y registro de mermas' },
+    { id: 'compras', name: 'Compras', icon: ShoppingCart, color: 'bg-indigo-600', desc: 'Gestión de proveedores, órdenes de compra y cuentas por pagar' },
+    { id: 'impuestos', name: 'Impuestos', icon: Calculator, color: 'bg-red-600', desc: 'Control de retenciones de IVA, ISLR y libros fiscales' },
+    { id: 'nacionalizacion', name: 'Costos de Nacionalización', icon: Globe, color: 'bg-teal-600', desc: 'Cálculo de estructuras de costos e importaciones' },
+    { id: 'nomina', name: 'Nómina', icon: Users, color: 'bg-purple-600', desc: 'Gestión de personal, anticipos, comisiones de ventas y liquidaciones' }
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#0d1b2e] p-6 md:p-10 flex flex-col">
+      <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col">
+        
+        <header className="mb-12 text-center md:text-left border-b border-gray-800 pb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <div className="flex items-center justify-center md:justify-start gap-3 mb-2">
+              <Blocks className="text-[#e8b84b]" size={32} />
+              <h1 className="text-4xl font-black text-white uppercase tracking-widest">Supply ERP</h1>
+            </div>
+            <p className="text-gray-400 text-xs font-black uppercase tracking-[0.2em] ml-1">Servicios Jiret G&B, C.A.</p>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-3 inline-flex flex-col items-center md:items-end">
+            <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">Usuario Activo</span>
+            <span className="text-xs text-white font-black">Panel de Administración General</span>
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {modules.map(mod => {
+            const Icon = mod.icon;
+            return (
+              <button
+                key={mod.id}
+                onClick={() => onSelectModule(mod.id)}
+                className="bg-white rounded-[2rem] p-6 text-left border-2 border-transparent hover:border-[#c8972a] hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 group flex flex-col h-full"
+              >
+                <div className={`${mod.color} w-14 h-14 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300 shadow-md`}>
+                  <Icon size={28} className="text-white" />
+                </div>
+                <h2 className="text-[#0d1b2e] font-black text-lg uppercase tracking-wide mb-2 leading-tight">{mod.name}</h2>
+                <p className="text-gray-500 text-xs font-medium leading-relaxed flex-1">{mod.desc}</p>
+                <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-4">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 group-hover:text-[#c8972a] transition-colors">Ingresar</span>
+                  <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-[#fdf3dc] transition-colors">
+                    <ChevronRight size={14} className="text-gray-400 group-hover:text-[#c8972a]" />
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  return <ErrorBoundary><BancoApp/></ErrorBoundary>;
+  const [activeModule, setActiveModule] = useState('home');
+
+  return (
+    <ErrorBoundary>
+      {activeModule === 'home' && <MainDashboard onSelectModule={setActiveModule} />}
+      
+      {activeModule === 'banco' && (
+        <div className="relative h-screen flex flex-col bg-[#f7f8fc]">
+          <div className="absolute top-3 right-6 z-50">
+            <button
+              onClick={() => setActiveModule('home')}
+              className="bg-[#0d1b2e] text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#c8972a] hover:text-[#0d1b2e] transition-colors flex items-center gap-2 shadow-lg border-2 border-transparent hover:border-[#0d1b2e]"
+            >
+              <ArrowLeft size={14} /> Menú Principal
+            </button>
+          </div>
+          <BancoApp />
+        </div>
+      )}
+
+      {activeModule !== 'home' && activeModule !== 'banco' && (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#0d1b2e] p-6">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl text-center border-t-4 border-[#c8972a] max-w-md w-full">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Blocks size={32} className="text-gray-400" />
+            </div>
+            <h2 className="text-xl font-black text-[#0d1b2e] uppercase mb-2">Módulo en Desarrollo</h2>
+            <p className="text-gray-500 text-xs font-medium mb-6">
+              El entorno de <span className="font-black text-[#c8972a] uppercase">{activeModule}</span> se encuentra en fase de codificación y estructuración.
+            </p>
+            <button
+              onClick={() => setActiveModule('home')}
+              className="bg-[#0d1b2e] w-full text-white px-6 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#1a2f52] transition-colors flex justify-center items-center gap-2"
+            >
+              <ArrowLeft size={14} /> Volver al Supply ERP
+            </button>
+          </div>
+        </div>
+      )}
+    </ErrorBoundary>
+  );
 }
