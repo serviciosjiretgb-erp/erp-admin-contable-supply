@@ -366,10 +366,11 @@ function MainSelector({ onSelect }) {
 // ============================================================================
 function AdminDash({ onSelectModule, onBack }) {
   const mods = [
-    { id: 'facturacion', name: 'Ventas & Facturación', icon: Receipt, color: '#f97316', desc: 'Clientes, facturas y cuentas por cobrar' },
-    { id: 'inventario', name: 'Control de Inventario', icon: Package, color: '#10b981', desc: 'Catálogo, stock y movimientos' },
-    { id: 'banco', name: 'Bancos & Tesorería', icon: Building2, color: '#3b82f6', desc: 'Cuentas, movimientos y conciliación' },
-    { id: 'configuracion', name: 'Configuración', icon: Settings, color: '#8b5cf6', desc: 'Empresa, usuarios y tasas de cambio' },
+    { id: 'facturacion',  name: 'Ventas & Facturación', icon: Receipt,    color: '#f97316', desc: 'Clientes, facturas y cuentas por cobrar' },
+    { id: 'compras',      name: 'Compras & Proveedores', icon: ShoppingCart, color: '#10b981', desc: 'Proveedores, órdenes de compra e importación' },
+    { id: 'inventario',   name: 'Control de Inventario', icon: Package,    color: '#3b82f6', desc: 'Catálogo, stock y movimientos' },
+    { id: 'banco',        name: 'Bancos & Tesorería',    icon: Building2,  color: '#8b5cf6', desc: 'Cuentas, movimientos y conciliación' },
+    { id: 'configuracion',name: 'Configuración',         icon: Settings,   color: '#64748b', desc: 'Empresa, usuarios y tasas de cambio' },
   ];
   return (
     <div className="min-h-screen flex flex-col" style={{ background: BG }}>
@@ -536,34 +537,82 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
 
   const ClientesView = () => {
     const [modal, setModal] = useState(false);
-    const [form, setForm] = useState({ nombre: '', rif: '', direccion: '', telefono: '', email: '', diasCredito: '0' });
+    const [form, setForm] = useState({ nombre: '', rif: '', direccion: '', telefono: '', email: '', diasCredito: '0', codigo:'' });
     const [busy, setBusy] = useState(false);
     const [search, setSearch] = useState('');
-    const filtered = clientes.filter(c => c.nombre?.includes(search.toUpperCase()) || c.rif?.includes(search.toUpperCase()));
+    const filtered = clientes.filter(c => c.nombre?.includes(search.toUpperCase()) || c.rif?.includes(search.toUpperCase()) || c.codigo?.includes(search.toUpperCase()));
 
     const save = async () => {
       if (!form.nombre || !form.rif) return alert('Nombre y RIF requeridos');
       setBusy(true);
       try {
         const id = gid(); await setDoc(dref('facturacion_clientes', id), { ...form, id, ts: serverTimestamp() });
-        setModal(false); setForm({ nombre: '', rif: '', direccion: '', telefono: '', email: '', diasCredito: '0' });
+        setModal(false); setForm({ nombre: '', rif: '', direccion: '', telefono: '', email: '', diasCredito: '0', codigo:'' });
       } finally { setBusy(false); }
+    };
+
+    // ── Exportar TXT (mismo formato del sistema) ──
+    const exportarTxt = () => {
+      const HDRS = ['Código','Descripción','Activo','Dirección','Telefono','RIF','E-Mail'];
+      const rows  = clientes.map(c=>[c.codigo||'',c.nombre||'',c.activo!==false?'Si':'No',c.direccion||'',c.telefono||'',c.rif||'',c.email||'']);
+      const content = [HDRS,...rows].map(r=>r.join('\t')).join('\r\n');
+      const blob = new Blob(['\uFEFF'+content],{type:'text/plain;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`GENERALDECLIENTES.TXT`;a.click();URL.revokeObjectURL(url);
+    };
+
+    // ── Importar TXT/Excel ──
+    const importarTxt = async (event) => {
+      const file = event.target.files[0]; if(!file) return;
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l=>l.trim());
+      if(lines.length<2){alert('Archivo vacío');event.target.value='';return;}
+      // Detectar encabezado
+      const firstCell = lines[0].split('\t')[0].trim();
+      const hasHeader = /[a-zA-ZáéíóúÁÉÍÓÚ]/.test(firstCell) && !firstCell.startsWith('C');
+      const dataLines = hasHeader ? lines.slice(1) : lines;
+      const existentes = new Set(clientes.map(c=>c.rif?.toUpperCase()));
+      const batch = writeBatch(db);
+      let importados=0, omitidos=0;
+      for(const line of dataLines){
+        const p = line.split('\t').map(v=>v.trim().replace(/^["']/,'').replace(/["']$/,''));
+        if(p.length<2) continue;
+        const cod=p[0], nombre=p[1], activo=p[2], dir=p[3]||'', tel=p[4]||'', rif=p[5]||'', email=p[6]||'';
+        if(!nombre) continue;
+        if(rif && existentes.has(rif.toUpperCase())) { omitidos++; continue; }
+        const id=gid();
+        batch.set(dref('facturacion_clientes',id),{id,codigo:cod,nombre:nombre.toUpperCase(),activo:activo!=='No',direccion:dir,telefono:tel,rif:rif.toUpperCase(),email,diasCredito:'0',ts:serverTimestamp()});
+        importados++;
+      }
+      if(importados===0){alert(`Sin nuevos clientes. ${omitidos} ya existían.`);event.target.value='';return;}
+      await batch.commit();
+      alert(`✅ ${importados} cliente(s) importado(s).${omitidos>0?` (${omitidos} omitidos por RIF duplicado)`:''}`);
+      event.target.value='';
     };
 
     return (
       <div>
         <Card title="Directorio de Clientes" subtitle={`${clientes.length} clientes registrados`}
-          action={<div className="flex gap-2"><div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-orange-500 w-40" /></div><Bg onClick={() => setModal(true)} sm><Plus size={12} /> Nuevo</Bg></div>}>
+          action={<div className="flex gap-2 flex-wrap items-center">
+            <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-orange-500 w-36" /></div>
+            <button onClick={exportarTxt} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Exportar TXT</button>
+            <label className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-emerald-400 hover:text-emerald-600 cursor-pointer">
+              <Upload size={12}/> Importar
+              <input type="file" accept=".txt,.csv,.xls,.xlsx" className="sr-only" onChange={importarTxt}/>
+            </label>
+            <Bg onClick={() => setModal(true)} sm><Plus size={12} /> Nuevo</Bg>
+          </div>}>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr><Th>RIF / NIT</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>Días Crédito</Th><Th></Th></tr></thead>
+              <thead><tr><Th>Código</Th><Th>RIF / NIT</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>Dirección</Th><Th>Días Créd.</Th><Th></Th></tr></thead>
               <tbody>
-                {filtered.length === 0 && <tr><td colSpan={6}><EmptyState icon={Users} title="Sin clientes" desc="Registre su primer cliente" /></td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={8}><EmptyState icon={Users} title="Sin clientes" desc="Registre o importe clientes" /></td></tr>}
                 {filtered.map(c => <tr key={c.id} className="hover:bg-slate-50">
+                  <Td mono className="text-slate-500 text-[10px]">{c.codigo||'—'}</Td>
                   <Td mono className="font-black text-slate-900">{c.rif}</Td>
-                  <Td className="uppercase font-semibold">{c.nombre}</Td>
+                  <Td className="uppercase font-semibold max-w-[160px] truncate">{c.nombre}</Td>
                   <Td>{c.telefono || '—'}</Td>
-                  <Td className="text-slate-400">{c.email || '—'}</Td>
+                  <Td className="text-slate-400 max-w-[120px] truncate">{c.email || '—'}</Td>
+                  <Td className="text-slate-400 max-w-[140px] truncate">{c.direccion || '—'}</Td>
                   <Td><span className="font-mono text-slate-700">{c.diasCredito} días</span></Td>
                   <Td><button onClick={() => deleteDoc(dref('facturacion_clientes', c.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12} /></button></Td>
                 </tr>)}
@@ -573,8 +622,9 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
         </Card>
         <Modal open={modal} onClose={() => setModal(false)} title="Registrar Nuevo Cliente" footer={<><Bo onClick={() => setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy ? 'Guardando...' : 'Guardar Cliente'}</Bg></>}>
           <div className="grid grid-cols-2 gap-4">
-            <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value.toUpperCase() })} placeholder="INVERSIONES EJEMPLO C.A." /></FG>
+            <FG label="Código (opcional)"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder="C0001"/></FG>
             <FG label="RIF / NIT"><input className={inp} value={form.rif} onChange={e => setForm({ ...form, rif: e.target.value.toUpperCase() })} placeholder="J-12345678-9" /></FG>
+            <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value.toUpperCase() })} placeholder="INVERSIONES EJEMPLO C.A." /></FG>
             <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} placeholder="0414-0000000" /></FG>
             <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="contacto@empresa.com" /></FG>
             <FG label="Días de Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e => setForm({ ...form, diasCredito: e.target.value })} placeholder="15" /></FG>
@@ -1132,12 +1182,12 @@ function BancoApp({ fbUser, onBack }) {
     const [editando, setEdit]   = useState(null);
     const [certCuenta, setCert] = useState(null);
     const [busy, setBusy]       = useState(false);
-    const initF = ()=>({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:''});
+    const initF = ()=>({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:'',cuentaContableCod:'',cuentaContableNom:''});
     const [form, setForm] = useState(initF());
     const monedaDe = tb => TIPO_BANCO.find(t=>t.id===tb)?.moneda||'BS';
 
     const openNew  = ()=>{ setEdit(null); setForm(initF()); setModal(true); };
-    const openEdit = c  =>{ setEdit(c); setForm({banco:c.banco,numeroCuenta:c.numeroCuenta,tipoCuenta:c.tipoCuenta,tipoBanco:c.tipoBanco||'Nacional-Bs',saldo:String(c.saldo),titular:c.titular||''}); setModal(true); };
+    const openEdit = c  =>{ setEdit(c); setForm({banco:c.banco,numeroCuenta:c.numeroCuenta,tipoCuenta:c.tipoCuenta,tipoBanco:c.tipoBanco||'Nacional-Bs',saldo:String(c.saldo),titular:c.titular||'',cuentaContableCod:c.cuentaContableCod||'',cuentaContableNom:c.cuentaContableNom||''}); setModal(true); };
 
     const save = async()=>{
       if(!form.banco||!form.numeroCuenta) return alert('Banco y número requeridos');
@@ -1210,7 +1260,7 @@ function BancoApp({ fbUser, onBack }) {
         footer{margin-top:24px;font-size:9px;color:#cbd5e1;text-align:center;border-top:1px solid #e2e8f0;padding-top:12px}
         </style></head><body>
         <h1>Servicios Jiret G&B, C.A. — Registro de Cuentas Bancarias</h1>
-        <p class="sub">RIF: J-412309374 · Generado: ${dd(today())} · Tasa activa: ${tasaActiva} Bs/$</p>
+        <p class="sub">RIF: J-412309374 · Generado: ${dd(today())}</p>
         <table><thead><tr><th>Tipo</th><th>Banco / Entidad</th><th>Número de Cuenta</th><th>Tipo de Cuenta</th><th>Titular</th><th>Moneda</th></tr></thead>
         <tbody>${cuentas.map(c=>{const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];return`<tr><td><span class="flag">${tb.flag}</span> ${c.tipoBanco||'—'}</td><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta}</td><td>${c.titular||'—'}</td><td>${c.moneda}</td></tr>`;}).join('')}
         </tbody></table>
@@ -1276,6 +1326,13 @@ function BancoApp({ fbUser, onBack }) {
             <FG label="Tipo de Cuenta"><select className={sel} value={form.tipoCuenta} onChange={e=>setForm({...form,tipoCuenta:e.target.value})}><option>Corriente</option><option>Ahorros</option><option>Nómina</option><option>Divisas</option><option>Custodia</option><option>Swift</option></select></FG>
             <FG label="Titular de la Cuenta" full><input className={inp} value={form.titular} onChange={e=>setForm({...form,titular:e.target.value.toUpperCase()})} placeholder="SERVICIOS JIRET G&B C.A."/></FG>
             <FG label={`Saldo ${editando?'Actual':'Inicial'} (${monedaDe(form.tipoBanco)})`}><input type="number" step="0.01" className={inp} value={form.saldo} onChange={e=>setForm({...form,saldo:e.target.value})}/></FG>
+            <FG label="Cuenta Contable Asociada (PUC)" full>
+              <select className={sel} value={form.cuentaContableCod} onChange={e=>{const c=contCuentas.find(x=>x.codigo===e.target.value);setForm({...form,cuentaContableCod:e.target.value,cuentaContableNom:c?.nombre||''})}}>
+                <option value="">— Sin vincular al PUC —</option>
+                {[...contCuentas].filter(c=>String(c.codigo).startsWith('1')).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.codigo}>{c.codigo} · {c.nombre}</option>)}
+              </select>
+              {form.cuentaContableCod && <p className="text-[10px] text-blue-600 font-black mt-1">✓ {form.cuentaContableCod} · {form.cuentaContableNom}</p>}
+            </FG>
           </div>
         </Modal>
       </div>
@@ -1445,10 +1502,8 @@ function BancoApp({ fbUser, onBack }) {
         const cuentaOrig  = cuentas.find(c=>c.id===movOriginal?.cuentaId);
         const cuentaNueva = cuentas.find(c=>c.id===form.cuentaId);
         const batch = writeBatch(db);
-        // Revertir saldo original
         const signoOrig = movOriginal?.tipo==='Ingreso'?-1:1;
         if(cuentaOrig) batch.update(dref('banco_cuentas',cuentaOrig.id),{saldo:Number(cuentaOrig.saldo)+signoOrig*Number(movOriginal?.montoNativo||0)});
-        // Aplicar nuevo saldo
         const signoNuevo = form.tipo==='Ingreso'?1:-1;
         const saldoBase = cuentaOrig?.id===form.cuentaId ? Number(cuentaOrig.saldo)+signoOrig*Number(movOriginal?.montoNativo||0) : Number(cuentaNueva?.saldo||0);
         const nuevoSaldo = saldoBase + signoNuevo*mNat;
@@ -1475,18 +1530,65 @@ function BancoApp({ fbUser, onBack }) {
       } finally { setBusy(false); }
     };
 
-    const eliminar = async(m)=>{
-      if(!window.confirm(`¿Eliminar movimiento "${m.concepto}"? Se ajustará el saldo de la cuenta.`)) return;
+    // ── Eliminar con clave de administrador ───────────────────────────
+    const [adminPwd, setAdminPwd]   = useState('');
+    const [pwdModal, setPwdModal]   = useState(null); // movement to delete
+    const [pwdError, setPwdError]   = useState(false);
+
+    const pedirEliminar = (m) => {
+      if(m.estatus==='Conciliado') return alert('Movimiento conciliado: no puede eliminarse.');
+      setAdminPwd(''); setPwdError(false); setPwdModal(m);
+    };
+
+    const confirmarEliminar = async() => {
+      if(adminPwd !== '1234' && adminPwd.toLowerCase() !== 'admin') {
+        setPwdError(true); setTimeout(()=>setPwdError(false),1500); return;
+      }
       setBusy(true);
       try {
+        const m = pwdModal;
         const signo = m.tipo==='Ingreso'?-1:1;
         const cuenta = cuentas.find(c=>c.id===m.cuentaId);
         const batch=writeBatch(db);
         batch.delete(dref('banco_movimientos',m.id));
         if(cuenta) batch.update(dref('banco_cuentas',cuenta.id),{saldo:Number(cuenta.saldo)+signo*Number(m.montoNativo||0)});
         await batch.commit();
-        setDetalle(null);
+        setPwdModal(null); setDetalle(null); setAdminPwd('');
       } finally { setBusy(false); }
+    };
+
+    // ── Exportar movimientos a PDF/Excel ─────────────────────────────
+    const exportarMovimientos = () => {
+      const mList = filtC ? movBanco.filter(m=>m.cuentaId===filtC) : movBanco;
+      const cuentaNom = filtC ? cuentas.find(c=>c.id===filtC)?.banco||'Todas' : 'Todas las cuentas';
+      let html=`<html><head><meta charset="utf-8"><style>
+        body{font-family:Arial;margin:1.5cm;font-size:10px;color:#1e293b}
+        h1{font-size:14px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:2px}
+        .sub{text-align:center;font-size:9px;color:#64748b;margin-bottom:20px}
+        table{width:100%;border-collapse:collapse}
+        th{background:#0f172a;color:#94a3b8;border:1px solid #1e293b;padding:5px 8px;font-size:8px;text-transform:uppercase;letter-spacing:1px}
+        td{border:1px solid #e2e8f0;padding:4px 8px;vertical-align:middle}
+        tr:nth-child(even) td{background:#f8fafc}
+        .I td:first-child{border-left:3px solid #10b981}
+        .E td:first-child{border-left:3px solid #ef4444}
+        .T td:first-child{border-left:3px solid #3b82f6}
+        tfoot td{background:#0f172a;color:#fff;font-weight:bold}
+        footer{margin-top:16px;font-size:8px;color:#cbd5e1;text-align:center;border-top:1px solid #e2e8f0;padding-top:8px}
+      </style></head><body>
+      <h1>Servicios Jiret G&B, C.A. — Movimientos Bancarios</h1>
+      <p class="sub">Cuenta: ${cuentaNom} · Generado: ${dd(today())} · Tasa: ${tasaActiva} Bs/$</p>
+      <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Banco</th><th>Concepto</th><th>Tercero</th><th>Referencia</th><th>USD</th><th>Bs.</th><th>Tasa</th><th>Estado</th></tr></thead>
+      <tbody>`;
+      mList.forEach(m=>{
+        const cls = m.tipo==='Ingreso'?'I':m.tipo==='Egreso'?'E':'T';
+        html+=`<tr class="${cls}"><td>${dd(m.fecha)}</td><td>${m.tipo}</td><td>${m.cuentaNombre||''}</td><td>${m.concepto||''}</td><td>${m.terceroNombre||'—'}</td><td>${m.referencia||'—'}</td><td style="text-align:right;${m.tipo==='Ingreso'?'color:#16a34a':'color:#dc2626'}">$${fmt(m.montoUSD)}</td><td style="text-align:right">Bs.${fmt(m.montoBs)}</td><td style="text-align:right">${m.tasa}</td><td>${m.estatus||'Pendiente'}</td></tr>`;
+      });
+      const totI=mList.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);
+      const totE=mList.filter(m=>m.tipo==='Egreso' ).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+      html+=`</tbody><tfoot><tr><td colspan="6">TOTALES — ${mList.length} movimientos</td><td style="text-align:right">Ing: $${fmt(totI)} / Egr: $${fmt(totE)}</td><td colspan="3"></td></tr></tfoot>`;
+      html+=`</table><footer>Supply ERP · Servicios Jiret G&amp;B, C.A.</footer></body></html>`;
+      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`movimientos_banco_${today()}.xls`;a.click();URL.revokeObjectURL(url);
     };
 
     const abrirEdicion = (m)=>{
@@ -1497,6 +1599,47 @@ function BancoApp({ fbUser, onBack }) {
         tasa:String(m.tasa||tasaActiva),montoNativo:String(m.montoNativo||''),
         aplicaTercero:m.aplicaTercero||false,tipoTercero:m.tipoTercero||'Cliente',terceroId:m.terceroId||'',
         ctaContraId:m.ctaContraId||'',ctaContraNombre:m.ctaContraNombre||''});
+    };
+
+    // ── Panel info del banco seleccionado ─────────────────────────────
+    const BancoInfoPanel = ({ cuentaId }) => {
+      const cuenta = cuentas.find(c=>c.id===cuentaId);
+      if(!cuenta) return null;
+      const bs = cuenta.moneda==='BS';
+      const movCta = movBanco.filter(m=>m.cuentaId===cuentaId);
+      const ultConcil = concils.filter(c=>c.cuentaId===cuentaId).sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0)[0];
+      const saldoLibros = Number(cuenta.moneda==='BS' ? cuenta.saldo/tasaActiva : cuenta.saldo);
+      const ultSaldoConcil = ultConcil?.saldoBanco||0;
+      const pendientesD = movCta.filter(m=>m.tipo==='Egreso' &&m.estatus!=='Conciliado').reduce((a,m)=>a+Number(m.montoUSD||0),0);
+      const pendientesC = movCta.filter(m=>m.tipo==='Ingreso'&&m.estatus!=='Conciliado').reduce((a,m)=>a+Number(m.montoUSD||0),0);
+      const saldoDisp   = saldoLibros - pendientesD + pendientesC;
+      const difUltConc  = saldoLibros - ultSaldoConcil;
+      const rows = [
+        {l:'Fecha Actual',           v:dd(today()),                           mono:false},
+        {l:'Último saldo conciliado',v:`$${fmt(ultSaldoConcil)}`,             mono:true},
+        {l:'Saldo en Libros',        v:`$${fmt(saldoLibros)}`,                mono:true, bold:true},
+        {l:'Débitos diferidos (-)',  v:`$${fmt(pendientesD)}`,                mono:true, red:true},
+        {l:'Créditos diferidos (+)', v:`$${fmt(pendientesC)}`,                mono:true, green:true},
+        {l:'Saldo disponible',       v:`$${fmt(saldoDisp)}`,                  mono:true, bold:true, accent:true},
+        {l:'Dif. Ult. Conciliación', v:`$${fmt(difUltConc)}`,                 mono:true, red:difUltConc<0, green:difUltConc>=0},
+      ];
+      return (
+        <div className="rounded-xl border border-slate-200 overflow-hidden mb-4" style={{background:'#f8fafc'}}>
+          <div className="px-4 py-2.5 flex items-center gap-2 border-b border-slate-200" style={{background:'#0f172a'}}>
+            <Building2 size={13} className="text-blue-400"/>
+            <p className="font-black text-xs text-white uppercase tracking-widest">{cuenta.banco} · {cuenta.numeroCuenta}</p>
+            <Pill usd={!bs}>{cuenta.moneda}</Pill>
+          </div>
+          <div className="px-4 py-2 space-y-0">
+            {rows.map(({l,v,mono,bold,red,green,accent})=>(
+              <div key={l} className={`flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0 ${accent?'bg-blue-50/60 -mx-4 px-4 rounded':''}`}>
+                <p className="text-[10px] text-slate-500 font-medium">{l}</p>
+                <p className={`font-${mono?'mono':'medium'} text-[11px] ${bold?'font-black':'font-semibold'} ${red?'text-red-600':green?'text-emerald-600':'text-slate-900'}`}>{v}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
     };
 
     const movFilt = movBanco.filter(m=>{
@@ -1689,6 +1832,8 @@ function BancoApp({ fbUser, onBack }) {
               <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
             </div>
             {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
+            <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
+            <button onClick={exportarMovimientos} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
             <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
           </div>}>
           <div className="overflow-x-auto">
@@ -1711,7 +1856,7 @@ function BancoApp({ fbUser, onBack }) {
                     <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
                       <button onClick={()=>setDetalle(m.id)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Ver detalle"><Search size={12}/></button>
                       <button onClick={()=>abrirEdicion(m)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
-                      <button onClick={()=>eliminar(m)} disabled={m.estatus==='Conciliado'} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg disabled:opacity-30" title="Eliminar"><Trash2 size={12}/></button>
+                      <button onClick={e=>{e.stopPropagation();pedirEliminar(m);}} disabled={m.estatus==='Conciliado'} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg disabled:opacity-30" title="Eliminar (clave admin)"><Trash2 size={12}/></button>
                     </div>
                   </Td>
                 </tr>)}
@@ -1769,6 +1914,9 @@ function BancoApp({ fbUser, onBack }) {
                   </FG>
                 </div>
             }
+
+            {/* Panel informativo del banco seleccionado */}
+            {form.cuentaId && <BancoInfoPanel cuentaId={form.cuentaId}/>}
 
             {/* Monto + Tasa + Conversión */}
             {cuentaSel&&<div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
@@ -3677,6 +3825,154 @@ function FiscalApp({ fbUser, onBack }) {
 }
 
 // ============================================================================
+// MÓDULO COMPRAS & PROVEEDORES
+// ============================================================================
+function ComprasApp({ fbUser, onBack }) {
+  const [sec, setSec]           = useState('dashboard');
+  const [proveedores, setProvs] = useState([]);
+  const [tasas, setTasas]       = useState([]);
+
+  useEffect(()=>{
+    if(!fbUser) return;
+    const subs=[
+      onSnapshot(col('compras_proveedores'), s=>setProvs(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('banco_tasas'),orderBy('fecha','desc')), s=>setTasas(s.docs.map(d=>d.data()))),
+    ];
+    return()=>subs.forEach(u=>u());
+  },[fbUser]);
+
+  const tasaActiva = tasas[0]?.tasaRef || 39.50;
+
+  const DashboardView = () => (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPI label="Proveedores Activos" value={proveedores.filter(p=>p.activo!==false).length} accent="green" Icon={Users}/>
+        <KPI label="Total Proveedores" value={proveedores.length} accent="blue" Icon={Briefcase}/>
+        <KPI label="Con Email" value={proveedores.filter(p=>p.email).length} accent="gold" Icon={Mail}/>
+      </div>
+      <Card title="Directorio de Proveedores" subtitle="Vista rápida">
+        {proveedores.length===0?<EmptyState icon={Users} title="Sin proveedores" desc="Registre o importe proveedores"/>:
+          <table className="w-full text-[11px]"><thead><tr><Th>Código</Th><Th>RIF</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th></tr></thead>
+            <tbody>{proveedores.slice(0,10).map(p=><tr key={p.id} className="hover:bg-slate-50">
+              <Td mono className="text-slate-500">{p.codigo||'—'}</Td>
+              <Td mono className="font-black text-slate-900">{p.rif||p['r.i.f.'||'']}</Td>
+              <Td className="uppercase font-semibold max-w-[180px] truncate">{p.nombre||p.descripcion}</Td>
+              <Td>{p.telefono||p.teléfonos||'—'}</Td>
+              <Td className="text-slate-400 max-w-[130px] truncate">{p.email||'—'}</Td>
+            </tr>)}</tbody>
+          </table>}
+      </Card>
+    </div>
+  );
+
+  const ProveedoresView = () => {
+    const [modal,setModal]=useState(false);const [busy,setBusy]=useState(false);
+    const [search,setSearch]=useState('');
+    const [form,setForm]=useState({codigo:'',nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0',activo:true});
+    const filtered=proveedores.filter(p=>(p.nombre||p.descripcion||'').toUpperCase().includes(search.toUpperCase())||(p.rif||'').toUpperCase().includes(search.toUpperCase())||(p.codigo||'').includes(search));
+
+    const save=async()=>{
+      if(!form.nombre||(!form.rif&&!form['r.i.f.']))return alert('Nombre y RIF requeridos');
+      setBusy(true);try{const id=gid();await setDoc(dref('compras_proveedores',id),{...form,id,ts:serverTimestamp()});setModal(false);setForm({codigo:'',nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0',activo:true});}finally{setBusy(false);}
+    };
+
+    // ── Exportar TXT mismo formato ──
+    const exportarTxt=()=>{
+      const HDRS=['Código','Descripción','Activo','Dirección','Teléfonos','R.I.F.','E-Mail'];
+      const rows=proveedores.map(p=>[p.codigo||'',p.nombre||p.descripcion||'',p.activo!==false?'Si':'No',p.direccion||'',p.telefono||p.teléfonos||'',p.rif||p['r.i.f.']||'',p.email||'']);
+      const content=[HDRS,...rows].map(r=>r.join('\t')).join('\r\n');
+      const blob=new Blob(['\uFEFF'+content],{type:'text/plain;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='GENERALDEPROVEEDORES.TXT';a.click();URL.revokeObjectURL(url);
+    };
+
+    // ── Importar TXT ──
+    const importarTxt=async(event)=>{
+      const file=event.target.files[0];if(!file)return;
+      const text=await file.text();
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      if(lines.length<2){alert('Archivo vacío');event.target.value='';return;}
+      const firstCell=lines[0].split('\t')[0].trim();
+      const hasHeader=/[a-zA-ZáéíóúÁÉÍÓÚ]/.test(firstCell)&&!firstCell.startsWith('P');
+      const dataLines=hasHeader?lines.slice(1):lines;
+      const existentes=new Set(proveedores.map(p=>(p.rif||p['r.i.f.']||'').toUpperCase()));
+      const batch=writeBatch(db);let importados=0,omitidos=0;
+      for(const line of dataLines){
+        const p=line.split('\t').map(v=>v.trim().replace(/^["']/,'').replace(/["']$/,''));
+        if(p.length<2) continue;
+        const cod=p[0],nombre=p[1],activo=p[2],dir=p[3]||'',tel=p[4]||'',rif=p[5]||'',email=p[6]||'';
+        if(!nombre) continue;
+        if(rif&&existentes.has(rif.toUpperCase())){omitidos++;continue;}
+        const id=gid();
+        batch.set(dref('compras_proveedores',id),{id,codigo:cod,nombre:nombre.toUpperCase(),activo:activo!=='No',direccion:dir,telefono:tel,rif:rif.toUpperCase(),email,diasCredito:'0',ts:serverTimestamp()});
+        importados++;
+      }
+      if(importados===0){alert(`Sin nuevos proveedores. ${omitidos} ya existían.`);event.target.value='';return;}
+      await batch.commit();
+      alert(`✅ ${importados} proveedor(es) importado(s).${omitidos>0?` (${omitidos} omitidos)`:''}`);
+      event.target.value='';
+    };
+
+    return(
+      <div>
+        <Card title="Directorio de Proveedores" subtitle={`${proveedores.length} proveedores registrados`}
+          action={<div className="flex gap-2 flex-wrap items-center">
+            <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-emerald-500 w-36"/></div>
+            <button onClick={exportarTxt} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Exportar TXT</button>
+            <label className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-emerald-400 hover:text-emerald-600 cursor-pointer">
+              <Upload size={12}/> Importar TXT
+              <input type="file" accept=".txt,.csv,.xls,.xlsx" className="sr-only" onChange={importarTxt}/>
+            </label>
+            <Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nuevo</Bg>
+          </div>}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead><tr><Th>Código</Th><Th>R.I.F.</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>Dirección</Th><Th>Días Créd.</Th><Th></Th></tr></thead>
+              <tbody>
+                {filtered.length===0&&<tr><td colSpan={8}><EmptyState icon={Users} title="Sin proveedores" desc="Registre o importe proveedores"/></td></tr>}
+                {filtered.map(p=><tr key={p.id} className="hover:bg-slate-50">
+                  <Td mono className="text-slate-500">{p.codigo||'—'}</Td>
+                  <Td mono className="font-black text-slate-900">{p.rif||p['r.i.f.']||'—'}</Td>
+                  <Td className="uppercase font-semibold max-w-[170px] truncate">{p.nombre||p.descripcion}</Td>
+                  <Td>{p.telefono||p.teléfonos||'—'}</Td>
+                  <Td className="text-slate-400 max-w-[120px] truncate">{p.email||'—'}</Td>
+                  <Td className="text-slate-400 max-w-[140px] truncate">{p.direccion||'—'}</Td>
+                  <Td mono>{p.diasCredito||'0'} días</Td>
+                  <Td><button onClick={()=>deleteDoc(dref('compras_proveedores',p.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></Td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Proveedor" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar'}</Bg></>}>
+          <div className="grid grid-cols-2 gap-4">
+            <FG label="Código (opc.)"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder="P0001"/></FG>
+            <FG label="R.I.F. / N.I.T."><input className={inp} value={form.rif} onChange={e=>setForm({...form,rif:e.target.value.toUpperCase()})} placeholder="J-12345678-9"/></FG>
+            <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="PROVEEDOR S.A."/></FG>
+            <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})}/></FG>
+            <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></FG>
+            <FG label="Días Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e=>setForm({...form,diasCredito:e.target.value})}/></FG>
+            <FG label="Dirección" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value})}/></FG>
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
+  const navGroups=[
+    {group:'Panel',color:'#10b981',items:[{id:'dashboard',label:'Panel General',icon:LayoutDashboard}]},
+    {group:'Maestros',color:'#10b981',items:[{id:'proveedores',label:'Directorio Proveedores',icon:Users}]},
+  ];
+  const views={dashboard:<DashboardView/>,proveedores:<ProveedoresView/>};
+  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
+  return(
+    <SidebarLayout brand="Supply G&B" brandSub="Compras & Proveedores" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor="#10b981"
+      headerContent={<><div><h1 className="font-black text-slate-800 text-sm uppercase">{curNav?.label}</h1><p className="text-[9px] text-slate-400 uppercase tracking-widest">Compras · Proveedores</p></div><Bg onClick={()=>setSec('proveedores')} sm><Plus size={12}/> Proveedor</Bg></>}>
+      {views[sec]||<DashboardView/>}
+    </SidebarLayout>
+  );
+}
+
+// ============================================================================
 // MÓDULO CONFIGURACIÓN
 // ============================================================================
 function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
@@ -3828,9 +4124,10 @@ export default function App() {
       {view === 'selector' && <MainSelector onSelect={go} />}
       {view === 'admin_dash' && <AdminDash onSelectModule={go} onBack={() => go('selector')} />}
       {view === 'cont_dash' && <ContDash onSelectModule={go} onBack={() => go('selector')} />}
-      {view === 'facturacion' && <FacturacionApp fbUser={fbUser} tasasList={tasasList} onBack={() => go('admin_dash')} />}
-      {view === 'inventario' && <InventarioApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
-      {view === 'banco' && <BancoApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
+      {view === 'facturacion'  && <FacturacionApp fbUser={fbUser} tasasList={tasasList} onBack={() => go('admin_dash')} />}
+      {view === 'compras'      && <ComprasApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
+      {view === 'inventario'   && <InventarioApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
+      {view === 'banco'        && <BancoApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
       {view === 'contabilidad' && <ContabilidadApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
       {view === 'asientos'     && <AsientosApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
       {view === 'balances'     && <BalancesApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
