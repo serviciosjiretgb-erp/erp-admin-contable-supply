@@ -9,13 +9,13 @@ import {
   Users, ArrowLeft, Blocks, FileSpreadsheet, BookText,
   Briefcase, Upload, ShieldCheck, UserPlus, Save, LogOut,
   Settings, Home, Factory, TestTube, Lock, User, ArrowRight,
-  MapPin, Image as ImageIcon, Key
+  Settings2, Mail
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
   getFirestore, collection, doc, setDoc, updateDoc,
-  onSnapshot, deleteDoc, query, orderBy, serverTimestamp
+  onSnapshot, deleteDoc, query, orderBy, serverTimestamp, writeBatch
 } from 'firebase/firestore';
 
 // ============================================================================
@@ -23,19 +23,42 @@ import {
 // ============================================================================
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, errorMsg: '' }; }
-  static getDerivedStateFromError(e) { return { hasError: true, errorMsg: e?.message || String(e) }; }
+  static getDerivedStateFromError(error) { return { hasError: true }; }
+  componentDidCatch(error) { this.setState({ errorMsg: error && error.message ? error.message : String(error) }); }
   render() {
-    if (this.state.hasError) return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0a] p-6">
-        <AlertTriangle size={56} className="text-[#f97316] mb-4" />
-        <h2 className="text-xl font-black text-white uppercase mb-2">Error del Sistema</h2>
-        <p className="text-gray-400 text-sm mb-6 text-center max-w-sm">{this.state.errorMsg}</p>
-        <button onClick={() => window.location.reload()} className="bg-[#f97316] text-white font-black px-8 py-3 rounded-2xl uppercase tracking-widest text-xs">Recargar</button>
-      </div>
-    );
-    return this.props.children;
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 print:hidden">
+          <AlertTriangle size={60} className="text-red-500 mb-4" />
+          <h2 className="text-2xl font-black text-black uppercase mb-2">Sistema Protegido de Caída</h2>
+          <p className="text-gray-500 text-sm mb-6">{this.state.errorMsg}</p>
+          <button onClick={() => window.location.reload()} className="bg-black text-white font-black px-8 py-4 rounded-xl uppercase tracking-widest text-xs shadow-lg">Recargar Interfaz</button>
+        </div>
+      );
+    }
+    return this.props.children; 
   }
 }
+
+// COMPRESOR DE IMÁGENES (Extraído de App 45)
+const compressImage = (file, callback) => {
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  reader.onload = event => {
+    const img = new Image();
+    img.src = event.target.result;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const MAX_WIDTH = 1920;
+      let width = img.width; let height = img.height;
+      if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+      canvas.width = width; canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+      callback(canvas.toDataURL('image/jpeg', 0.6)); 
+    };
+  };
+};
 
 const firebaseConfig = {
   apiKey: "AIzaSyBri2uZAaxsH4S0OpqhYvXB4wfCqo4g3sk",
@@ -48,8 +71,8 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig, 'banco');
 const auth = getAuth(fbApp);
 const db = getFirestore(fbApp, "us-central");
-const col = (n) => collection(db, n);
 const dref = (n, id) => doc(db, n, String(id));
+const col = (n) => collection(db, n);
 
 const fmt = (n) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
 const today = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -57,7 +80,7 @@ const dd = (s) => { if(!s) return '—'; const [y,m,d]=s.split('-'); return `${d
 const gid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
 // ============================================================================
-// COMPONENTES UI (COLORES NEGRO, BLANCO Y NARANJA)
+// COMPONENTES UI
 // ============================================================================
 const Badge = ({children, v='green'}) => {
   const s={green:'bg-emerald-100 text-emerald-700',red:'bg-red-100 text-red-600',gold:'bg-orange-100 text-orange-700',blue:'bg-blue-100 text-blue-700',gray:'bg-gray-100 text-gray-500'};
@@ -86,35 +109,6 @@ const Card = ({title,subtitle,action,children,noPad}) => (
     <div className={noPad?'':'p-6'}>{children}</div>
   </div>
 );
-const BarChart = ({data=[],height=120}) => {
-  const max = Math.max(...data.map(d=>d.value),1);
-  return (
-    <div className="flex items-end gap-2 w-full" style={{height}}>
-      {data.map((d,i)=>(
-        <div key={i} className="flex-1 flex flex-col items-center gap-1">
-          <div className="w-full rounded-t-lg" style={{height:`${Math.max((d.value/max)*(height-24),4)}px`,background:d.color||'#000000'}}/>
-          <span className="text-[9px] font-black text-gray-400 uppercase truncate w-full text-center">{d.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-const LSvg = ({data=[],color='#f97316',height=100}) => {
-  if(data.length<2) return <div className="flex items-center justify-center h-24 text-xs text-gray-300">Datos insuficientes</div>;
-  const max=Math.max(...data,1); const min=Math.min(...data,0); const range=max-min||1; const w=300; const h=height;
-  const pts=data.map((v,i)=>{const x=(i/(data.length-1))*(w-20)+10; const y=h-((v-min)/range)*(h-20)-10; return `${x},${y}`;}).join(' ');
-  return <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{height}}><polyline fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={pts}/><polyline fill={`${color}20`} stroke="none" points={`10,${h-10} ${pts} ${w-10},${h-10}`}/></svg>;
-};
-const Donut = ({segs=[],size=120}) => {
-  const r=42; const cx=size/2; const cy=size/2; const circ=2*Math.PI*r;
-  const total=segs.reduce((a,s)=>a+s.value,0)||1; let off=0;
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f3f4f6" strokeWidth="14"/>
-      {segs.map((s,i)=>{const pct=s.value/total; const dash=pct*circ; const el=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth="14" strokeDasharray={`${dash} ${circ-dash}`} strokeDashoffset={-off*circ} style={{transform:`rotate(-90deg)`,transformOrigin:`${cx}px ${cy}px`}}/>; off+=pct; return el;})}
-    </svg>
-  );
-};
 const Modal = ({open,onClose,title,children,footer,wide}) => {
   if(!open) return null;
   return (
@@ -138,199 +132,60 @@ const Bo = ({onClick,children,sm}) => <button onClick={onClick} className={`bord
 const Th = ({children,right}) => <th className={`px-4 py-3 text-[9px] font-black uppercase tracking-widest text-gray-400 border-b-2 border-gray-100 bg-gray-50 ${right?'text-right':'text-left'} whitespace-nowrap`}>{children}</th>;
 const Td = ({children,right,mono,className=''}) => <td className={`px-4 py-3 text-xs border-b border-gray-50 ${right?'text-right':''} ${mono?'font-mono':'font-medium'} ${className}`}>{children}</td>;
 
-// ============================================================================
-// PANTALLA 1: LOGIN SCREEN
-// ============================================================================
-function LoginScreen({ onLogin }) {
-  const [pass, setPass] = useState('');
-  const [error, setError] = useState(false);
 
-  const handleLogin = () => {
-    if (pass === '1234' || pass.toLowerCase() === 'admin') {
-      onLogin();
-    } else {
-      setError(true);
-      setTimeout(() => setError(false), 2000);
+// ============================================================================
+// LOGIN SCREEN (Exactamente copiado de App 45 con su Background)
+// ============================================================================
+function LoginScreen({ onLogin, settings, systemUsers }) {
+  const [loginData, setLoginData] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState('');
+
+  const handleLogin = (e) => {
+    e.preventDefault(); 
+    const user = loginData.username.toLowerCase().trim(); 
+    const pass = loginData.password.trim();
+    
+    // Validación real contra la BD o maestro (admin/1234) de respaldo
+    const foundUser = (systemUsers || []).find(u => u.username === user && u.password === pass);
+    
+    if (foundUser || (user === 'admin' && pass === '1234')) { 
+      onLogin(foundUser || { name: 'Administrador Maestro', role: 'Master' }); 
+      setLoginError(''); 
+    } else { 
+      setLoginError('Credenciales incorrectas. Intente nuevamente.'); 
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-[#f97316]/10 rounded-full blur-[100px]"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-blue-500/10 rounded-full blur-[100px]"></div>
-
-      <div className="max-w-md w-full bg-white rounded-[2.5rem] p-10 shadow-2xl relative z-10 border border-white/20">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl transform -rotate-6">
-            <Blocks className="text-[#f97316]" size={40} />
+    <div className="min-h-screen bg-black flex items-center justify-center p-4 relative" style={{ backgroundImage: settings?.loginBg ? `url(${settings.loginBg})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      {settings?.loginBg && <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>}
+      <div className="bg-white p-12 rounded-[2rem] shadow-2xl w-full max-w-md relative z-10 border-t-8 border-orange-500 transform transition-all">
+        <div className="text-center mb-10">
+          <span className="text-3xl font-light tracking-widest text-gray-800">Supply</span>
+          <div className="flex items-center justify-center -mt-2">
+            <span className="text-black font-black text-[50px] leading-none">G</span><div className="bg-orange-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-xl font-black mx-1 shadow-inner">&amp;</div><span className="text-black font-black text-[50px] leading-none">B</span>
           </div>
-          <h1 className="text-3xl font-black text-black uppercase tracking-tighter">Supply <span className="text-[#f97316]">G&B</span></h1>
-          <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Servicios Jiret · ERP Master</p>
+          <p className="text-[10px] font-black tracking-widest text-gray-400 mt-2 uppercase">Enterprise Resource Planning</p>
         </div>
-
-        <div className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 ml-1">Clave de Acceso Master</label>
+            <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Usuario de Acceso</label>
             <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-              <input 
-                type="password" 
-                className={`w-full bg-gray-50 border-2 ${error ? 'border-red-500 bg-red-50' : 'border-gray-100'} rounded-2xl py-4 pl-12 pr-4 text-center font-black tracking-[0.5em] outline-none focus:border-[#f97316] transition-all`}
-                placeholder="••••"
-                value={pass}
-                onChange={e => setPass(e.target.value)}
-                onKeyPress={e => e.key === 'Enter' && handleLogin()}
-              />
+              <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18}/>
+              <input type="text" required value={loginData.username} onChange={(e) => setLoginData({...loginData, username: e.target.value})} className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-black outline-none focus:border-orange-500 focus:bg-white transition-all text-black" placeholder="admin" />
             </div>
-            {error && <p className="text-center text-red-500 text-[10px] font-black uppercase mt-3 animate-pulse">Credenciales Incorrectas</p>}
           </div>
-
-          <button onClick={handleLogin} className="w-full bg-black text-white font-black py-4 rounded-2xl uppercase text-xs tracking-[0.2em] hover:bg-[#f97316] transition-all shadow-lg flex items-center justify-center gap-3 group">
-            Entrar al Sistema <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-          </button>
-        </div>
-
-        <div className="mt-8 pt-8 border-t border-gray-50 flex justify-center gap-6">
-          <div className="flex items-center gap-2 text-gray-300"><ShieldCheck size={14} /><span className="text-[9px] font-black uppercase">AES-256 Encrypted</span></div>
-          <div className="flex items-center gap-2 text-gray-300"><Globe size={14} /><span className="text-[9px] font-black uppercase">v3.1.0 Cloud</span></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// PANTALLA 2: SELECTOR DE ÁREA
-// ============================================================================
-function MainSelector({ onSelect }) {
-  return (
-    <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-6">
-      <div className="flex flex-col md:flex-row gap-8 max-w-5xl w-full">
-        <div onClick={() => onSelect('admin_dash')} className="flex-1 bg-[#0a0a0a] rounded-[2.5rem] p-12 cursor-pointer border-l-8 border-[#f97316] shadow-2xl hover:-translate-y-2 transition-transform duration-300 group flex flex-col items-center text-center relative overflow-hidden">
-          <div className="w-28 h-28 bg-[#1f2937] rounded-full flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500"><Briefcase size={40} className="text-[#f97316]" strokeWidth={2.5} /></div>
-          <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-4">Área Administrativa</h2>
-          <p className="text-gray-400 text-sm font-medium leading-relaxed max-w-sm">Gestión de Facturación, Control de Inventario Multimoneda, Bancos y Tesorería.</p>
-        </div>
-        <div onClick={() => onSelect('cont_dash')} className="flex-1 bg-white rounded-[2.5rem] p-12 cursor-pointer border-l-8 border-[#3b82f6] shadow-2xl hover:-translate-y-2 transition-transform duration-300 group flex flex-col items-center text-center">
-          <div className="w-28 h-28 bg-[#dbeafe] rounded-full flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500"><Calculator size={40} className="text-[#3b82f6]" strokeWidth={2.5} /></div>
-          <h2 className="text-2xl font-black text-black uppercase tracking-widest mb-4">Área Contable</h2>
-          <p className="text-gray-500 text-sm font-medium leading-relaxed max-w-sm">Mantenimiento de Multiempresas, Plan de Cuentas Central, Asientos de Libro Diario y Balances.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// PANTALLA 3A: DASHBOARD ADMINISTRATIVO
-// ============================================================================
-function AdminDashboard({ onSelectModule, onBack }) {
-  const modAdmin = [
-    { id: 'facturacion', name: 'Ventas y Facturación', icon: Receipt, dark: true, border: 'border-[#f97316]', text: 'text-[#f97316]', desc: 'Directorio, OP y Facturación' },
-    { id: 'inventario', name: 'Control Inventario', icon: Package, dark: true, border: 'border-[#f97316]', text: 'text-[#f97316]', desc: 'Catálogo, Movimientos y Kardex' },
-    { id: 'banco', name: 'Bancos y Tesorería', icon: Building2, dark: false, border: 'border-orange-400', text: 'text-orange-400', desc: 'Cuentas, Vales y Liquidez' },
-    { id: 'reportes', name: 'Reportes Financieros', icon: BarChart3, dark: false, border: 'border-blue-500', text: 'text-blue-500', desc: 'Dashboard de Rentabilidad' },
-    { id: 'nomina', name: 'Gestión de Nómina', icon: Users, dark: false, border: 'border-gray-400', text: 'text-gray-400', desc: 'Personal, viáticos y comisiones' },
-    { id: 'configuracion', name: 'Configuración', icon: Settings, dark: false, border: 'border-gray-300', text: 'text-gray-500', desc: 'Mi Empresa, Sucursales y Usuarios' }
-  ];
-
-  return (
-    <div className="min-h-screen bg-[#f3f4f6] flex flex-col">
-      <header className="bg-[#0a0a0a] px-6 py-4 flex items-center justify-between border-b-4 border-[#f97316]">
-        <div className="flex items-center gap-12">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={onBack}>
-            <Blocks className="text-white" size={28} />
-            <span className="text-white font-black text-xl tracking-widest">Supply <span className="text-[#f97316]">G&B</span></span>
+          <div>
+            <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Clave de Seguridad</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18}/>
+              <input type="password" required value={loginData.password} onChange={(e) => setLoginData({...loginData, password: e.target.value})} className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-black outline-none focus:border-orange-500 focus:bg-white transition-all text-black" placeholder="••••••••" />
+            </div>
           </div>
-          <nav className="hidden md:flex gap-6">
-            <button className="bg-[#f97316] text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><Home size={14}/> Inicio</button>
-            <button className="text-gray-400 hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><Receipt size={14}/> Ventas</button>
-            <button className="text-gray-400 hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><Package size={14}/> Inventario</button>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="text-right hidden sm:block"><p className="text-[#f97316] text-[10px] font-black uppercase tracking-widest">Master</p><p className="text-white text-xs font-black uppercase">Administrador General</p></div>
-          <div className="flex items-center gap-3 border-l border-gray-800 pl-6">
-            <button onClick={() => onSelectModule('configuracion')} className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center text-gray-400 hover:text-white border border-gray-800"><Settings size={18}/></button>
-            <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-900/50 text-red-500 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"><LogOut size={14}/> Salir</button>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-1 max-w-6xl mx-auto w-full p-8 md:p-12">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-black text-black uppercase tracking-[0.2em]">Panel Principal ERP</h2>
-          <div className="w-16 h-1.5 bg-[#f97316] mx-auto mt-4 rounded-full"></div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {modAdmin.map(mod => {
-            const Icon = mod.icon;
-            const isDark = mod.type === 'dark';
-            return (
-              <button key={mod.id} onClick={() => onSelectModule(mod.id)} className={`relative rounded-[2rem] p-6 text-left border-l-[6px] ${mod.border} shadow-lg hover:-translate-y-1 transition-all duration-300 group flex flex-col h-44 ${isDark ? 'bg-[#0a0a0a]' : 'bg-white'}`}>
-                <Icon size={32} className={`${mod.color} mb-4 group-hover:scale-110 transition-transform`} strokeWidth={2} />
-                <h3 className={`font-black text-sm uppercase tracking-wide mb-2 ${isDark ? 'text-white' : 'text-black'}`}>{mod.name}</h3>
-                <p className={`text-[10px] font-medium leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{mod.desc}</p>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// PANTALLA 3B: DASHBOARD CONTABLE
-// ============================================================================
-function ContableDashboard({ onSelectModule, onBack }) {
-  const modCont = [
-    { id: 'contabilidad', name: 'Plan de Cuentas / Maestro', icon: BookOpen, type: 'white', color: 'text-[#3b82f6]', border: 'border-[#3b82f6]', desc: 'Estructura de cuentas (PUC) y clasificación' },
-    { id: 'asientos', name: 'Asientos de Libro Diario', icon: FileText, type: 'white', color: 'text-[#f97316]', border: 'border-[#f97316]', desc: 'Registro de operaciones y comprobantes' },
-    { id: 'impuestos', name: 'Gestión de Impuestos', icon: Calculator, type: 'dark', color: 'text-red-500', border: 'border-red-500', desc: 'Retenciones IVA, ISLR y libros fiscales' },
-    { id: 'nacionalizacion', name: 'Costos de Nacionalización', icon: Globe, type: 'dark', color: 'text-emerald-500', border: 'border-emerald-500', desc: 'Estructura de importaciones' }
-  ];
-
-  return (
-    <div className="min-h-screen bg-[#f3f4f6] flex flex-col">
-      <header className="bg-[#0a0a0a] px-6 py-4 flex items-center justify-between border-b-4 border-[#3b82f6]">
-        <div className="flex items-center gap-12">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={onBack}>
-            <Blocks className="text-[#3b82f6]" size={28} />
-            <span className="text-white font-black text-xl tracking-widest">Supply <span className="text-[#3b82f6]">G&B</span></span>
-          </div>
-          <nav className="hidden md:flex gap-6">
-            <button className="bg-[#3b82f6] text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><Home size={14}/> Contable</button>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="text-right hidden sm:block"><p className="text-[#3b82f6] text-[10px] font-black uppercase tracking-widest">Master</p><p className="text-white text-xs font-black uppercase">Contador General</p></div>
-          <div className="flex items-center gap-3 border-l border-gray-800 pl-6">
-            <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-900/50 text-red-500 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"><LogOut size={14}/> Salir</button>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-1 max-w-5xl mx-auto w-full p-8 md:p-12">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-black text-black uppercase tracking-[0.2em]">Panel Contable & Fiscal</h2>
-          <div className="w-16 h-1.5 bg-[#3b82f6] mx-auto mt-4 rounded-full"></div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {modCont.map(mod => {
-            const Icon = mod.icon;
-            const isDark = mod.type === 'dark';
-            return (
-              <button key={mod.id} onClick={() => onSelectModule(mod.id)} className={`relative rounded-[2rem] p-8 text-left border-l-[6px] ${mod.border} shadow-lg hover:-translate-y-1 transition-all duration-300 group flex flex-col ${isDark ? 'bg-[#0a0a0a]' : 'bg-white'}`}>
-                <Icon size={36} className={`${mod.color} mb-4 group-hover:scale-110 transition-transform`} strokeWidth={2} />
-                <h3 className={`font-black text-lg uppercase tracking-wide mb-2 ${isDark ? 'text-white' : 'text-black'}`}>{mod.name}</h3>
-                <p className={`text-xs font-medium leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{mod.desc}</p>
-              </button>
-            )
-          })}
-        </div>
+          {loginError && <div className="bg-red-50 text-red-500 text-[10px] font-black uppercase p-3 rounded-xl text-center border border-red-100 animate-in fade-in">{loginError}</div>}
+          <button type="submit" className="w-full bg-black text-white font-black py-5 rounded-2xl uppercase tracking-widest text-xs hover:bg-gray-900 transition-all shadow-xl hover:shadow-orange-500/20 mt-4 flex justify-center items-center gap-2">INGRESAR AL SISTEMA <ArrowRight size={16}/></button>
+        </form>
+        <div className="mt-8 text-center"><p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">© {new Date().getFullYear()} Jiret G&B C.A. Todos los derechos reservados.</p></div>
       </div>
     </div>
   );
@@ -338,24 +193,24 @@ function ContableDashboard({ onSelectModule, onBack }) {
 
 
 // ============================================================================
-// MÓDULO DE CONFIGURACIÓN (REDISEÑADO SEGÚN IMÁGENES)
+// MÓDULO DE CONFIGURACIÓN (Extraído Exactamente de App 45)
 // ============================================================================
-function ConfiguracionApp({ onBack }) {
+function ConfiguracionApp({ settings, systemUsers, onBack }) {
+  
+  // Estados para Usuarios
+  const initialUserForm = { username: '', password: '', name: '', role: 'Usuario', permissions: {
+    ventas: false, ventas_ops: false, ventas_facturacion: false, ventas_directorio: false,
+    produccion: false, produccion_proyeccion: false, produccion_ordenes: false, produccion_activa: false, produccion_historial: false,
+    formulas: false, inventario: false, inventario_solicitudes: false, inventario_catalogo: false, inventario_movimientos: false, inventario_kardex: false,
+    simulador: false, costos: false, costos_operativos: false, costos_reportes: false, configuracion: false
+  }};
+  const [newUserForm, setNewUserForm] = useState(initialUserForm);
+  const [editingUserId, setEditingUserId] = useState(null);
+
+  // Estados de Seguridad
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [errorValidacion, setErrorValidacion] = useState(false);
-  const [sec, setSec] = useState('empresa');
-
-  // Menú Lateral de Configuración
-  const NAV_CONFIG = [
-    { id: 'empresa', label: 'Mi Empresa', icon: Building2, group: 'General' },
-    { id: 'sucursales', label: 'Sucursales', icon: Landmark, group: 'General' },
-    { id: 'monedas', label: 'Monedas', icon: DollarSign, group: 'Financiero' },
-    { id: 'tasas', label: 'Tasa de Cambio', icon: TrendingUp, group: 'Financiero' },
-    { id: 'tipos_cambio', label: 'Tipos de Cambio', icon: ArrowLeftRight, group: 'Financiero' },
-    { id: 'usuarios', label: 'Usuarios', icon: Users, group: 'Seguridad' },
-    { id: 'roles', label: 'Roles y Permisos', icon: ShieldCheck, group: 'Seguridad' }
-  ];
 
   const handleAdminValidation = () => {
     if (adminPassword === '1234' || adminPassword.toLowerCase() === 'admin') {
@@ -365,161 +220,444 @@ function ConfiguracionApp({ onBack }) {
     }
   };
 
-  // PANTALLA DE BLOQUEO DE CONFIGURACIÓN
+  const handleBgUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) { 
+      compressImage(file, async (base64) => { 
+        try { 
+          await setDoc(doc(db, 'settings', 'general'), { loginBg: base64 }, { merge: true }); 
+          alert('Fondo actualizado.'); 
+        } catch (error) { 
+          alert('Imagen muy pesada o error de red.'); 
+        } 
+      }); 
+    }
+  };
+
+  const handleSaveUser = async (e) => {
+    e.preventDefault(); 
+    if (!newUserForm.username || !newUserForm.password) return alert('Usuario y contraseña requeridos.');
+    const userId = newUserForm.username.toLowerCase().trim();
+    try { 
+      await setDoc(doc(db, 'users', userId), { ...newUserForm, username: userId }); 
+      setNewUserForm(initialUserForm); setEditingUserId(null); alert('Usuario registrado/actualizado.'); 
+    } catch(err) { alert(err.message); }
+  };
+
+  const startEditUser = (u) => {
+    const defaultPerms = initialUserForm.permissions;
+    const mergedPerms = { ...defaultPerms, ...(u.permissions || {}) };
+    setEditingUserId(u.username);
+    setNewUserForm({ ...u, permissions: mergedPerms });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteUser = async (id) => { 
+    if(id === 'admin') return alert('No puedes eliminar al administrador maestro.'); 
+    if(window.confirm(`¿Desea eliminar el acceso al usuario ${id}?`)) {
+      await deleteDoc(doc(db, 'users', id));
+    }
+  };
+
   if (!adminUnlocked) {
     return (
-      <div className="fixed inset-0 bg-[#0a0a0a]/90 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl transform transition-all relative border border-white/20">
-          <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 bg-[#0a0a0a] rounded-full flex items-center justify-center shadow-2xl border-4 border-[#f97316]">
-            <Key size={40} className="text-[#f97316]" />
-          </div>
-          <div className="mt-12 text-center">
-            <h3 className="text-2xl font-black text-black uppercase tracking-widest mb-2">Configuración</h3>
-            <p className="text-gray-500 text-xs font-bold mb-8">Requiere privilegios de Administrador Master.</p>
-            <div className="mb-8 relative">
-              <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminValidation()} placeholder="••••••••" className={`w-full border-2 ${errorValidacion ? 'border-red-500 bg-red-50' : 'border-gray-200'} rounded-2xl p-4 text-center text-xl font-black tracking-[0.5em] focus:border-[#f97316] outline-none transition-colors`} autoFocus />
-              {errorValidacion && <p className="text-[10px] text-red-500 font-black uppercase mt-2 absolute w-full text-center">Clave Incorrecta</p>}
-            </div>
-            <div className="flex gap-3">
-              <button onClick={onBack} className="flex-1 bg-gray-100 text-gray-700 font-black py-4 rounded-xl uppercase text-xs tracking-widest hover:bg-gray-200">Cancelar</button>
-              <button onClick={handleAdminValidation} className="flex-1 bg-black text-white font-black py-4 rounded-xl uppercase text-xs tracking-widest hover:bg-[#f97316] transition-colors shadow-lg">Desbloquear</button>
-            </div>
-          </div>
-        </div>
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center relative">
+         <div className="absolute top-6 left-6"><button onClick={onBack} className="bg-black text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-lg"><ArrowLeft size={14}/> Volver</button></div>
+         <div className="bg-white rounded-[2rem] p-10 max-w-sm w-full shadow-2xl transform transition-all relative border border-gray-100">
+           <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-20 h-20 bg-red-500 rounded-full flex items-center justify-center shadow-lg border-4 border-white">
+             <ShieldCheck size={36} className="text-white" />
+           </div>
+           <div className="mt-10 text-center">
+             <h3 className="text-xl font-black text-black uppercase tracking-wide mb-2">Acceso Restringido</h3>
+             <p className="text-gray-500 text-xs font-bold mb-6">Se requieren privilegios de Administrador Master para modificar la configuración.</p>
+             <div className="mb-6 relative">
+               <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminValidation()} placeholder="••••••••" className={`w-full border-2 ${errorValidacion ? 'border-red-500 bg-red-50' : 'border-gray-200'} rounded-xl p-4 text-center text-lg font-black tracking-widest focus:border-red-500 focus:ring-2 focus:ring-red-200 outline-none transition-all`} autoFocus />
+               {errorValidacion && <p className="text-[10px] text-red-500 font-black uppercase mt-2 absolute w-full text-center">Contraseña Incorrecta</p>}
+             </div>
+             <div className="flex gap-3">
+               <button onClick={onBack} className="flex-1 bg-gray-200 text-gray-700 font-black py-4 rounded-xl uppercase text-xs tracking-widest hover:bg-gray-300 transition-all">Cancelar</button>
+               <button onClick={handleAdminValidation} className="flex-1 bg-red-500 text-white font-black py-4 rounded-xl shadow-lg uppercase text-xs tracking-widest hover:bg-red-600 transition-all flex items-center justify-center gap-2">Validar</button>
+             </div>
+           </div>
+         </div>
       </div>
     );
   }
 
-  const groups = [...new Set(NAV_CONFIG.map(n => n.group))];
-  const curNav = NAV_CONFIG.find(n => n.id === sec);
-
-  // VISTAS DEL MÓDULO CONFIGURACIÓN
-  const renderView = () => {
-    switch(sec) {
-      case 'empresa':
-        return (
-          <Card title="Datos de la Empresa">
-            <div className="flex flex-col md:flex-row gap-8">
-              <div className="w-full md:w-1/3 flex flex-col items-center">
-                <div className="w-48 h-48 border-4 border-dashed border-gray-200 rounded-[2rem] flex flex-col items-center justify-center text-gray-400 bg-gray-50 hover:bg-orange-50 hover:border-[#f97316] hover:text-[#f97316] cursor-pointer transition-all">
-                  <ImageIcon size={40} className="mb-2" />
-                  <span className="text-xs font-black uppercase tracking-widest">Subir Logo</span>
-                </div>
-              </div>
-              <div className="w-full md:w-2/3 grid grid-cols-2 gap-5">
-                <FG label="Razón Social" full><input className={inp} defaultValue="Servicios Jiret G&B, C.A." /></FG>
-                <FG label="RIF / NIT"><input className={inp} defaultValue="J-40000000-0" /></FG>
-                <FG label="Teléfono"><input className={inp} defaultValue="+58 414-0000000" /></FG>
-                <FG label="Correo Electrónico" full><input className={inp} defaultValue="contacto@supplygyb.com" /></FG>
-                <FG label="Moneda Principal"><select className={inp}><option>Bolívares (Bs.)</option><option>Dólar (USD)</option></select></FG>
-                <FG label="Moneda Secundaria"><select className={inp}><option>Dólar (USD)</option><option>Euros (EUR)</option></select></FG>
-                <div className="col-span-2 flex justify-end mt-4"><Bg><Save size={16}/> Guardar Cambios</Bg></div>
-              </div>
-            </div>
-          </Card>
-        );
-      case 'sucursales':
-        return (
-          <Card title="Gestión de Sucursales" action={<Bg sm><Plus size={14}/> Nueva Sucursal</Bg>}>
-            <div className="overflow-x-auto"><table className="w-full">
-              <thead><tr><Th>Código</Th><Th>Nombre</Th><Th>Dirección</Th><Th>Teléfono</Th><Th>Estado</Th><Th></Th></tr></thead>
-              <tbody>
-                <tr className="hover:bg-gray-50 border-b border-gray-100">
-                  <Td mono className="font-black text-[#f97316]">SUC-01</Td><Td className="font-black text-black uppercase">Sede Principal Maracaibo</Td><Td className="text-gray-500">Av. 5 de Julio, Zulia</Td><Td mono>0261-7000000</Td><Td><Badge v="green">Activo</Badge></Td><Td><button className="p-2 text-gray-400 hover:text-[#f97316]"><Settings size={14}/></button></Td>
-                </tr>
-              </tbody>
-            </table></div>
-          </Card>
-        );
-      case 'usuarios':
-        return (
-          <Card title="Directorio de Usuarios" action={<Bg sm><UserPlus size={14}/> Nuevo Usuario</Bg>}>
-            <div className="overflow-x-auto"><table className="w-full">
-              <thead><tr><Th>Nombre</Th><Th>Correo</Th><Th>Sucursal</Th><Th>Rol</Th><Th>Estado</Th><Th></Th></tr></thead>
-              <tbody>
-                <tr className="hover:bg-gray-50 border-b border-gray-100">
-                  <Td className="font-black text-black uppercase">Luis Ferrer</Td><Td className="text-gray-500">admin@supplygyb.com</Td><Td><Badge v="gray">SUC-01</Badge></Td><Td><Badge v="red">Master</Badge></Td><Td><Badge v="green">Activo</Badge></Td><Td><button className="p-2 text-gray-400 hover:text-[#f97316]"><Settings size={14}/></button></Td>
-                </tr>
-                <tr className="hover:bg-gray-50 border-b border-gray-100">
-                  <Td className="font-black text-black uppercase">Contabilidad</Td><Td className="text-gray-500">contable@supplygyb.com</Td><Td><Badge v="gray">SUC-01</Badge></Td><Td><Badge v="blue">Contador</Badge></Td><Td><Badge v="green">Activo</Badge></Td><Td><button className="p-2 text-gray-400 hover:text-[#f97316]"><Settings size={14}/></button></Td>
-                </tr>
-              </tbody>
-            </table></div>
-          </Card>
-        );
-      case 'roles':
-        return (
-          <Card title="Roles y Permisos" action={<Bg sm><ShieldCheck size={14}/> Nuevo Rol</Bg>}>
-            <div className="overflow-x-auto"><table className="w-full">
-              <thead><tr><Th>Nombre del Rol</Th><Th>Descripción</Th><Th right>Usuarios</Th><Th>Estado</Th><Th></Th></tr></thead>
-              <tbody>
-                <tr className="hover:bg-gray-50 border-b border-gray-100">
-                  <Td className="font-black text-red-600 uppercase">Master</Td><Td className="text-gray-500">Acceso total al sistema y configuraciones</Td><Td right mono className="font-black">1</Td><Td><Badge v="green">Activo</Badge></Td><Td><button className="p-2 text-gray-400 hover:text-[#f97316]"><Settings size={14}/></button></Td>
-                </tr>
-                <tr className="hover:bg-gray-50 border-b border-gray-100">
-                  <Td className="font-black text-blue-600 uppercase">Contador</Td><Td className="text-gray-500">Acceso a módulo contable y asientos</Td><Td right mono className="font-black">2</Td><Td><Badge v="green">Activo</Badge></Td><Td><button className="p-2 text-gray-400 hover:text-[#f97316]"><Settings size={14}/></button></Td>
-                </tr>
-              </tbody>
-            </table></div>
-          </Card>
-        );
-      default:
-        return (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl border border-gray-100">
-            <Blocks size={48} className="text-gray-200 mb-4" />
-            <h3 className="text-lg font-black text-gray-400 uppercase tracking-widest mb-2">Sección en Construcción</h3>
-            <p className="text-xs text-gray-400 text-center max-w-sm">Esta área se encuentra en desarrollo activo para la versión final del sistema.</p>
-          </div>
-        );
-    }
-  };
-
+  // Layout Vertical de App (45)
   return (
-    <div className="flex h-screen overflow-hidden bg-white w-full">
-      {/* Sidebar Configuración */}
-      <aside className="w-64 bg-black flex flex-col h-screen overflow-y-auto flex-shrink-0">
-        <div className="px-6 py-6 border-b border-white/10 flex-shrink-0">
-          <p className="font-black text-sm text-[#f97316] leading-tight">Servicios Jiret G&amp;B</p>
-          <p className="text-[9px] text-gray-400 uppercase tracking-widest mt-1">Ajustes Generales</p>
+    <div className="min-h-screen bg-gray-100 pb-12">
+      {/* Header Configuración */}
+      <nav className="bg-black text-white px-6 py-4 shadow-xl sticky top-0 z-40 border-b-4 border-orange-500 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+           <Settings2 size={24} className="text-orange-500"/>
+           <span className="font-black text-lg uppercase tracking-widest">Configuración Maestra</span>
         </div>
-        <nav className="flex-1 py-4">
-          {groups.map(group => (
-            <div key={group} className="mb-4">
-              <p className="px-6 pb-2 text-[8px] font-black uppercase tracking-[2px] text-gray-600">{group}</p>
-              {NAV_CONFIG.filter(n => n.group === group).map(({ id, label, icon: Icon }) => (
-                <button key={id} onClick={() => setSec(id)} className={`w-full flex items-center gap-3 px-6 py-3 text-left transition-all text-xs font-black uppercase tracking-wider ${sec === id ? 'bg-[#f97316] text-white shadow-lg shadow-[#f97316]/20 border-r-4 border-white' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-                  <Icon size={16} className="flex-shrink-0" /><span className="truncate">{label}</span>
-                </button>
-              ))}
+        <button onClick={onBack} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-gray-700 transition-colors"><ArrowLeft size={14}/> Volver al Panel</button>
+      </nav>
+
+      <div className="max-w-4xl mx-auto space-y-8 pt-8 px-6 animate-in fade-in">
+        
+        {/* Accesos Directos Contables */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-black uppercase text-black mb-4 flex items-center gap-3 border-b pb-3"><ArrowRightLeft className="text-teal-500"/> Contabilidad</h2>
+          <button onClick={() => alert('Dirígete al Panel Contable en el inicio para acceder al Libro Diario.')} className="px-6 py-3 rounded-2xl border-2 border-teal-200 bg-teal-50 text-teal-700 font-black text-[10px] uppercase hover:bg-teal-100 flex items-center gap-2 transition-all shadow-sm">
+            <ArrowRightLeft size={16}/> Libro Diario — Asientos Contables
+          </button>
+        </div>
+
+        {/* DATOS DE EMPRESA */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-black uppercase text-black mb-4 flex items-center gap-3 border-b pb-3"><FileText className="text-orange-500"/> Datos de la Empresa</h2>
+          <p className="text-xs font-bold text-gray-500 mb-4">Estos datos aparecerán en el encabezado de todos los reportes e impresiones.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="text-[9px] font-black text-gray-500 uppercase block mb-1">Razón Social *</label>
+              <input type="text" defaultValue={settings.empresaRazonSocial||'SERVICIOS JIRET G&B, C.A.'} onBlur={async e=>{ await setDoc(doc(db, 'settings','general'),{empresaRazonSocial:e.target.value.trim().toUpperCase()},{merge:true}); }} className="w-full border-2 border-gray-200 rounded-xl p-3 text-xs font-bold uppercase outline-none focus:border-orange-400" placeholder="RAZÓN SOCIAL COMPLETA"/>
             </div>
-          ))}
-        </nav>
-        <div className="p-4 border-t border-white/5">
-          <button onClick={onBack} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#f97316] transition-colors"><ArrowLeft size={14}/> Volver al Panel</button>
+            <div>
+              <label className="text-[9px] font-black text-gray-500 uppercase block mb-1">RIF *</label>
+              <input type="text" defaultValue={settings.empresaRif||'J-412309374'} onBlur={async e=>{ await setDoc(doc(db, 'settings','general'),{empresaRif:e.target.value.trim().toUpperCase()},{merge:true}); }} className="w-full border-2 border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-orange-400" placeholder="J-XXXXXXXXX"/>
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-500 uppercase block mb-1">Teléfono</label>
+              <input type="text" defaultValue={settings.empresaTelefono||''} onBlur={async e=>{ await setDoc(doc(db, 'settings','general'),{empresaTelefono:e.target.value.trim()},{merge:true}); }} className="w-full border-2 border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-orange-400" placeholder="0261-0000000"/>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-[9px] font-black text-gray-500 uppercase block mb-1">Dirección Fiscal</label>
+              <input type="text" defaultValue={settings.empresaDireccion||''} onBlur={async e=>{ await setDoc(doc(db, 'settings','general'),{empresaDireccion:e.target.value.trim().toUpperCase()},{merge:true}); }} className="w-full border-2 border-gray-200 rounded-xl p-3 text-xs font-bold uppercase outline-none focus:border-orange-400" placeholder="DIRECCIÓN COMPLETA"/>
+            </div>
+          </div>
+          <p className="text-[9px] text-gray-400 font-bold mt-3">Los campos se guardan al hacer clic fuera (blur).</p>
         </div>
-      </aside>
-      
-      {/* Área Principal de Configuración */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#f3f4f6]">
-        <header className="bg-white border-b border-gray-100 px-8 h-16 flex items-center justify-between flex-shrink-0 shadow-sm">
-          <div>
-            <h1 className="font-black text-black text-sm uppercase tracking-wide">{curNav?.label}</h1>
-            <p className="text-[9px] text-gray-400 font-medium uppercase tracking-widest">Configuración <ChevronRight size={8} className="inline"/> {curNav?.group}</p>
+
+        {/* Configuración de Correos */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-black uppercase text-black mb-4 flex items-center gap-3 border-b pb-3"><Mail className="text-blue-500"/> Configuración de Correos — Notificaciones</h2>
+          <p className="text-xs font-bold text-gray-500 mb-4">Configure los correos a los que se enviarán notificaciones de requisiciones y órdenes de compra.</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[9px] font-black text-gray-500 uppercase block mb-1">📧 Correo Principal — Procura</label>
+                <input type="email" defaultValue={settings.emailProcura||''} onBlur={async e=>{ await setDoc(doc(db, 'settings','general'),{emailProcura:e.target.value.trim()},{merge:true}); }} className="w-full border-2 border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-400" placeholder="procura@empresa.com"/>
+              </div>
+              <div>
+                <label className="text-[9px] font-black text-gray-500 uppercase block mb-1">📧 Correo Almacén</label>
+                <input type="email" defaultValue={settings.emailAlmacen||''} onBlur={async e=>{ await setDoc(doc(db, 'settings','general'),{emailAlmacen:e.target.value.trim()},{merge:true}); }} className="w-full border-2 border-gray-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-400" placeholder="almacen@empresa.com"/>
+              </div>
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-500 uppercase block mb-2">Lista de Contactos adicionales (aparecen en dropdown al enviar OC)</label>
+              <div className="space-y-1 mb-2">
+                {(settings.emailContactos||[]).map((c,i) => (
+                  <div key={i} className="flex gap-2 items-center bg-gray-50 border border-gray-200 rounded-xl p-1.5">
+                    <input type="text" defaultValue={c.nombre} onBlur={async e=>{const nl=(settings.emailContactos||[]).map((x,j)=>j===i?{...x,nombre:e.target.value.trim()}:x);await setDoc(doc(db, 'settings','general'),{emailContactos:nl},{merge:true});}} className="flex-1 text-xs font-bold bg-transparent outline-none border-b border-transparent focus:border-blue-400 px-1" placeholder="Nombre"/>
+                    <input type="email" defaultValue={c.email} onBlur={async e=>{const nl=(settings.emailContactos||[]).map((x,j)=>j===i?{...x,email:e.target.value.trim()}:x);await setDoc(doc(db, 'settings','general'),{emailContactos:nl},{merge:true});}} className="flex-1 text-xs text-gray-600 bg-transparent outline-none border-b border-transparent focus:border-blue-400 px-1" placeholder="email@empresa.com"/>
+                    <button onClick={async()=>{const nl=(settings.emailContactos||[]).filter((_,j)=>j!==i);await setDoc(doc(db, 'settings','general'),{emailContactos:nl},{merge:true});}} className="p-1 text-red-400 hover:text-red-600 flex-shrink-0"><Trash2 size={13}/></button>
+                  </div>
+                ))}
+                {(settings.emailContactos||[]).length===0 && <p className="text-[9px] text-gray-400 font-bold italic">Sin contactos agregados aún.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input type="text" id="cfgContactoNombre" className="flex-1 border-2 border-gray-200 rounded-xl p-2 text-xs font-bold outline-none focus:border-blue-400" placeholder="Nombre (ej: Gerencia)"/>
+                <input type="email" id="cfgContactoEmail" className="flex-1 border-2 border-gray-200 rounded-xl p-2 text-xs font-bold outline-none focus:border-blue-400" placeholder="email@empresa.com"/>
+                <button onClick={async()=>{ const n=document.getElementById('cfgContactoNombre')?.value?.trim(); const e=document.getElementById('cfgContactoEmail')?.value?.trim(); if(!n||!e)return; const nl=[...(settings.emailContactos||[]),{nombre:n,email:e}]; await setDoc(doc(db, 'settings','general'),{emailContactos:nl},{merge:true}); document.getElementById('cfgContactoNombre').value=''; document.getElementById('cfgContactoEmail').value=''; }} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase hover:bg-blue-700 flex items-center gap-1 whitespace-nowrap"><Plus size={13}/> Agregar</button>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-             <button onClick={() => setAdminUnlocked(false)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Lock size={18}/></button>
+        </div>
+
+        {/* Fondo de Pantalla */}
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-black uppercase text-black mb-6 flex items-center gap-3 border-b pb-4"><Settings2 className="text-gray-400"/> Configuración del Sistema</h2>
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-black uppercase text-black mb-2">Fondo de Pantalla de Inicio</h3>
+              <p className="text-xs text-gray-500 font-bold mb-4">Sube una imagen para personalizar el fondo de la pantalla de inicio de sesión.</p>
+              <input type="file" accept="image/*" onChange={handleBgUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-gray-100 file:text-black hover:file:bg-gray-200" />
+              {settings.loginBg && <img src={settings.loginBg} alt="Background Preview" className="mt-4 rounded-xl border border-gray-200 max-h-48 object-cover shadow-sm" />}
+            </div>
           </div>
-        </header>
-        <main className="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto w-full">
-          {renderView()}
-        </main>
+        </div>
+
+        {/* GESTIÓN DE USUARIOS */}
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-black uppercase text-black mb-6 flex items-center gap-3 border-b pb-4"><Users className="text-orange-500"/> Gestión de Usuarios</h2>
+          <form onSubmit={handleSaveUser} className="space-y-4 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+            <h3 className="text-sm font-black uppercase text-black mb-4">{editingUserId ? 'Modificar Usuario' : 'Nuevo Usuario'}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Usuario (ID)</label><input type="text" disabled={!!editingUserId} required value={newUserForm.username} onChange={e=>setNewUserForm({...newUserForm, username: e.target.value.toLowerCase().trim()})} className="w-full border-2 border-gray-200 rounded-xl p-3 font-black text-xs outline-none focus:border-orange-500" /></div>
+              <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Contraseña</label><input type="text" required value={newUserForm.password} onChange={e=>setNewUserForm({...newUserForm, password: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3 font-black text-xs outline-none focus:border-orange-500" /></div>
+              <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Nombre Completo</label><input type="text" required value={newUserForm.name} onChange={e=>setNewUserForm({...newUserForm, name: e.target.value.toUpperCase()})} className="w-full border-2 border-gray-200 rounded-xl p-3 font-black text-xs uppercase outline-none focus:border-orange-500" /></div>
+              <div><label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">Rol / Cargo</label><input type="text" value={newUserForm.role} onChange={e=>setNewUserForm({...newUserForm, role: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3 font-black text-xs uppercase outline-none focus:border-orange-500" /></div>
+            </div>
+            
+            <div className="mt-4">
+              <label className="text-[10px] font-bold text-gray-500 uppercase block mb-3">Permisos de Módulos y Sub-módulos</label>
+              <div className="space-y-3">
+                {[
+                  { key:'ventas', label:'Ventas y Facturación', icon:'👥', subs:[ {key:'ventas_ops', label:'OPs / Requisiciones'}, {key:'ventas_facturacion', label:'Facturación'}, {key:'ventas_directorio', label:'Directorio de Clientes'} ]},
+                  { key:'produccion', label:'Producción Planta', icon:'🏭', subs:[ {key:'produccion_proyeccion', label:'Proyección MP'}, {key:'produccion_ordenes', label:'Órdenes de Compra'}, {key:'produccion_activa', label:'Producción Activa'}, {key:'produccion_historial', label:'Historial / Reportes'} ]},
+                  { key:'formulas', label:'Fórmulas / Recetas', icon:'🧪', subs:[] },
+                  { key:'inventario', label:'Control Inventario', icon:'📦', subs:[ {key:'inventario_solicitudes', label:'Solicitudes de Planta'}, {key:'inventario_catalogo', label:'Inv. General'}, {key:'inventario_movimientos', label:'Entradas / Salidas'}, {key:'inventario_kardex', label:'Kardex y Reportes'} ]},
+                  { key:'costos', label:'Costos / Reportes Financieros', icon:'💰', subs:[ {key:'costos_operativos', label:'Costos Operativos'}, {key:'costos_reportes', label:'Reportes Financieros / Estado de Resultado'} ]},
+                  { key:'banco', label:'Bancos y Tesorería', icon:'🏦', subs:[] },
+                  { key:'contabilidad', label:'Contabilidad General', icon:'📊', subs:[] },
+                  { key:'configuracion', label:'Configuración', icon:'⚙️', subs:[] },
+                ].map(mod => (
+                  <div key={mod.key} className="border-2 border-gray-200 rounded-xl overflow-hidden">
+                    <label className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all ${newUserForm.permissions[mod.key] ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                      <input type="checkbox" checked={!!newUserForm.permissions[mod.key]} onChange={e=>{
+                        const checked = e.target.checked;
+                        const newPerms = {...newUserForm.permissions, [mod.key]: checked};
+                        if (!checked) mod.subs.forEach(s=>{ newPerms[s.key]=false; });
+                        setNewUserForm({...newUserForm, permissions: newPerms});
+                      }} className="w-4 h-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded" />
+                      <span className="text-sm">{mod.icon}</span>
+                      <span className="text-xs font-black uppercase text-gray-800">{mod.label}</span>
+                      {newUserForm.permissions[mod.key] && mod.subs.length > 0 && (
+                        <span className="ml-auto text-[9px] font-bold text-orange-600">▼ Configurar sub-módulos</span>
+                      )}
+                    </label>
+                    {newUserForm.permissions[mod.key] && mod.subs.length > 0 && (
+                      <div className="border-t border-gray-200 px-4 py-3 bg-white grid grid-cols-2 gap-2">
+                        {mod.subs.map(sub => (
+                          <label key={sub.key} className="flex items-center gap-2 cursor-pointer hover:bg-orange-50 px-3 py-2 rounded-lg border border-gray-100 transition-all">
+                            <input type="checkbox" checked={!!newUserForm.permissions[sub.key]} onChange={e=>setNewUserForm({...newUserForm, permissions:{...newUserForm.permissions,[sub.key]:e.target.checked}})} className="w-3.5 h-3.5 text-orange-500 border-gray-300 rounded" />
+                            <span className="text-[10px] font-bold text-gray-600 uppercase">{sub.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end pt-4"><button type="submit" className="bg-black text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-gray-800 transition-all flex items-center gap-2"><UserPlus size={16}/> GUARDAR USUARIO</button></div>
+          </form>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left whitespace-nowrap text-sm">
+              <thead className="bg-gray-100 border-b-2 border-gray-200">
+                <tr className="uppercase font-black text-[10px] text-gray-500 tracking-widest">
+                  <th className="py-3 px-4">Usuario / Nombre</th>
+                  <th className="py-3 px-4">Rol</th>
+                  <th className="py-3 px-4">Permisos</th>
+                  <th className="py-3 px-4 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(systemUsers || []).map(u => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="py-3 px-4 font-black">@{u.username}<br/><span className="text-[10px] font-bold text-gray-500">{u.name}</span></td>
+                    <td className="py-3 px-4"><span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${u.role==='Master'?'bg-red-100 text-red-700':u.role==='Planta'?'bg-blue-100 text-blue-700':'bg-gray-200 text-gray-700'}`}>{u.role}</span></td>
+                    <td className="py-3 px-4">
+                      {u.role === 'Master' ? ( <span className="text-[10px] font-bold text-gray-500">Acceso Total</span> ) : (
+                        <div className="flex gap-1 flex-wrap w-48">
+                          {Object.keys(u.permissions||{}).filter(k=>u.permissions[k] && !k.includes('_')).slice(0,3).map(k=>(
+                            <span key={k} className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[9px] uppercase font-bold">{k}</span>
+                          ))}
+                          {Object.keys(u.permissions||{}).filter(k=>u.permissions[k] && !k.includes('_')).length>3 && <span className="text-[10px] text-gray-400">...</span>}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex gap-2 justify-center">
+                        <button onClick={()=>startEditUser(u)} className="p-2 bg-gray-100 text-gray-500 rounded-lg hover:bg-orange-500 hover:text-white transition-all"><Settings size={14}/></button>
+                        {u.username!=='admin' && <button onClick={()=>handleDeleteUser(u.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all"><Trash2 size={14}/></button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// PANTALLA SELECTOR DE ÁREAS (PRINCIPAL)
+// ============================================================================
+function MainSelector({ onSelect }) {
+  return (
+    <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-6">
+      <div className="flex flex-col md:flex-row gap-8 max-w-5xl w-full">
+        <div onClick={() => onSelect('admin_dash')} className="flex-1 bg-[#0a0a0a] rounded-[2.5rem] p-12 cursor-pointer border-l-8 border-[#f97316] shadow-2xl hover:-translate-y-2 hover:shadow-[#f97316]/20 transition-all duration-300 group text-center">
+          <div className="w-28 h-28 bg-[#1a1a1a] rounded-full flex items-center justify-center mb-8 mx-auto group-hover:scale-110 transition-transform duration-500"><Briefcase size={48} className="text-[#f97316]"/></div>
+          <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-4">Área Administrativa</h2>
+          <p className="text-gray-400 text-sm font-medium">Gestión de Facturación, Control de Inventario Multimoneda y Bancos.</p>
+        </div>
+        <div onClick={() => onSelect('cont_dash')} className="flex-1 bg-white rounded-[2.5rem] p-12 cursor-pointer border-l-8 border-[#3b82f6] shadow-2xl hover:-translate-y-2 hover:shadow-[#3b82f6]/20 transition-all duration-300 group text-center">
+          <div className="w-28 h-28 bg-blue-50 rounded-full flex items-center justify-center mb-8 mx-auto group-hover:scale-110 transition-transform duration-500"><Calculator size={48} className="text-[#3b82f6]"/></div>
+          <h2 className="text-2xl font-black text-black uppercase tracking-widest mb-4">Área Contable</h2>
+          <p className="text-gray-500 text-sm font-medium">Mantenimiento de Plan de Cuentas Central, Asientos de Libro Diario y Balances.</p>
+        </div>
       </div>
     </div>
   );
 }
 
 // ============================================================================
-// MÓDULO BANCO (DASHBOARD/CUENTAS/MOV/TASAS)
+// DASHBOARD ADMINISTRATIVO
+// ============================================================================
+function AdminDashboard({ onSelectModule, onBack }) {
+  const modAdmin = [
+    { id: 'facturacion', name: 'Ventas y Facturación', icon: Receipt, dark: true, border: 'border-[#f97316]', text: 'text-[#f97316]', desc: 'Directorio, OP y Facturación' },
+    { id: 'inventario', name: 'Control Inventario', icon: Package, dark: true, border: 'border-[#f97316]', text: 'text-[#f97316]', desc: 'Catálogo, Movimientos y Kardex' },
+    { id: 'banco', name: 'Bancos y Tesorería', icon: Building2, dark: false, border: 'border-orange-400', text: 'text-orange-400', desc: 'Cuentas, Vales y Liquidez' },
+    { id: 'reportes', name: 'Reportes Financieros', icon: BarChart3, dark: false, border: 'border-blue-500', text: 'text-blue-500', desc: 'Dashboard de Rentabilidad' },
+    { id: 'nomina', name: 'Nómina', icon: Users, dark: false, border: 'border-gray-400', text: 'text-gray-400', desc: 'Personal y Comisiones' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#f3f4f6] flex flex-col">
+      <header className="bg-black px-6 py-4 flex items-center justify-between border-b-4 border-[#f97316]">
+        <div className="flex items-center gap-10">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onBack()}><Blocks className="text-white" size={24}/><span className="text-white font-black text-xl tracking-tighter">Supply <span className="text-[#f97316]">G&B</span></span></div>
+          <nav className="hidden md:flex gap-4">
+            <button onClick={() => onBack()} className="bg-[#f97316] text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-2"><Home size={14}/> Inicio</button>
+          </nav>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-right hidden sm:block"><p className="text-[#f97316] text-[9px] font-black uppercase">Master</p><p className="text-white text-[11px] font-black uppercase">Administrador General</p></div>
+          <div className="flex items-center gap-3 border-l border-gray-800 pl-6">
+            <button onClick={() => onSelectModule('configuracion')} className="p-3 bg-gray-900 text-gray-400 rounded-xl hover:text-white hover:bg-gray-800 transition-all border border-gray-800"><Settings size={16}/></button>
+            <button onClick={() => window.location.reload()} className="p-3 border border-red-900/40 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"><LogOut size={16}/></button>
+          </div>
+        </div>
+      </header>
+      <div className="max-w-6xl mx-auto w-full p-10 flex-1">
+        <div className="text-center mb-12"><h2 className="text-4xl font-black text-black uppercase tracking-[0.2em]">Panel Principal ERP</h2><div className="w-20 h-1.5 bg-[#f97316] mx-auto mt-4 rounded-full"></div></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {modAdmin.map(m => (
+            <button key={m.id} onClick={() => onSelectModule(m.id)} className={`${m.dark ? 'bg-black' : 'bg-white'} rounded-[2.5rem] p-8 text-left border-l-[8px] ${m.border} shadow-xl hover:-translate-y-2 transition-all duration-300 group flex flex-col h-48`}>
+              <m.icon size={36} className={`${m.text} mb-4 group-hover:scale-110 transition-transform`} strokeWidth={2.5}/>
+              <h3 className={`font-black text-sm uppercase tracking-wide mb-2 ${m.dark ? 'text-white' : 'text-black'}`}>{m.name}</h3>
+              <p className={`text-[10px] font-medium leading-relaxed flex-1 ${m.dark ? 'text-gray-400' : 'text-gray-500'}`}>{m.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// DASHBOARD CONTABLE
+// ============================================================================
+function ContableDashboard({ onSelectModule, onBack }) {
+  return (
+    <div className="min-h-screen bg-[#f3f4f6] flex flex-col">
+      <header className="bg-black px-6 py-4 flex items-center justify-between border-b-4 border-[#3b82f6]">
+        <div className="flex items-center gap-10">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onBack()}><Blocks className="text-[#3b82f6]" size={24}/><span className="text-white font-black text-xl tracking-tighter">Supply <span className="text-[#3b82f6]">G&B</span></span></div>
+          <nav className="hidden md:flex gap-4">
+            <button onClick={() => onBack()} className="bg-[#3b82f6] text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase flex items-center gap-2"><Home size={14}/> Contable</button>
+          </nav>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-right hidden sm:block"><p className="text-[#3b82f6] text-[9px] font-black uppercase">Master</p><p className="text-white text-[11px] font-black uppercase">Contador General</p></div>
+          <div className="flex items-center gap-3 border-l border-gray-800 pl-6">
+            <button onClick={() => window.location.reload()} className="p-3 border border-red-900/40 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"><LogOut size={16}/></button>
+          </div>
+        </div>
+      </header>
+      <div className="max-w-5xl mx-auto w-full p-10 flex-1">
+        <div className="text-center mb-12"><h2 className="text-4xl font-black text-black uppercase tracking-[0.2em]">Área Contable y Fiscal</h2><div className="w-20 h-1.5 bg-[#3b82f6] mx-auto mt-4 rounded-full"></div></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[
+            { id: 'contabilidad', name: 'Plan de Cuentas (PUC)', icon: BookOpen, dark: false, border: 'border-[#3b82f6]', text: 'text-[#3b82f6]', desc: 'Estructura del árbol contable, importación y catalogación.' },
+            { id: 'asientos', name: 'Asientos de Libro Diario', icon: FileText, dark: false, border: 'border-[#f97316]', text: 'text-[#f97316]', desc: 'Registro de operaciones manuales y comprobantes contables.' },
+            { id: 'impuestos', name: 'Gestión de Impuestos', icon: Calculator, dark: true, border: 'border-red-500', text: 'text-red-500', desc: 'Retenciones IVA, ISLR y libros de compra/venta.' },
+            { id: 'nacionalizacion', name: 'Nacionalización', icon: Globe, dark: true, border: 'border-emerald-500', text: 'text-emerald-500', desc: 'Estructura de costos de importaciones.' }
+          ].map(m => (
+            <button key={m.id} onClick={() => onSelectModule(m.id)} className={`${m.dark ? 'bg-black' : 'bg-white'} rounded-[2.5rem] p-10 text-left border-l-[8px] ${m.border} shadow-xl hover:-translate-y-2 transition-all duration-300 group flex flex-col h-56`}>
+              <m.icon size={40} className={`${m.text} mb-4 group-hover:scale-110 transition-transform`} strokeWidth={2}/>
+              <h3 className={`font-black text-lg uppercase tracking-wide mb-2 ${m.dark ? 'text-white' : 'text-black'}`}>{m.name}</h3>
+              <p className={`text-xs font-medium leading-relaxed flex-1 ${m.dark ? 'text-gray-400' : 'text-gray-500'}`}>{m.desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// APP ROOT (ESTADO GLOBAL Y ENRUTADOR)
+// ============================================================================
+export default function App() {
+  const [view, setView] = useState('login'); 
+  const [fbUser, setFbUser] = useState(null);
+  const [appUser, setAppUser] = useState(null);
+  const [settings, setSettings] = useState({});
+  const [systemUsers, setSystemUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    signInAnonymously(auth).catch(console.error);
+    const unsub = onAuthStateChanged(auth, u => {
+      setFbUser(u);
+      if (u) {
+        setLoading(false);
+        // Suscripción Global a Configuraciones
+        onSnapshot(doc(db, 'settings', 'general'), d => {
+          if (d.exists()) setSettings(d.data());
+        });
+        // Suscripción Global a Usuarios
+        onSnapshot(collection(db, 'users'), s => {
+          setSystemUsers(s.docs.map(x => ({id: x.id, ...x.data()})));
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  if (loading) return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+      <div className="w-16 h-16 border-4 border-[#f97316] border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p className="text-[#f97316] font-black uppercase text-xs tracking-widest">Iniciando Core ERP...</p>
+    </div>
+  );
+
+  return (
+    <ErrorBoundary>
+      {view === 'login' && <LoginScreen onLogin={(u) => { setAppUser(u); setView('selector'); }} settings={settings} systemUsers={systemUsers} />}
+      {view === 'selector' && <MainSelector onSelect={setView} />}
+      
+      {view === 'admin_dash' && <AdminDashboard onSelectModule={setView} onBack={() => setView('selector')} />}
+      {view === 'cont_dash' && <ContableDashboard onSelectModule={setView} onBack={() => setView('selector')} />}
+
+      {/* MÓDULOS RESTAURADOS COMPLETOS DE LA ETAPA ANTERIOR */}
+      {view === 'banco' && <BancoApp fbUser={fbUser} onBack={() => setView('admin_dash')} />}
+      {view === 'contabilidad' && <ContabilidadApp fbUser={fbUser} onBack={() => setView('cont_dash')} />}
+      
+      {/* NUEVO MÓDULO DE CONFIGURACIÓN C/ BACKGROUND */}
+      {view === 'configuracion' && <ConfiguracionApp settings={settings} systemUsers={systemUsers} onBack={() => setView('admin_dash')} />}
+
+      {/* Constructores Genéricos */}
+      {['facturacion', 'inventario', 'nomina', 'reportes', 'asientos', 'impuestos', 'nacionalizacion'].includes(view) && (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0a] p-6">
+          <div className="bg-white p-10 rounded-[3rem] shadow-2xl text-center border-t-8 border-[#f97316] max-w-md w-full">
+            <div className="w-20 h-20 bg-gray-100 rounded-[2rem] flex items-center justify-center mx-auto mb-6"><Blocks size={40} className="text-gray-400" /></div>
+            <h2 className="text-2xl font-black text-black uppercase mb-2">Módulo en Desarrollo</h2>
+            <p className="text-gray-500 text-sm font-medium mb-8">El entorno de <span className="font-black text-[#f97316] uppercase">{view}</span> está actualmente en fase de codificación.</p>
+            <button onClick={() => setView(view === 'asientos' || view === 'impuestos' || view === 'nacionalizacion' ? 'cont_dash' : 'admin_dash')} className="bg-black w-full text-white px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-[#f97316] transition-all shadow-lg"><ArrowLeft size={16} className="inline mr-2" /> Volver al Dashboard</button>
+          </div>
+        </div>
+      )}
+    </ErrorBoundary>
+  );
+}
+
+
+// ============================================================================
+// MÓDULO DE BANCO COMPLETO Y FUNCIONAL
 // ============================================================================
 function DashboardBanco({movimientos,vales,cuentas,tasas}) {
   const th = tasas.find(t=>t.modulo==='Banco' || t.modulo==='Todos')?.tasaRef || tasas[0]?.tasaRef || 39.47;
@@ -581,23 +719,9 @@ function CuentasBanco({cuentas, planCuentas}) {
 }
 
 function Tasas({tasas}) {
-  const [modal,setModal]=useState(false); 
-  const [form,setForm]=useState({fecha:today(), modulo:'Todos', moneda:'USD', tasaRef:'', fuente:'Oficial / BCV'}); 
-  const [busy,setBusy]=useState(false);
-  
-  const save=async()=>{
-    if(!form.tasaRef) return alert('Ingrese la tasa referencial'); 
-    setBusy(true); 
-    try{
-      const id=gid(); await setDoc(dref('banco_tasas',id),{...form, tasaRef:Number(form.tasaRef), id, ts:serverTimestamp()}); 
-      setModal(false); setForm({fecha:today(), modulo:'Todos', moneda:'USD', tasaRef:'', fuente:'Oficial / BCV'});
-    }finally{setBusy(false);}
-  };
-  
-  const tGlobal = tasas.find(t=>t.modulo==='Todos')?.tasaRef || 0; 
-  const tBanco = tasas.find(t=>t.modulo==='Banco')?.tasaRef || tGlobal; 
-  const ld=[...tasas].reverse().slice(-10).map(t=>t.tasaRef);
-
+  const [modal,setModal]=useState(false); const [form,setForm]=useState({fecha:today(), modulo:'Todos', moneda:'USD', tasaRef:'', fuente:'Oficial / BCV'}); const [busy,setBusy]=useState(false);
+  const save=async()=>{if(!form.tasaRef) return alert('Ingrese la tasa referencial'); setBusy(true); try{const id=gid(); await setDoc(dref('banco_tasas',id),{...form, tasaRef:Number(form.tasaRef), id, ts:serverTimestamp()}); setModal(false); setForm({fecha:today(), modulo:'Todos', moneda:'USD', tasaRef:'', fuente:'Oficial / BCV'});}finally{setBusy(false);}};
+  const tGlobal = tasas.find(t=>t.modulo==='Todos')?.tasaRef || 0; const tBanco = tasas.find(t=>t.modulo==='Banco')?.tasaRef || tGlobal; const ld=[...tasas].reverse().slice(-10).map(t=>t.tasaRef);
   return (
     <div>
       <div className="grid grid-cols-3 gap-4 mb-6"><KPI label="Tasa Referencial Global" value={`${tGlobal} Bs./$`} sub="Aplica si el módulo no tiene tasa propia" accent="gold" Icon={TrendingUp}/><KPI label="Tasa Módulo Banco" value={`${tBanco} Bs./$`} accent="blue" Icon={Landmark}/><KPI label="Monedas Aceptadas" value={`USD / EUR`} sub="Configuración estricta" accent="green" Icon={DollarSign}/></div>
@@ -605,15 +729,7 @@ function Tasas({tasas}) {
         <Card title="Histórico de Tasas por Módulo" action={<Bg onClick={()=>setModal(true)} sm><Plus size={12}/>Registrar Tasa</Bg>}><div className="overflow-x-auto"><table className="w-full"><thead><tr><Th>Fecha</Th><Th>Módulo Aplicable</Th><Th>Moneda</Th><Th right>Tasa Ref.</Th><Th>Fuente</Th></tr></thead><tbody>{tasas.length===0&&<tr><td colSpan={5} className="text-center text-xs text-gray-400 py-8">Sin tasas</td></tr>}{tasas.map(t=><tr key={t.id} className="hover:bg-gray-50"><Td>{dd(t.fecha)}</Td><Td><Badge v={t.modulo==='Todos'?'gray':'blue'}>{t.modulo}</Badge></Td><Td><Pill usd={t.moneda==='USD'}>{t.moneda}</Pill></Td><Td right mono className="font-black text-black">{t.tasaRef}</Td><Td><span className="text-[10px] text-gray-500 uppercase">{t.fuente}</span></Td></tr>)}</tbody></table></div></Card>
         <Card title="Evolución (últimas 10 sesiones)"><LSvg data={ld} height={120}/></Card>
       </div>
-      <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Tasa de Cambio" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save}>{busy?'Guardando…':'Guardar'}</Bg></>}>
-        <div className="grid grid-cols-2 gap-4">
-          <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
-          <FG label="Moneda"><select className={inp} value={form.moneda} onChange={e=>setForm({...form,moneda:e.target.value})}><option>USD</option><option>EUR</option></select></FG>
-          <FG label="Tasa Referencial"><input type="number" step="0.01" className={inp} value={form.tasaRef} onChange={e=>setForm({...form,tasaRef:e.target.value})} placeholder="39.47"/></FG>
-          <FG label="Módulo Aplicable"><select className={inp} value={form.modulo} onChange={e=>setForm({...form,modulo:e.target.value})}><option>Todos</option><option>Banco</option><option>Facturación</option><option>Inventario</option><option>Contabilidad</option></select></FG>
-          <FG label="Fuente" full><input type="text" className={inp} value={form.fuente} onChange={e=>setForm({...form,fuente:e.target.value})} placeholder="Oficial / BCV / Libre" /></FG>
-        </div>
-      </Modal>
+      <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Tasa de Cambio" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save}>{busy?'Guardando…':'Guardar'}</Bg></>}><div className="grid grid-cols-2 gap-4"><FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG><FG label="Moneda"><select className={inp} value={form.moneda} onChange={e=>setForm({...form,moneda:e.target.value})}><option>USD</option><option>EUR</option></select></FG><FG label="Tasa Referencial"><input type="number" step="0.01" className={inp} value={form.tasaRef} onChange={e=>setForm({...form,tasaRef:e.target.value})} placeholder="39.47"/></FG><FG label="Módulo Aplicable"><select className={inp} value={form.modulo} onChange={e=>setForm({...form,modulo:e.target.value})}><option>Todos</option><option>Banco</option><option>Facturación</option><option>Inventario</option><option>Contabilidad</option></select></FG><FG label="Fuente" full><input type="text" className={inp} value={form.fuente} onChange={e=>setForm({...form,fuente:e.target.value})} placeholder="Oficial / BCV / Libre" /></FG></div></Modal>
     </div>
   );
 }
@@ -860,6 +976,7 @@ function ContabilidadApp({ fbUser, onBack }) {
       const lines = text.split('\n');
       setBusy(true);
       try {
+        const batch = writeBatch(db);
         for (const line of lines) {
           if (!line.trim()) continue;
           const parts = line.includes('\t') ? line.split('\t') : line.split(',');
@@ -877,13 +994,14 @@ function ContabilidadApp({ fbUser, onBack }) {
             if(code.startsWith('5')) tipo = 'Costo';
             if(code.startsWith('6') || code.startsWith('7')) tipo = 'Gasto';
 
-            await setDoc(dref('contabilidad_cuentas', id), {
+            batch.set(dref('contabilidad_cuentas', id), {
               codigo: code, nombre: name, tipo: tipo,
               naturaleza: (code.startsWith('1') || code.startsWith('5') || code.startsWith('6')) ? 'Deudora' : 'Acreedora',
               nivel: String(code.split('.').length), id, ts: serverTimestamp()
             });
           }
         }
+        await batch.commit();
         alert('Plan de cuentas importado exitosamente.');
       } catch (error) {
         alert('Hubo un error al procesar el archivo.');
@@ -958,63 +1076,5 @@ function ContabilidadApp({ fbUser, onBack }) {
         </main>
       </div>
     </div>
-  );
-}
-
-// ============================================================================
-// APP ROOT (ENRUTADOR PRINCIPAL)
-// ============================================================================
-export default function App() {
-  const [view, setView] = useState('login'); 
-  const [fbUser, setFbUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    signInAnonymously(auth).catch(console.error);
-    const unsub = onAuthStateChanged(auth, u => {
-      setFbUser(u);
-      if (u) setLoading(false);
-    });
-    return () => unsub();
-  }, []);
-
-  if (loading) return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center">
-      <div className="w-16 h-16 border-4 border-[#f97316] border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-[#f97316] font-black uppercase text-xs tracking-widest">Iniciando Core ERP...</p>
-    </div>
-  );
-
-  return (
-    <ErrorBoundary>
-      {/* 1. Login */}
-      {view === 'login' && <LoginScreen onLogin={() => setView('selector')} />}
-      
-      {/* 2. Selector Principal */}
-      {view === 'selector' && <MainSelector onSelect={setView} />}
-
-      {/* 3. Panel Administrativo */}
-      {view === 'admin_dash' && <AdminDashboard onSelectModule={(id) => setView(id)} onBack={() => setView('selector')} />}
-
-      {/* 4. Panel Contable */}
-      {view === 'cont_dash' && <ContableDashboard onSelectModule={(id) => setView(id)} onBack={() => setView('selector')} />}
-
-      {/* 5. Módulos Operativos */}
-      {view === 'banco' && <BancoApp fbUser={fbUser} onBack={() => setView('admin_dash')} />}
-      {view === 'contabilidad' && <ContabilidadApp fbUser={fbUser} onBack={() => setView('cont_dash')} />}
-      {view === 'configuracion' && <ConfiguracionApp onBack={() => setView('admin_dash')} />}
-
-      {/* 6. Módulos en Desarrollo */}
-      {['facturacion', 'inventario', 'nomina', 'reportes', 'asientos', 'impuestos', 'nacionalizacion'].includes(view) && (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a0a0a] p-6">
-          <div className="bg-white p-10 rounded-[3rem] shadow-2xl text-center border-t-8 border-[#f97316] max-w-md w-full">
-            <div className="w-20 h-20 bg-gray-100 rounded-[2rem] flex items-center justify-center mx-auto mb-6"><Blocks size={40} className="text-gray-400" /></div>
-            <h2 className="text-2xl font-black text-black uppercase mb-2">Módulo en Desarrollo</h2>
-            <p className="text-gray-500 text-sm font-medium mb-8">El entorno de <span className="font-black text-[#f97316] uppercase">{view}</span> está actualmente en fase de codificación.</p>
-            <button onClick={() => setView(view === 'asientos' || view === 'impuestos' || view === 'nacionalizacion' ? 'cont_dash' : 'admin_dash')} className="bg-black w-full text-white px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-[#f97316] transition-all shadow-lg"><ArrowLeft size={16} className="inline mr-2" /> Volver al Dashboard</button>
-          </div>
-        </div>
-      )}
-    </ErrorBoundary>
   );
 }
