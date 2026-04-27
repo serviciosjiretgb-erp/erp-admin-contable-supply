@@ -408,10 +408,22 @@ function AdminDash({ onSelectModule, onBack }) {
 }
 
 function ContDash({ onSelectModule, onBack }) {
-  const mods = [
-    { id: 'contabilidad', name: 'Plan de Cuentas', icon: BookOpen, color: '#3b82f6', desc: 'Estructura contable PUC, grupos y subcuentas' },
-    { id: 'asientos', name: 'Libro Diario', icon: FileText, color: '#f97316', desc: 'Asientos de diario y comprobantes' },
-    { id: 'balances', name: 'Balances & Reportes', icon: BarChart3, color: '#10b981', desc: 'Balance de comprobación y estado financiero' },
+  const grupos = [
+    {
+      titulo: 'Contabilidad General',
+      mods: [
+        { id: 'contabilidad', name: 'Plan de Cuentas', icon: BookOpen,       color: '#3b82f6', desc: 'PUC jerárquico, importar/exportar, edición' },
+        { id: 'asientos',    name: 'Libro Diario',     icon: FileText,        color: '#f97316', desc: 'Comprobantes automáticos y manuales Bs/USD' },
+        { id: 'balances',    name: 'Estados Financieros', icon: BarChart3,    color: '#10b981', desc: 'Balance Gral., E. Resultados, Comprobación, Mayor' },
+      ]
+    },
+    {
+      titulo: 'Fiscal & Tributario',
+      mods: [
+        { id: 'activos_fijos', name: 'Activos Fijos',   icon: Layers,         color: '#8b5cf6', desc: 'Registro, depreciación y bajas de activos' },
+        { id: 'fiscal',        name: 'IVA · IGTF · Retenciones', icon: Receipt, color: '#ef4444', desc: 'Libros de compras/ventas, retenciones, archivos TXT' },
+      ]
+    },
   ];
   return (
     <div className="min-h-screen flex flex-col" style={{ background: BG }}>
@@ -422,25 +434,30 @@ function ContDash({ onSelectModule, onBack }) {
         </div>
         <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"><LogOut size={13} /> Salir</button>
       </header>
-      <div className="flex-1 max-w-4xl mx-auto w-full p-10">
+      <div className="flex-1 max-w-5xl mx-auto w-full p-10">
         <div className="mb-10">
           <p className="text-[10px] text-slate-400 font-black uppercase tracking-[3px] mb-1">Panel Principal</p>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">Área Contable & Fiscal</h2>
         </div>
-        <div className="space-y-4">
-          {mods.map(mod => (
-            <button key={mod.id} onClick={() => onSelectModule(mod.id)} className="group w-full bg-white rounded-2xl p-7 text-left border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-5">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform" style={{ background: mod.color + '15' }}>
-                <mod.icon size={26} style={{ color: mod.color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-black text-slate-900 text-sm uppercase tracking-wide mb-1">{mod.name}</h3>
-                <p className="text-[11px] text-slate-400 font-medium">{mod.desc}</p>
-              </div>
-              <ChevronRight size={16} className="text-slate-300 group-hover:text-slate-500 transition-colors flex-shrink-0" />
-            </button>
-          ))}
-        </div>
+        {grupos.map(g=>(
+          <div key={g.titulo} className="mb-8">
+            <p className="text-[10px] font-black uppercase tracking-[2px] text-slate-400 mb-3 flex items-center gap-2"><span className="w-6 h-px bg-slate-300"/>{g.titulo}</p>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {g.mods.map(mod=>(
+                <button key={mod.id} onClick={()=>onSelectModule(mod.id)} className="group bg-white rounded-2xl p-6 text-left border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform" style={{background:mod.color+'15'}}>
+                    <mod.icon size={22} style={{color:mod.color}}/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-black text-slate-900 text-xs uppercase tracking-wide mb-1">{mod.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium leading-tight">{mod.desc}</p>
+                  </div>
+                  <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 flex-shrink-0"/>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2830,7 +2847,7 @@ function AsientosApp({ fbUser, onBack }) {
                 {['Comprobante','Mes','Fecha','Código','Cuenta de movimiento','T','Nro Doc.','Concepto','Tasa','Debe Bs','Haber Bs','Saldo Bs','Debe USD','Haber USD','Saldo USD'].map(h=>(
                   <th key={h} className="px-3 py-2.5 text-left font-black uppercase tracking-wider whitespace-nowrap text-[9px]" style={{color:'#94a3b8',borderBottom:'2px solid #1e293b'}}>{h}</th>
                 ))}
-              </thead>
+              </tr></thead>
               <tbody>
                 {filas.map((f,i)=>{
                   const isD = f.tipo==='D';
@@ -3070,16 +3087,592 @@ function AsientosApp({ fbUser, onBack }) {
   );
 }
 
-function BalancesApp({ onBack }) {
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{ background: BG }}>
-      <div className="bg-white rounded-3xl p-12 shadow-sm border border-slate-100 text-center max-w-md w-full">
-        <div className="w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-6"><BarChart3 size={36} className="text-emerald-500" /></div>
-        <h2 className="text-xl font-black text-slate-900 uppercase tracking-wide mb-2">Balances & Reportes</h2>
-        <p className="text-slate-500 text-sm font-medium mb-8 leading-relaxed">Balance de Comprobación, Estado de Resultados y Balance General — próxima versión.</p>
-        <button onClick={onBack} className="bg-slate-900 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-700 transition-colors flex items-center gap-2 mx-auto"><ArrowLeft size={14} /> Volver</button>
+// ============================================================================
+// ESTADOS FINANCIEROS — Balance, Resultados, Comprobación, Mayor
+// ============================================================================
+function BalancesApp({ fbUser, onBack }) {
+  const [sec, setSec] = useState('comprobacion');
+  const [cuentas,   setCuentas]   = useState([]);
+  const [asientos,  setAsientos]  = useState([]);
+  const [periodos,  setPeriodos]  = useState([]); // períodos cerrados
+
+  useEffect(()=>{
+    if(!fbUser) return;
+    const subs=[
+      onSnapshot(col('cont_cuentas'), s=>setCuentas(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('cont_asientos'), orderBy('fecha','desc')), s=>setAsientos(s.docs.map(d=>d.data()))),
+      onSnapshot(col('cont_periodos'), s=>setPeriodos(s.docs.map(d=>d.data()))),
+    ];
+    return()=>subs.forEach(u=>u());
+  },[fbUser]);
+
+  const tasaActiva = 39.50; // fallback
+
+  // Helpers
+  const getDebeBs  = l=>Number(l.debeBs ??l.debito ??0);
+  const getHaberBs = l=>Number(l.haberBs??l.credito??0);
+  const getDebeUSD = l=>Number(l.debeUSD ??0);
+  const getHaberUSD= l=>Number(l.haberUSD??0);
+
+  // Calcular saldo de una cuenta a partir de sus asientos
+  const saldoCuenta = (codigo, hastaFecha) => {
+    let dBs=0,hBs=0,dUSD=0,hUSD=0;
+    asientos.filter(a=>!hastaFecha||a.fecha<=hastaFecha).forEach(a=>{
+      (a.lineas||[]).forEach(l=>{
+        if((l.codigo||l.cuentaCodigo||'').startsWith(codigo)){
+          dBs+=getDebeBs(l); hBs+=getHaberBs(l);
+          dUSD+=getDebeUSD(l); hUSD+=getHaberUSD(l);
+        }
+      });
+    });
+    return {dBs,hBs,saldoBs:dBs-hBs,dUSD,hUSD,saldoUSD:dUSD-hUSD};
+  };
+
+  const grupoMap={'1':'ACTIVOS','2':'PASIVOS','3':'PATRIMONIO','4':'INGRESOS','5':'COSTOS','6':'GASTOS'};
+
+  // ── BALANCE DE COMPROBACIÓN ──────────────────────────────────────────────
+  const ComprobacionView = () => {
+    const [hasta, setHasta] = useState(today());
+    const [soloConMov, setSoloConMov] = useState(true);
+
+    const filas = [...cuentas]
+      .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
+      .map(c=>({...c, ...saldoCuenta(c.codigo, hasta)}))
+      .filter(c=>!soloConMov||(Math.abs(c.saldoBs)>0.001||Math.abs(c.saldoUSD)>0.001));
+
+    const totDeBs = filas.reduce((a,c)=>a+c.dBs,0);
+    const totHaBs = filas.reduce((a,c)=>a+c.hBs,0);
+    const totDeUSD= filas.reduce((a,c)=>a+c.dUSD,0);
+    const totHaUSD= filas.reduce((a,c)=>a+c.hUSD,0);
+
+    const exportar=()=>{
+      let h=`<html><head><meta charset="utf-8"><style>body{font-size:10px;font-family:Arial}th{background:#1e3a5f;color:#fff;border:1px solid #ccc;padding:4px 8px}td{border:1px solid #e2e8f0;padding:3px 8px}tr:nth-child(even) td{background:#f8fafc}</style></head><body>
+      <p style="font-size:13px;font-weight:bold">Balance de Comprobación — Servicios Jiret G&B, C.A.</p>
+      <p style="font-size:10px;color:#666">Al ${dd(hasta)} · ${filas.length} cuentas</p>
+      <table><thead><tr><th>Código</th><th>Cuenta</th><th>Grupo</th><th>Debe Bs</th><th>Haber Bs</th><th>Saldo Bs</th><th>Debe USD</th><th>Haber USD</th><th>Saldo USD</th></tr></thead><tbody>`;
+      filas.forEach(c=>{h+=`<tr><td style="font-family:monospace;color:#1e40af;font-weight:bold">${c.codigo}</td><td>${c.nombre}</td><td>${grupoMap[String(c.codigo).charAt(0)]||''}</td><td style="text-align:right">${c.dBs>0?fmt(c.dBs):''}</td><td style="text-align:right">${c.hBs>0?fmt(c.hBs):''}</td><td style="text-align:right;font-weight:bold;${c.saldoBs>=0?'color:#16a34a':'color:#dc2626'}">${fmt(c.saldoBs)}</td><td style="text-align:right">${c.dUSD>0?fmt(c.dUSD):''}</td><td style="text-align:right">${c.hUSD>0?fmt(c.hUSD):''}</td><td style="text-align:right;font-weight:bold">${fmt(c.saldoUSD)}</td></tr>`;});
+      h+=`<tr style="background:#0f172a"><td colspan="3" style="color:#94a3b8;font-weight:bold;padding:6px 8px">TOTALES</td><td style="text-align:right;color:#4ade80;font-weight:bold">Bs.${fmt(totDeBs)}</td><td style="text-align:right;color:#f87171;font-weight:bold">Bs.${fmt(totHaBs)}</td><td></td><td style="text-align:right;color:#4ade80;font-weight:bold">$${fmt(totDeUSD)}</td><td style="text-align:right;color:#f87171;font-weight:bold">$${fmt(totHaUSD)}</td><td></td></tr>`;
+      h+=`</tbody></table></body></html>`;
+      const blob=new Blob([h],{type:'application/vnd.ms-excel;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`balance_comprobacion_${hasta}.xls`;a.click();URL.revokeObjectURL(url);
+    };
+
+    return (
+      <Card title="Balance de Comprobación" subtitle="Saldos acumulados por cuenta contable"
+        action={<div className="flex gap-2 items-center">
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase cursor-pointer"><input type="checkbox" checked={soloConMov} onChange={e=>setSoloConMov(e.target.checked)} className="accent-blue-500"/>Solo con movimiento</label>
+          <FG label=""><input type="date" className={inp} value={hasta} onChange={e=>setHasta(e.target.value)}/></FG>
+          <button onClick={exportar} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><Download size={12}/> Excel</button>
+        </div>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead><tr style={{background:'#0f172a'}}>
+              {['Código','Cuenta de movimiento','Grupo','Debe Bs','Haber Bs','Saldo Bs','Debe USD','Haber USD','Saldo USD'].map(h=>(
+                <th key={h} className="px-3 py-2.5 font-black uppercase tracking-wide text-left whitespace-nowrap text-[9px]" style={{color:'#94a3b8'}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filas.length===0&&<tr><td colSpan={9}><EmptyState icon={Scale} title="Sin movimientos" desc="Registre asientos para ver el balance"/></td></tr>}
+              {filas.map((c,i)=>(
+                <tr key={c.id} className="hover:bg-blue-50/30 border-b border-slate-50">
+                  <td className="px-3 py-2 font-mono font-black text-blue-600">{c.codigo}</td>
+                  <td className="px-3 py-2 font-medium text-slate-800 max-w-[200px] truncate">{c.nombre}</td>
+                  <td className="px-3 py-2 text-[10px] text-slate-500 uppercase">{grupoMap[String(c.codigo).charAt(0)]||'—'}</td>
+                  <td className="px-3 py-2 font-mono text-emerald-600 text-right">{c.dBs>0?`Bs.${fmt(c.dBs)}`:''}</td>
+                  <td className="px-3 py-2 font-mono text-red-500 text-right">{c.hBs>0?`Bs.${fmt(c.hBs)}`:''}</td>
+                  <td className={`px-3 py-2 font-mono font-black text-right ${c.saldoBs>=0?'text-emerald-700':'text-red-600'}`}>Bs.{fmt(c.saldoBs)}</td>
+                  <td className="px-3 py-2 font-mono text-emerald-600 text-right">{c.dUSD>0?`$${fmt(c.dUSD)}`:''}</td>
+                  <td className="px-3 py-2 font-mono text-red-500 text-right">{c.hUSD>0?`$${fmt(c.hUSD)}`:''}</td>
+                  <td className={`px-3 py-2 font-mono font-black text-right ${c.saldoUSD>=0?'text-emerald-700':'text-red-600'}`}>${fmt(c.saldoUSD)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr style={{background:'#0f172a'}}>
+              <td colSpan={3} className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase">TOTALES</td>
+              <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right">Bs.{fmt(totDeBs)}</td>
+              <td className="px-3 py-3 font-mono font-black text-red-400 text-right">Bs.{fmt(totHaBs)}</td>
+              <td className="px-3 py-3 font-mono font-black text-white text-right">Bs.{fmt(totDeBs-totHaBs)}</td>
+              <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right">${fmt(totDeUSD)}</td>
+              <td className="px-3 py-3 font-mono font-black text-red-400 text-right">${fmt(totHaUSD)}</td>
+              <td className="px-3 py-3 font-mono font-black text-white text-right">${fmt(totDeUSD-totHaUSD)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </Card>
+    );
+  };
+
+  // ── BALANCE GENERAL ──────────────────────────────────────────────────────
+  const BalanceGeneralView = () => {
+    const [hasta, setHasta] = useState(today());
+    const activos   = cuentas.filter(c=>String(c.codigo).startsWith('1')).map(c=>({...c,...saldoCuenta(c.codigo,hasta)}));
+    const pasivos   = cuentas.filter(c=>String(c.codigo).startsWith('2')).map(c=>({...c,...saldoCuenta(c.codigo,hasta)}));
+    const patrimonio= cuentas.filter(c=>String(c.codigo).startsWith('3')).map(c=>({...c,...saldoCuenta(c.codigo,hasta)}));
+
+    const totActBs  = activos.reduce((a,c)=>a+c.saldoBs,0);
+    const totPasBs  = pasivos.reduce((a,c)=>a+Math.abs(c.saldoBs),0);
+    const totPatBs  = patrimonio.reduce((a,c)=>a+Math.abs(c.saldoBs),0);
+    const totActUSD = activos.reduce((a,c)=>a+c.saldoUSD,0);
+
+    const SeccionBG = ({titulo, items, colorBorder, totalBs, totalUSD})=>(
+      <div className="mb-5">
+        <div className="flex items-center justify-between px-5 py-3 rounded-xl mb-2" style={{background:`${colorBorder}15`,border:`1.5px solid ${colorBorder}40`}}>
+          <p className="font-black text-sm uppercase tracking-wide" style={{color:colorBorder}}>{titulo}</p>
+          <div className="text-right"><p className="font-mono font-black" style={{color:colorBorder}}>Bs. {fmt(Math.abs(totalBs))}</p><p className="text-[10px] text-slate-400">${fmt(Math.abs(totalUSD))}</p></div>
+        </div>
+        {items.filter(c=>Math.abs(c.saldoBs)>0.001).map(c=>(
+          <div key={c.id} className="flex justify-between py-1.5 px-5 text-xs hover:bg-slate-50 rounded">
+            <div className="flex items-center gap-2"><span className="font-mono text-blue-500 text-[10px]">{c.codigo}</span><span className="text-slate-700">{c.nombre}</span></div>
+            <div className="text-right"><span className="font-mono font-black text-slate-900">Bs. {fmt(Math.abs(c.saldoBs))}</span><span className="text-slate-400 ml-3">${fmt(Math.abs(c.saldoUSD))}</span></div>
+          </div>
+        ))}
       </div>
-    </div>
+    );
+
+    return (
+      <Card title="Balance General" subtitle={`Al ${dd(hasta)}`} action={<input type="date" className={inp} value={hasta} onChange={e=>setHasta(e.target.value)} style={{width:'140px'}}/>}>
+        <div className="grid lg:grid-cols-2 gap-8">
+          <div>
+            <SeccionBG titulo="ACTIVOS" items={activos} colorBorder="#10b981" totalBs={totActBs} totalUSD={totActUSD}/>
+          </div>
+          <div>
+            <SeccionBG titulo="PASIVOS" items={pasivos} colorBorder="#ef4444" totalBs={totPasBs} totalUSD={pasivos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)}/>
+            <SeccionBG titulo="PATRIMONIO" items={patrimonio} colorBorder="#8b5cf6" totalBs={totPatBs} totalUSD={patrimonio.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)}/>
+            <div className="flex items-center justify-between px-5 py-4 rounded-xl mt-3" style={{background:'#0f172a'}}>
+              <p className="font-black text-white uppercase tracking-wide">PASIVO + PATRIMONIO</p>
+              <div className="text-right"><p className="font-mono font-black text-orange-400">Bs. {fmt(totPasBs+totPatBs)}</p><p className="text-[10px] text-slate-400">${fmt(pasivos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)+patrimonio.reduce((a,c)=>a+Math.abs(c.saldoUSD),0))}</p></div>
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  // ── ESTADO DE RESULTADOS ─────────────────────────────────────────────────
+  const EstadoResultadosView = () => {
+    const [desde, setDesde] = useState(mesActual()+'-01');
+    const [hasta, setHasta] = useState(today());
+    const ingresos = cuentas.filter(c=>String(c.codigo).startsWith('4')).map(c=>({...c,...saldoCuenta(c.codigo,hasta)})).filter(c=>Math.abs(c.saldoBs)>0.001);
+    const costos   = cuentas.filter(c=>String(c.codigo).startsWith('5')).map(c=>({...c,...saldoCuenta(c.codigo,hasta)})).filter(c=>Math.abs(c.saldoBs)>0.001);
+    const gastos   = cuentas.filter(c=>String(c.codigo).startsWith('6')).map(c=>({...c,...saldoCuenta(c.codigo,hasta)})).filter(c=>Math.abs(c.saldoBs)>0.001);
+    const totIngBs = ingresos.reduce((a,c)=>a+Math.abs(c.saldoBs),0);
+    const totCosBs = costos.reduce((a,c)=>a+Math.abs(c.saldoBs),0);
+    const totGasBs = gastos.reduce((a,c)=>a+Math.abs(c.saldoBs),0);
+    const utilBrBs = totIngBs - totCosBs;
+    const utilNeBs = totIngBs - totCosBs - totGasBs;
+    const totIngUSD= ingresos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0);
+    const utilNeUSD= totIngUSD - costos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0) - gastos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0);
+
+    const SecER=({titulo,items,totalBs,totalUSD,color})=>(
+      <div className="mb-4">
+        <div className="flex justify-between px-4 py-2 rounded-lg mb-1" style={{background:color+'15'}}>
+          <p className="font-black text-xs uppercase tracking-wide" style={{color}}>{titulo}</p>
+          <div className="text-right"><span className="font-mono font-black text-xs" style={{color}}>Bs.{fmt(Math.abs(totalBs))}</span><span className="text-slate-400 text-[10px] ml-2">${fmt(Math.abs(totalUSD))}</span></div>
+        </div>
+        {items.map(c=><div key={c.id} className="flex justify-between py-1 px-6 text-xs hover:bg-slate-50 rounded">
+          <span className="text-slate-600">{c.nombre}</span>
+          <div><span className="font-mono text-slate-800">Bs.{fmt(Math.abs(c.saldoBs))}</span><span className="text-slate-400 ml-2">${fmt(Math.abs(c.saldoUSD))}</span></div>
+        </div>)}
+      </div>
+    );
+
+    return (
+      <Card title="Estado de Resultados (Ganancias y Pérdidas)" action={<div className="flex gap-2"><input type="date" className={inp} style={{width:'130px'}} value={desde} onChange={e=>setDesde(e.target.value)}/><input type="date" className={inp} style={{width:'130px'}} value={hasta} onChange={e=>setHasta(e.target.value)}/></div>}>
+        <div className="max-w-2xl mx-auto space-y-2">
+          <SecER titulo="INGRESOS" items={ingresos} totalBs={totIngBs} totalUSD={totIngUSD} color="#10b981"/>
+          <SecER titulo="COSTOS DE VENTAS" items={costos} totalBs={totCosBs} totalUSD={costos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)} color="#f59e0b"/>
+          <div className="flex justify-between px-4 py-3 rounded-xl border-2 border-blue-200 bg-blue-50">
+            <p className="font-black text-blue-800 uppercase text-xs">UTILIDAD BRUTA</p>
+            <div><span className={`font-mono font-black ${utilBrBs>=0?'text-emerald-700':'text-red-600'}`}>Bs.{fmt(utilBrBs)}</span></div>
+          </div>
+          <SecER titulo="GASTOS OPERATIVOS" items={gastos} totalBs={totGasBs} totalUSD={gastos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)} color="#ef4444"/>
+          <div className="flex justify-between px-4 py-4 rounded-xl" style={{background:'#0f172a'}}>
+            <p className="font-black text-white uppercase tracking-wide">UTILIDAD / PÉRDIDA NETA</p>
+            <div className="text-right"><p className={`font-mono font-black text-xl ${utilNeBs>=0?'text-emerald-400':'text-red-400'}`}>Bs.{fmt(utilNeBs)}</p><p className="text-slate-400 text-[10px]">${fmt(utilNeUSD)}</p></div>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  // ── MAYOR ANALÍTICO ───────────────────────────────────────────────────────
+  const MayorAnaliticoView = () => {
+    const [cuentaId, setCuentaId] = useState('');
+    const [desde, setDesde]       = useState(mesActual()+'-01');
+    const [hasta, setHasta]       = useState(today());
+    const cuentaSel = cuentas.find(c=>c.id===cuentaId);
+
+    const movsCuenta = [];
+    let saldoBsAcum=0, saldoUSDacum=0;
+    if(cuentaSel){
+      [...asientos].sort((a,b)=>a.fecha?.localeCompare(b.fecha)||0)
+        .filter(a=>a.fecha>=desde&&a.fecha<=hasta)
+        .forEach(a=>{
+          (a.lineas||[]).filter(l=>(l.codigo||l.cuentaCodigo||'').startsWith(cuentaSel.codigo)).forEach(l=>{
+            const dBs=Number(l.debeBs??l.debito??0), hBs=Number(l.haberBs??l.credito??0);
+            const dUSD=Number(l.debeUSD??0), hUSD=Number(l.haberUSD??0);
+            saldoBsAcum+=dBs-hBs; saldoUSDacum+=dUSD-hUSD;
+            movsCuenta.push({fecha:a.fecha,comprobante:a.comprobante||a.numero,concepto:l.concepto||a.descripcion,nroDoc:l.nroDoc||a.nroDocumento||'',dBs,hBs,saldoBs:saldoBsAcum,dUSD,hUSD,saldoUSD:saldoUSDacum});
+          });
+        });
+    }
+
+    return (
+      <Card title="Mayor Analítico" subtitle="Movimientos y saldo de cuenta">
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <FG label="Cuenta Contable" full>
+            <select className={sel} value={cuentaId} onChange={e=>setCuentaId(e.target.value)}>
+              <option value="">— Seleccione cuenta —</option>
+              {[...cuentas].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+            </select>
+          </FG>
+          <FG label="Desde"><input type="date" className={inp} value={desde} onChange={e=>setDesde(e.target.value)}/></FG>
+          <FG label="Hasta"><input type="date" className={inp} value={hasta} onChange={e=>setHasta(e.target.value)}/></FG>
+        </div>
+        {cuentaSel ? (
+          <div>
+            <div className="flex items-center gap-4 p-4 rounded-2xl mb-5" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+              <div><p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">{cuentaSel.codigo}</p><p className="font-black text-white">{cuentaSel.nombre}</p></div>
+              <div className="ml-auto text-right"><p className="text-emerald-400 font-mono font-black text-xl">Bs.{fmt(saldoBsAcum)}</p><p className="text-slate-400 text-xs">${fmt(saldoUSDacum)}</p></div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead><tr style={{background:'#1e293b'}}>
+                  {['Fecha','Comprobante','Concepto','Nro Doc.','Debe Bs','Haber Bs','Saldo Bs','Debe USD','Haber USD','Saldo USD'].map(h=><th key={h} className="px-3 py-2 text-left text-[9px] font-black uppercase text-slate-400 whitespace-nowrap">{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {movsCuenta.length===0&&<tr><td colSpan={10}><EmptyState icon={BookOpen} title="Sin movimientos" desc="No hay movimientos en el período"/></td></tr>}
+                  {movsCuenta.map((m,i)=><tr key={i} className="hover:bg-slate-50 border-b border-slate-50">
+                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{dd(m.fecha)}</td>
+                    <td className="px-3 py-2 font-mono font-black text-blue-600">{m.comprobante}</td>
+                    <td className="px-3 py-2 text-slate-700 max-w-[180px] truncate">{m.concepto}</td>
+                    <td className="px-3 py-2 font-mono text-slate-400">{m.nroDoc}</td>
+                    <td className="px-3 py-2 font-mono text-emerald-600 text-right">{m.dBs>0?`Bs.${fmt(m.dBs)}`:''}</td>
+                    <td className="px-3 py-2 font-mono text-red-500 text-right">{m.hBs>0?`Bs.${fmt(m.hBs)}`:''}</td>
+                    <td className={`px-3 py-2 font-mono font-black text-right ${m.saldoBs>=0?'text-emerald-700':'text-red-600'}`}>Bs.{fmt(m.saldoBs)}</td>
+                    <td className="px-3 py-2 font-mono text-emerald-600 text-right">{m.dUSD>0?`$${fmt(m.dUSD)}`:''}</td>
+                    <td className="px-3 py-2 font-mono text-red-500 text-right">{m.hUSD>0?`$${fmt(m.hUSD)}`:''}</td>
+                    <td className={`px-3 py-2 font-mono font-black text-right ${m.saldoUSD>=0?'text-emerald-700':'text-red-600'}`}>${fmt(m.saldoUSD)}</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ):<EmptyState icon={BookOpen} title="Seleccione una cuenta" desc="Elija una cuenta contable para ver su mayor analítico"/>}
+      </Card>
+    );
+  };
+
+  // ── CIERRE CONTABLE ───────────────────────────────────────────────────────
+  const CierreContableView = () => {
+    const [mes, setMes]   = useState(mesActual());
+    const [busy, setBusy] = useState(false);
+
+    const cerrar = async () => {
+      if(!window.confirm(`¿Cerrar el período ${mes}? Los asientos de este período quedarán BLOQUEADOS de forma permanente.`)) return;
+      setBusy(true);
+      try {
+        const id = mes.replace('-','');
+        const cntMes = asientos.filter(a=>a.fecha?.startsWith(mes)).length;
+        await setDoc(dref('cont_periodos',id),{id,mes,fechaCierre:today(),asientosBloqueados:cntMes,ts:serverTimestamp()});
+        // Marcar asientos del mes como cerrados
+        const batch=writeBatch(db);
+        asientos.filter(a=>a.fecha?.startsWith(mes)).forEach(a=>batch.update(dref('cont_asientos',a.id),{periodoCerrado:true,periodoId:id}));
+        await batch.commit();
+        alert(`✅ Período ${mes} cerrado. ${cntMes} asientos bloqueados.`);
+      } finally { setBusy(false); }
+    };
+
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-3 gap-4">
+          <KPI label="Períodos Cerrados" value={periodos.length} accent="blue" Icon={CheckCircle}/>
+          <KPI label="Asientos Bloqueados" value={periodos.reduce((a,p)=>a+(p.asientosBloqueados||0),0)} accent="red" Icon={Lock}/>
+          <KPI label="Último Cierre" value={periodos[0]?.mes||'—'} accent="green" Icon={CalendarDays}/>
+        </div>
+        <Card title="Cierre de Período Mensual" subtitle="Bloquea todos los asientos del mes seleccionado">
+          <div className="max-w-md space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5"/>
+              <p className="text-[11px] text-amber-700 font-medium leading-relaxed">El cierre de período es <strong>IRREVERSIBLE</strong>. Los asientos marcados no podrán ser modificados ni eliminados. Solo realice el cierre cuando haya verificado todos los asientos del período.</p>
+            </div>
+            <FG label="Período a Cerrar (Mes)">
+              <input type="month" className={inp} value={mes} onChange={e=>setMes(e.target.value)}/>
+            </FG>
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+              <p className="text-xs text-slate-500 font-medium">Asientos del período <strong className="text-slate-800">{mes}</strong>: <strong className="text-blue-600">{asientos.filter(a=>a.fecha?.startsWith(mes)).length}</strong></p>
+            </div>
+            <Bg onClick={cerrar} disabled={busy||periodos.find(p=>p.mes===mes)} >
+              {periodos.find(p=>p.mes===mes)?<><Lock size={14}/> Ya cerrado</>:busy?<><RefreshCw size={14} className="animate-spin"/> Cerrando...</>:<><CheckCircle size={14}/> Cerrar Período {mes}</>}
+            </Bg>
+          </div>
+        </Card>
+        <Card title="Historial de Cierres">
+          {periodos.length===0?<EmptyState icon={CalendarDays} title="Sin cierres" desc="No se han cerrado períodos"/>:
+            <table className="w-full"><thead><tr><Th>Período</Th><Th>Fecha de Cierre</Th><Th right>Asientos Bloqueados</Th><Th>Estado</Th></tr></thead>
+              <tbody>{periodos.map(p=><tr key={p.id} className="hover:bg-slate-50"><Td mono className="font-black text-blue-600">{p.mes}</Td><Td>{dd(p.fechaCierre)}</Td><Td right mono className="font-black">{p.asientosBloqueados}</Td><Td><Badge v="red"><Lock size={10}/> Cerrado</Badge></Td></tr>)}</tbody>
+            </table>}
+        </Card>
+      </div>
+    );
+  };
+
+  const navGroups = [
+    { group:'Estados Financieros', color:'#10b981', items:[
+      {id:'comprobacion', label:'Balance de Comprobación', icon:Scale},
+      {id:'balance',      label:'Balance General',         icon:Landmark},
+      {id:'resultados',   label:'Estado de Resultados',    icon:TrendingUp},
+      {id:'mayor',        label:'Mayor Analítico',          icon:BookMarked},
+    ]},
+    { group:'Control',  color:'#ef4444', items:[
+      {id:'cierre', label:'Cierre de Período', icon:Lock},
+    ]},
+  ];
+  const views={comprobacion:<ComprobacionView/>,balance:<BalanceGeneralView/>,resultados:<EstadoResultadosView/>,mayor:<MayorAnaliticoView/>,cierre:<CierreContableView/>};
+  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
+
+  return (
+    <SidebarLayout brand="Supply G&B" brandSub="Estados Financieros" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor="#10b981"
+      headerContent={<>
+        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 uppercase tracking-widest">Contabilidad <ChevronRight size={8} className="inline"/> Reportes</p></div>
+        <div className="flex gap-2">
+          <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
+        </div>
+      </>}>
+      {views[sec]||<ComprobacionView/>}
+    </SidebarLayout>
+  );
+}
+
+// ============================================================================
+// ACTIVOS FIJOS
+// ============================================================================
+function ActivosFijosApp({ fbUser, onBack }) {
+  const [sec, setSec]     = useState('dashboard');
+  const [activos, setActivos] = useState([]);
+  const [bajas,   setBajas]   = useState([]);
+
+  useEffect(()=>{
+    if(!fbUser) return;
+    const subs=[
+      onSnapshot(col('activos_fijos'), s=>setActivos(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('activos_bajas'),orderBy('fecha','desc')), s=>setBajas(s.docs.map(d=>d.data()))),
+    ];
+    return()=>subs.forEach(u=>u());
+  },[fbUser]);
+
+  const mesesDesde = (f) => {
+    if(!f) return 0;
+    const [y,m]=f.split('-').map(Number);
+    const now=new Date(); return Math.max(0,(now.getFullYear()-y)*12+(now.getMonth()+1-m));
+  };
+
+  // Calcular depreciación acumulada
+  const calcDeprec = (a) => {
+    const meses = mesesDesde(a.fechaAdquisicion);
+    const vidaMeses = Number(a.vidaUtilAnios||0)*12;
+    if(vidaMeses===0) return 0;
+    const depMensual = Number(a.valorCosto||0) / vidaMeses;
+    return Math.min(Number(a.valorCosto||0) - Number(a.valorResidual||0), depMensual * meses);
+  };
+
+  const DashboardView = () => {
+    const totalCosto   = activos.reduce((a,x)=>a+Number(x.valorCosto||0),0);
+    const totalDeprec  = activos.reduce((a,x)=>a+calcDeprec(x),0);
+    const totalNeto    = totalCosto - totalDeprec;
+    const depMensual   = activos.reduce((a,x)=>{const v=Number(x.vidaUtilAnios||0)*12;return a+(v>0?(Number(x.valorCosto||0)-Number(x.valorResidual||0))/v:0);},0);
+
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI label="Total Activos" value={activos.length} accent="blue" Icon={Layers}/>
+          <KPI label="Valor en Libros" value={`$${fmt(totalNeto)}`} accent="green" Icon={DollarSign} sub={`Costo: $${fmt(totalCosto)}`}/>
+          <KPI label="Depr. Acumulada" value={`$${fmt(totalDeprec)}`} accent="red" Icon={TrendingDown}/>
+          <KPI label="Depr. Mensual" value={`$${fmt(depMensual)}`} accent="gold" Icon={CalendarDays}/>
+        </div>
+        <Card title="Listado de Activos Fijos">
+          {activos.length===0?<EmptyState icon={Layers} title="Sin activos" desc="Registre el mobiliario, maquinaria y vehículos"/>:
+            <table className="w-full text-[11px]"><thead><tr><Th>Código</Th><Th>Descripción</Th><Th>Categoría</Th><Th>Fecha Adq.</Th><Th right>Costo $</Th><Th right>Depr. Acum.</Th><Th right>Valor Neto</Th><Th>Estado</Th></tr></thead>
+              <tbody>{activos.map(a=>{const dep=calcDeprec(a);const neto=Number(a.valorCosto||0)-dep;return(
+                <tr key={a.id} className="hover:bg-slate-50">
+                  <Td mono className="font-black text-blue-600">{a.codigo}</Td>
+                  <Td className="font-semibold max-w-[160px] truncate">{a.descripcion}</Td>
+                  <Td className="text-[10px] uppercase text-slate-500">{a.categoria}</Td>
+                  <Td>{dd(a.fechaAdquisicion)}</Td>
+                  <Td right mono className="font-black">${fmt(a.valorCosto)}</Td>
+                  <Td right mono className="text-red-500">${fmt(dep)}</Td>
+                  <Td right mono className="font-black text-emerald-600">${fmt(neto)}</Td>
+                  <Td><Badge v={neto>0?'green':'gray'}>{neto>0?'Activo':'Depreciado'}</Badge></Td>
+                </tr>);})}</tbody>
+            </table>}
+        </Card>
+      </div>
+    );
+  };
+
+  const RegistroView = () => {
+    const [modal,setModal]=useState(false);const [busy,setBusy]=useState(false);
+    const [form,setForm]=useState({codigo:'',descripcion:'',categoria:'Mobiliario',fechaAdquisicion:today(),valorCosto:'',valorResidual:'0',vidaUtilAnios:'5',cuentaContable:''});
+    const save=async()=>{
+      if(!form.descripcion||!form.valorCosto)return alert('Descripción y valor requeridos');
+      setBusy(true);try{const id=gid();await setDoc(dref('activos_fijos',id),{...form,id,valorCosto:Number(form.valorCosto),valorResidual:Number(form.valorResidual),vidaUtilAnios:Number(form.vidaUtilAnios),ts:serverTimestamp()});setModal(false);setForm({codigo:'',descripcion:'',categoria:'Mobiliario',fechaAdquisicion:today(),valorCosto:'',valorResidual:'0',vidaUtilAnios:'5',cuentaContable:''});}finally{setBusy(false);}
+    };
+    return(
+      <div>
+        <Card title="Registro de Activos Fijos" subtitle="Mobiliario, Maquinaria, Vehículos, Equipos" action={<Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nuevo</Bg>}>
+          <table className="w-full text-[11px]"><thead><tr><Th>Código</Th><Th>Descripción</Th><Th>Categoría</Th><Th>Adquisición</Th><Th right>Costo</Th><Th right>Residual</Th><Th right>Vida Útil</Th><Th right>Dep/Mes</Th><Th></Th></tr></thead>
+            <tbody>
+              {activos.length===0&&<tr><td colSpan={9}><EmptyState icon={Layers} title="Sin activos" desc="Registre el primer activo fijo"/></td></tr>}
+              {activos.map(a=>{const dm=(Number(a.valorCosto)-Number(a.valorResidual||0))/(Number(a.vidaUtilAnios||1)*12);return(
+                <tr key={a.id} className="hover:bg-slate-50">
+                  <Td mono className="font-black text-slate-700">{a.codigo||'—'}</Td>
+                  <Td className="font-semibold max-w-[160px] truncate">{a.descripcion}</Td>
+                  <Td className="text-[10px] uppercase text-slate-500">{a.categoria}</Td>
+                  <Td>{dd(a.fechaAdquisicion)}</Td>
+                  <Td right mono>${fmt(a.valorCosto)}</Td>
+                  <Td right mono className="text-slate-400">${fmt(a.valorResidual||0)}</Td>
+                  <Td right><span className="font-semibold">{a.vidaUtilAnios} años</span></Td>
+                  <Td right mono className="font-black text-amber-600">${fmt(dm)}</Td>
+                  <Td><button onClick={()=>deleteDoc(dref('activos_fijos',a.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></Td>
+                </tr>);})}
+            </tbody>
+          </table>
+        </Card>
+        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Activo Fijo" wide footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Registrar'}</Bg></>}>
+          <div className="grid grid-cols-2 gap-4">
+            <FG label="Código / Serial"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder="AF-001"/></FG>
+            <FG label="Descripción" full><input className={inp} value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value.toUpperCase()})} placeholder="COMPUTADORA DELL OPTIPLEX 7000"/></FG>
+            <FG label="Categoría"><select className={sel} value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})}><option>Mobiliario</option><option>Maquinaria</option><option>Vehículos</option><option>Equipos de Computación</option><option>Equipos de Oficina</option><option>Inmuebles</option><option>Otros</option></select></FG>
+            <FG label="Fecha de Adquisición"><input type="date" className={inp} value={form.fechaAdquisicion} onChange={e=>setForm({...form,fechaAdquisicion:e.target.value})}/></FG>
+            <FG label="Valor de Costo ($)"><input type="number" step="0.01" className={inp} value={form.valorCosto} onChange={e=>setForm({...form,valorCosto:e.target.value})}/></FG>
+            <FG label="Valor Residual ($)"><input type="number" step="0.01" className={inp} value={form.valorResidual} onChange={e=>setForm({...form,valorResidual:e.target.value})}/></FG>
+            <FG label="Vida Útil (años)"><input type="number" min="1" className={inp} value={form.vidaUtilAnios} onChange={e=>setForm({...form,vidaUtilAnios:e.target.value})}/></FG>
+            <FG label="Cuenta Contable (PUC)"><input className={inp} value={form.cuentaContable} onChange={e=>setForm({...form,cuentaContable:e.target.value})} placeholder="1.2.01.01.001"/></FG>
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
+  const navGroups=[
+    {group:'Activos',color:'#8b5cf6',items:[{id:'dashboard',label:'Panel General',icon:LayoutDashboard},{id:'registro',label:'Registro de Activos',icon:Layers}]},
+  ];
+  const views={dashboard:<DashboardView/>,registro:<RegistroView/>};
+  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
+  return(
+    <SidebarLayout brand="Supply G&B" brandSub="Activos Fijos" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor="#8b5cf6"
+      headerContent={<><div><h1 className="font-black text-slate-800 text-sm uppercase">{curNav?.label}</h1><p className="text-[9px] text-slate-400 uppercase tracking-widest">Activos Fijos · Depreciación</p></div><Bg onClick={()=>setSec('registro')} sm><Plus size={12}/> Nuevo Activo</Bg></>}>
+      {views[sec]||<DashboardView/>}
+    </SidebarLayout>
+  );
+}
+
+// ============================================================================
+// MÓDULO FISCAL — IVA, IGTF, RETENCIONES, LIBROS LEGALES
+// ============================================================================
+function FiscalApp({ fbUser, onBack }) {
+  const [sec, setSec] = useState('dashboard');
+  const [facturas,  setFacturas]  = useState([]);
+  const [tasas,     setTasas]     = useState([]);
+
+  useEffect(()=>{
+    if(!fbUser) return;
+    const subs=[
+      onSnapshot(query(col('facturacion_facturas'),orderBy('fechaEmision','desc')), s=>setFacturas(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('banco_tasas'),orderBy('fecha','desc')), s=>setTasas(s.docs.map(d=>d.data()))),
+    ];
+    return()=>subs.forEach(u=>u());
+  },[fbUser]);
+
+  const tasaActiva = tasas[0]?.tasaRef || 39.50;
+
+  const DashboardView = () => {
+    const ivaDebito  = facturas.filter(f=>f.fechaEmision?.startsWith(mesActual())).reduce((a,f)=>a+Number(f.iva||0),0);
+    const ivaCredito = 0; // from purchases (extend later)
+    const igtfBase   = facturas.filter(f=>f.igtf>0&&f.fechaEmision?.startsWith(mesActual())).reduce((a,f)=>a+Number(f.igtf||0),0);
+    return(
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI label="IVA Débito (Ventas)" value={`$${fmt(ivaDebito)}`} accent="red" Icon={Receipt} sub={mesActual()}/>
+          <KPI label="IVA Crédito (Compras)" value={`$${fmt(ivaCredito)}`} accent="green" Icon={Receipt}/>
+          <KPI label="IVA a Pagar" value={`$${fmt(Math.max(0,ivaDebito-ivaCredito))}`} accent={ivaDebito>ivaCredito?'red':'green'} Icon={DollarSign}/>
+          <KPI label="IGTF (3%)" value={`$${fmt(igtfBase)}`} accent="gold" Icon={Coins}/>
+        </div>
+        <div className="grid lg:grid-cols-2 gap-5">
+          <Card title="Configuración de Alícuotas IVA">
+            <div className="space-y-3">
+              {[{tipo:'General',tasa:'16%',color:'#ef4444'},{tipo:'Reducida',tasa:'8%',color:'#f59e0b'},{tipo:'Exenta',tasa:'0%',color:'#10b981'},{tipo:'IGTF Divisas',tasa:'3%',color:'#8b5cf6'}].map(({tipo,tasa,color})=>(
+                <div key={tipo} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50">
+                  <div className="flex items-center gap-3"><div className="w-3 h-3 rounded-full" style={{background:color}}/><p className="font-semibold text-sm text-slate-700">{tipo}</p></div>
+                  <span className="font-mono font-black text-lg" style={{color}}>{tasa}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card title="Resumen del Mes">
+            <div className="space-y-3 mt-2">
+              {[{l:'Total Ventas del Mes',v:`$${fmt(facturas.filter(f=>f.fechaEmision?.startsWith(mesActual())).reduce((a,f)=>a+Number(f.total||0),0))}`},{l:'IVA Generado (Débito Fiscal)',v:`$${fmt(ivaDebito)}`},{l:'Base Imponible',v:`$${fmt(ivaDebito/0.16)}`}].map(({l,v})=>(
+                <div key={l} className="flex justify-between py-2 border-b border-slate-50"><span className="text-xs text-slate-500">{l}</span><span className="font-mono font-black text-sm text-slate-900">{v}</span></div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
+  const LibroVentasView = () => {
+    const [mes, setMes] = useState(mesActual());
+    const filtradas = facturas.filter(f=>f.fechaEmision?.startsWith(mes));
+    const exportarTxt=()=>{
+      const lines=['Nro\tFecha\tRIF\tCliente\tNro Factura\tBase Imponible\tIVA\tTotal'];
+      filtradas.forEach((f,i)=>{lines.push([i+1,dd(f.fechaEmision),f.clienteRif||'',f.clienteNombre||'',f.numero||'',fmt(f.subtotal||0),fmt(f.iva||0),fmt(f.total||0)].join('\t'));});
+      const blob=new Blob([lines.join('\r\n')],{type:'text/plain;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`libro_ventas_${mes}.txt`;a.click();URL.revokeObjectURL(url);
+    };
+    return(
+      <Card title="Libro de Ventas" subtitle={`${filtradas.length} facturas — ${mes}`}
+        action={<div className="flex gap-2"><input type="month" className={inp} style={{width:'140px'}} value={mes} onChange={e=>setMes(e.target.value)}/><button onClick={exportarTxt} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-blue-700"><Download size={12}/> TXT</button></div>}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead><tr><Th>#</Th><Th>Fecha</Th><Th>RIF</Th><Th>Cliente</Th><Th>N° Factura</Th><Th right>Base Imp.</Th><Th right>IVA 16%</Th><Th right>Total</Th></tr></thead>
+            <tbody>
+              {filtradas.length===0&&<tr><td colSpan={8}><EmptyState icon={Receipt} title="Sin facturas" desc="No hay facturas para el período seleccionado"/></td></tr>}
+              {filtradas.map((f,i)=><tr key={f.id} className="hover:bg-slate-50">
+                <Td mono>{i+1}</Td><Td>{dd(f.fechaEmision)}</Td>
+                <Td mono className="text-slate-600">{f.clienteRif||'—'}</Td>
+                <Td className="max-w-[140px] truncate uppercase font-medium">{f.clienteNombre}</Td>
+                <Td mono className="font-black text-blue-600">{f.numero}</Td>
+                <Td right mono>${fmt(f.subtotal||0)}</Td>
+                <Td right mono className="text-red-500">${fmt(f.iva||0)}</Td>
+                <Td right mono className="font-black">${fmt(f.total||0)}</Td>
+              </tr>)}
+            </tbody>
+            {filtradas.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
+              <td colSpan={5} className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">TOTALES — {filtradas.length} facturas</td>
+              <td className="px-4 py-3 text-right font-mono font-black text-white">${fmt(filtradas.reduce((a,f)=>a+Number(f.subtotal||0),0))}</td>
+              <td className="px-4 py-3 text-right font-mono font-black text-red-400">${fmt(filtradas.reduce((a,f)=>a+Number(f.iva||0),0))}</td>
+              <td className="px-4 py-3 text-right font-mono font-black text-emerald-400">${fmt(filtradas.reduce((a,f)=>a+Number(f.total||0),0))}</td>
+            </tr></tfoot>}
+          </table>
+        </div>
+      </Card>
+    );
+  };
+
+  const navGroups=[
+    {group:'Fiscal',color:'#ef4444',items:[
+      {id:'dashboard', label:'Panel Fiscal',     icon:LayoutDashboard},
+      {id:'libroventas',label:'Libro de Ventas', icon:Receipt},
+    ]},
+  ];
+  const views={dashboard:<DashboardView/>,libroventas:<LibroVentasView/>};
+  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
+  return(
+    <SidebarLayout brand="Supply G&B" brandSub="Fiscal & Tributario" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor="#ef4444"
+      headerContent={<><div><h1 className="font-black text-slate-800 text-sm uppercase">{curNav?.label}</h1><p className="text-[9px] text-slate-400 uppercase tracking-widest">IVA · IGTF · Retenciones</p></div></>}>
+      {views[sec]||<DashboardView/>}
+    </SidebarLayout>
   );
 }
 
@@ -3239,8 +3832,10 @@ export default function App() {
       {view === 'inventario' && <InventarioApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
       {view === 'banco' && <BancoApp fbUser={fbUser} onBack={() => go('admin_dash')} />}
       {view === 'contabilidad' && <ContabilidadApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
-      {view === 'asientos' && <AsientosApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
-      {view === 'balances' && <BalancesApp onBack={() => go('cont_dash')} />}
+      {view === 'asientos'     && <AsientosApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
+      {view === 'balances'     && <BalancesApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
+      {view === 'activos_fijos'&& <ActivosFijosApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
+      {view === 'fiscal'       && <FiscalApp fbUser={fbUser} onBack={() => go('cont_dash')} />}
       {view === 'configuracion' && <ConfiguracionApp settings={settings} systemUsers={systemUsers} tasasList={tasasList} onBack={() => go('admin_dash')} />}
     </ErrorBoundary>
   );
