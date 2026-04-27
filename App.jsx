@@ -941,181 +941,227 @@ function InventarioApp({ fbUser, onBack }) {
   );
 }
 
+
 // ============================================================================
-// MÓDULO BANCO & TESORERÍA (NUEVO — COMPLETO)
+// MÓDULO BANCO & TESORERÍA — ARQUITECTURA COMPLETA
 // ============================================================================
-// ── helpers locales Banco ────────────────────────────────────────────────────
 const TIPO_BANCO = [
-  { id: 'Nacional-Bs',  label: 'Banco Nacional — Moneda Nacional (Bs.)', moneda: 'BS',  flag: '🇻🇪' },
-  { id: 'Nacional-Ext', label: 'Banco Nacional — Moneda Extranjera (USD)', moneda: 'USD', flag: '🏦' },
-  { id: 'Internacional',label: 'Banco Internacional (USD)',                moneda: 'USD', flag: '🌐' },
+  { id:'Nacional-Bs',   label:'Banco Nacional — Moneda Nacional (Bs.)',    moneda:'BS',  flag:'🇻🇪' },
+  { id:'Nacional-Ext',  label:'Banco Nacional — Moneda Extranjera (USD)', moneda:'USD', flag:'🏦' },
+  { id:'Internacional', label:'Banco Internacional (USD)',                  moneda:'USD', flag:'🌐' },
 ];
-// Dado un cuenta, la moneda de entrada es Bs si es Nacional-Bs, USD si no
-const entradaEsBs = (c) => c?.tipoBanco === 'Nacional-Bs';
+const esBs = (c) => c?.moneda === 'BS';
 
 function BancoApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('dashboard');
-  const [cuentas, setCuentas] = useState([]);
-  const [movimientos, setMovimientos] = useState([]);
-  const [tasas, setTasas] = useState([]);
-  const [clientes, setClientes] = useState([]);
-  const [facturas, setFacturas] = useState([]);
-  const [proveedores, setProveedores] = useState([]);
+  const [cuentas, setCuentas]       = useState([]);
+  const [movimientos, setMov]       = useState([]);
+  const [conciliaciones, setConc]   = useState([]);
+  const [tasas, setTasas]           = useState([]);
+  const [clientes, setClientes]     = useState([]);
+  const [facturas, setFacturas]     = useState([]);
+  const [proveedores, setProv]      = useState([]);
+  const [contCuentas, setContC]     = useState([]);
 
   useEffect(() => {
     if (!fbUser) return;
     const subs = [
-      onSnapshot(col('banco_cuentas'), s => setCuentas(s.docs.map(d => d.data()))),
-      onSnapshot(query(col('banco_movimientos'), orderBy('fecha', 'desc')), s => setMovimientos(s.docs.map(d => d.data()))),
-      onSnapshot(query(col('banco_tasas'), orderBy('fecha', 'desc')), s => setTasas(s.docs.map(d => d.data()))),
-      onSnapshot(col('facturacion_clientes'), s => setClientes(s.docs.map(d => d.data()))),
-      onSnapshot(query(col('facturacion_facturas'), orderBy('fechaEmision','desc')), s => setFacturas(s.docs.map(d => d.data()))),
-      onSnapshot(col('compras_proveedores'), s => setProveedores(s.docs.map(d => d.data()))),
+      onSnapshot(col('banco_cuentas'), s => setCuentas(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('banco_movimientos'), orderBy('fecha','desc')), s => setMov(s.docs.map(d=>d.data()))),
+      onSnapshot(col('banco_conciliaciones'), s => setConc(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('banco_tasas'), orderBy('fecha','desc')), s => setTasas(s.docs.map(d=>d.data()))),
+      onSnapshot(col('facturacion_clientes'), s => setClientes(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('facturacion_facturas'), orderBy('fechaEmision','desc')), s => setFacturas(s.docs.map(d=>d.data()))),
+      onSnapshot(col('compras_proveedores'), s => setProv(s.docs.map(d=>d.data()))),
+      onSnapshot(col('cont_cuentas'), s => setContC(s.docs.map(d=>d.data()))),
     ];
-    return () => subs.forEach(u => u());
+    return () => subs.forEach(u=>u());
   }, [fbUser]);
 
-  const tasaActiva = tasas.find(t => t.modulo === 'Banco' || t.modulo === 'Todos')?.tasaRef || tasas[0]?.tasaRef || 39.50;
+  const tasaActiva = tasas.find(t=>t.modulo==='Banco'||t.modulo==='Todos')?.tasaRef || tasas[0]?.tasaRef || 39.50;
 
+  // ── 1. DASHBOARD ───────────────────────────────────────────────────────────
   const DashboardView = () => {
-    const totalUSD = cuentas.filter(c => c.moneda === 'USD').reduce((a, c) => a + Number(c.saldo || 0), 0);
-    const totalBs = cuentas.filter(c => c.moneda === 'BS').reduce((a, c) => a + Number(c.saldo || 0), 0);
-    const entMes = movimientos.filter(m => m.tipo === 'Ingreso' && m.fecha?.startsWith(mesActual())).reduce((a, m) => a + Number(m.monto || 0), 0);
-    const salMes = movimientos.filter(m => m.tipo === 'Egreso' && m.fecha?.startsWith(mesActual())).reduce((a, m) => a + Number(m.monto || 0), 0);
-
-    // ── Dashboard ──────────────────────────────────────────────────────────────
-    const totUSD = cuentas.filter(c => c.moneda !== 'BS').reduce((a,c) => a+Number(c.saldo||0),0);
-    const totBs  = cuentas.filter(c => c.moneda === 'BS').reduce((a,c) => a+Number(c.saldo||0),0);
-    const entMes = movimientos.filter(m=>m.tipo==='Ingreso'&&m.fecha?.startsWith(mesActual())).reduce((a,m)=>a+Number(m.montoUSD||0),0);
-    const salMes = movimientos.filter(m=>m.tipo==='Egreso' &&m.fecha?.startsWith(mesActual())).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const totUSD = cuentas.filter(c=>c.moneda!=='BS').reduce((a,c)=>a+Number(c.saldo||0),0);
+    const totBs  = cuentas.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo||0),0);
+    const ingMes = movimientos.filter(m=>m.tipo==='Ingreso'&&m.fecha?.startsWith(mesActual())).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const egrMes = movimientos.filter(m=>m.tipo==='Egreso' &&m.fecha?.startsWith(mesActual())).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const noConcil = movimientos.filter(m=>m.estatus!=='Conciliado').length;
 
     return (
       <div className="space-y-6">
-        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPI label="Total Cuentas USD" value={`$${fmt(totUSD)}`} accent="green" Icon={DollarSign} sub={`≈ Bs. ${fmt(totUSD*tasaActiva)}`}/>
-          <KPI label="Total Cuentas Bs." value={`Bs. ${fmt(totBs)}`} accent="blue" Icon={Banknote} sub={`≈ $${fmt(totBs/tasaActiva)}`}/>
-          <KPI label="Ingresos del Mes (USD)" value={`$${fmt(entMes)}`} accent="gold" Icon={ArrowUpCircle}/>
-          <KPI label="Egresos del Mes (USD)" value={`$${fmt(salMes)}`} accent="red" Icon={ArrowDownCircle}/>
+          <KPI label="Total USD" value={`$${fmt(totUSD)}`} accent="green" Icon={DollarSign} sub={`≈ Bs. ${fmt(totUSD*tasaActiva)}`}/>
+          <KPI label="Total Bs." value={`Bs. ${fmt(totBs)}`} accent="blue" Icon={Banknote} sub={`≈ $${fmt(totBs/tasaActiva)}`}/>
+          <KPI label="Ingresos del Mes" value={`$${fmt(ingMes)}`} accent="gold" Icon={ArrowUpCircle} sub={mesActual()}/>
+          <KPI label="Pendientes Conciliar" value={noConcil} accent={noConcil>0?'red':'green'} Icon={RefreshCw} sub="movimientos sin conciliar"/>
         </div>
-
-        {/* Tarjetas de cuentas */}
         <div className="grid lg:grid-cols-3 gap-4">
-          {cuentas.map(c => {
-            const tb = TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];
-            const esBS = c.moneda==='BS';
+          {cuentas.map(c=>{
+            const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];
+            const bs=c.moneda==='BS';
+            const mvCuenta=movimientos.filter(m=>m.cuentaId===c.id);
+            const ultMov=mvCuenta[0];
             return (
-              <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+              <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg transition-all cursor-pointer" onClick={()=>setSec('movimientos')}>
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{tb.flag}</span>
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center"><Landmark size={15} className="text-blue-500"/></div>
-                  </div>
-                  <Pill usd={!esBS}>{c.moneda}</Pill>
+                  <div className="flex items-center gap-2"><span className="text-xl">{tb.flag}</span><div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center"><Landmark size={14} className="text-blue-500"/></div></div>
+                  <div className="flex flex-col items-end gap-1"><Pill usd={!bs}>{c.moneda}</Pill>{c.cuentaContable&&<span className="text-[9px] font-black text-slate-400 uppercase">{c.cuentaContable}</span>}</div>
                 </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{tb.label.split('—')[0].trim()}</p>
-                <p className="text-[10px] font-black text-slate-600 uppercase mb-1">{c.banco}</p>
-                <p className="font-mono font-black text-xl text-slate-900">{esBS?'Bs.':'$'} {fmt(c.saldo)}</p>
-                {!esBS && <p className="text-[10px] text-slate-400 mt-1">≈ Bs. {fmt(Number(c.saldo)*tasaActiva)}</p>}
-                {esBS  && <p className="text-[10px] text-slate-400 mt-1">≈ ${fmt(Number(c.saldo)/tasaActiva)}</p>}
-                <p className="text-[10px] text-slate-400 mt-1 font-mono">{c.numeroCuenta}</p>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{tb.id}</p>
+                <p className="text-[10px] font-black text-slate-700 uppercase mb-2">{c.banco}</p>
+                <p className="font-mono font-black text-2xl text-slate-900">{bs?'Bs.':'$'} {fmt(c.saldo)}</p>
+                {!bs&&<p className="text-[10px] text-slate-400 mt-0.5">≈ Bs. {fmt(Number(c.saldo)*tasaActiva)}</p>}
+                {bs &&<p className="text-[10px] text-slate-400 mt-0.5">≈ ${fmt(Number(c.saldo)/tasaActiva)}</p>}
+                <p className="text-[10px] text-slate-400 mt-2 font-mono">{c.numeroCuenta}</p>
+                {ultMov&&<p className="text-[9px] text-slate-300 mt-1 uppercase">Últ. mov: {dd(ultMov.fecha)} · {ultMov.tipo}</p>}
               </div>
             );
           })}
-          {cuentas.length===0 && <div className="lg:col-span-3"><EmptyState icon={Building2} title="Sin cuentas bancarias" desc="Registre sus cuentas en Cuentas"/></div>}
+          {cuentas.length===0&&<div className="lg:col-span-3"><EmptyState icon={Building2} title="Sin cuentas bancarias" desc="Registre sus cuentas bancarias"/></div>}
         </div>
-
         <div className="grid lg:grid-cols-2 gap-5">
           <Card title="Últimos Movimientos">
-            {movimientos.length===0 ? <EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones"/> :
-              <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Concepto</Th><Th right>USD</Th><Th right>Bs.</Th></tr></thead>
+            {movimientos.length===0?<EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones"/>:
+              <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th right>USD</Th><Th right>Bs.</Th></tr></thead>
                 <tbody>{movimientos.slice(0,7).map(m=><tr key={m.id} className="hover:bg-slate-50">
                   <Td>{dd(m.fecha)}</Td>
                   <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge></Td>
-                  <Td className="max-w-[130px] truncate">{m.concepto}</Td>
+                  <Td className="text-[11px] font-semibold max-w-[80px] truncate">{m.cuentaNombre}</Td>
+                  <Td className="max-w-[140px] truncate">{m.concepto}</Td>
                   <Td right mono className={`font-black text-xs ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
-                  <Td right mono className="text-slate-500 text-xs">Bs.{fmt(m.montoBs)}</Td>
+                  <Td right mono className="text-slate-400 text-xs">Bs.{fmt(m.montoBs)}</Td>
                 </tr>)}</tbody>
               </table>}
           </Card>
-          <Card title="Resumen por Cuenta">
-            {cuentas.length===0 ? <EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas bancarias"/> :
-              <table className="w-full"><thead><tr><Th>Banco</Th><Th>Tipo</Th><Th right>Saldo (nativo)</Th><Th right>USD equiv.</Th></tr></thead>
-                <tbody>{cuentas.map(c=><tr key={c.id} className="hover:bg-slate-50">
-                  <Td className="font-semibold max-w-[100px] truncate">{c.banco}</Td>
-                  <Td><span className="text-[9px] font-black uppercase text-slate-400">{c.tipoBanco?.split('-')[1]||'—'}</span></Td>
-                  <Td right mono className="font-black">{c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</Td>
-                  <Td right mono className="text-emerald-600 font-black">${fmt(c.moneda==='BS'?Number(c.saldo)/tasaActiva:Number(c.saldo))}</Td>
-                </tr>)}</tbody>
-              </table>}
+          <Card title="Posición Consolidada de Caja">
+            <div className="space-y-3">
+              {[...TIPO_BANCO].map(tb=>{
+                const grupo=cuentas.filter(c=>c.tipoBanco===tb.id);
+                if(!grupo.length) return null;
+                const totG=grupo.reduce((a,c)=>a+Number(c.moneda==='BS'?Number(c.saldo)/tasaActiva:Number(c.saldo)),0);
+                return (
+                  <div key={tb.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                    <div className="flex items-center gap-2"><span>{tb.flag}</span><div><p className="text-[10px] font-black uppercase text-slate-700">{tb.id}</p><p className="text-[9px] text-slate-400">{grupo.length} cuenta{grupo.length!==1?'s':''}</p></div></div>
+                    <p className="font-mono font-black text-slate-900">${fmt(totG)}</p>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between p-3 rounded-xl border-2 border-slate-900">
+                <p className="font-black text-sm uppercase text-slate-900 tracking-wide">TOTAL CONSOLIDADO</p>
+                <p className="font-mono font-black text-lg text-slate-900">${fmt(cuentas.reduce((a,c)=>a+(c.moneda==='BS'?Number(c.saldo)/tasaActiva:Number(c.saldo)),0))}</p>
+              </div>
+            </div>
           </Card>
         </div>
       </div>
     );
   };
 
-  // ── Cuentas Bancarias ────────────────────────────────────────────────────
+  // ── 2. CUENTAS (MAESTRO) ───────────────────────────────────────────────────
   const CuentasView = () => {
     const [modal, setModal] = useState(false);
-    const [form, setForm] = useState({ banco:'', numeroCuenta:'', tipoCuenta:'Corriente', tipoBanco:'Nacional-Bs', saldo:'0', titular:'' });
+    const [viewMode, setViewMode] = useState('list'); // list | cert
+    const [certCuenta, setCertCuenta] = useState(null);
+    const [form, setForm] = useState({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:'',cuentaContable:'',cuentaContableId:''});
     const [busy, setBusy] = useState(false);
-
-    const monedaDe = (tipoBanco) => TIPO_BANCO.find(t=>t.id===tipoBanco)?.moneda||'BS';
-
-    const save = async () => {
-      if (!form.banco||!form.numeroCuenta) return alert('Banco y número requeridos');
+    const monedaDe = (tb)=>TIPO_BANCO.find(t=>t.id===tb)?.moneda||'BS';
+    const save = async()=>{
+      if(!form.banco||!form.numeroCuenta) return alert('Banco y número requeridos');
       setBusy(true);
       try {
         const id=gid(); const moneda=monedaDe(form.tipoBanco);
         await setDoc(dref('banco_cuentas',id),{...form,id,moneda,saldo:Number(form.saldo),ts:serverTimestamp()});
-        setModal(false); setForm({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:''});
+        setModal(false); setForm({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:'',cuentaContable:'',cuentaContableId:''});
       } finally { setBusy(false); }
     };
+    const canDelete = (c)=>!movimientos.find(m=>m.cuentaId===c.id);
+
+    if (viewMode==='cert' && certCuenta) {
+      const c=certCuenta; const bs=c.moneda==='BS';
+      return (
+        <div>
+          <div className="flex gap-3 mb-5"><Bo onClick={()=>setViewMode('list')}><ArrowLeft size={13}/> Volver</Bo><button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"><Download size={13}/> Imprimir / PDF</button></div>
+          <div id="cert-print" className="bg-white rounded-2xl border-2 border-slate-200 p-10 max-w-2xl mx-auto">
+            <div className="text-center border-b-2 border-slate-100 pb-6 mb-6">
+              <div className="flex justify-center mb-3"><div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{background:'#f97316'}}><Blocks size={22} className="text-white"/></div></div>
+              <p className="font-black text-xl text-slate-900 uppercase tracking-wide">Servicios Jiret G&B, C.A.</p>
+              <p className="text-sm text-slate-500 mt-1">RIF: J-412309374 · Caracas, Venezuela</p>
+            </div>
+            <h2 className="text-center font-black text-lg text-slate-900 uppercase tracking-widest mb-6">Certificación de Cuenta Bancaria</h2>
+            <div className="space-y-3">
+              {[['Banco / Entidad Financiera',c.banco],['Tipo de Cuenta',c.tipoCuenta],['Número de Cuenta',c.numeroCuenta],['Moneda',c.moneda],['Clasificación',c.tipoBanco],['Titular',c.titular],['Cuenta Contable Asociada',c.cuentaContable||'—'],['Saldo Actual',`${bs?'Bs.':'$'} ${fmt(c.saldo)}`],].map(([k,v])=>(
+                <div key={k} className="flex gap-4 py-2 border-b border-slate-100">
+                  <p className="w-48 text-[10px] font-black uppercase text-slate-400 tracking-widest pt-0.5">{k}</p>
+                  <p className="font-semibold text-slate-900 flex-1">{v}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-10 grid grid-cols-2 gap-8">
+              <div className="border-t-2 border-slate-300 pt-3 text-center"><p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Elaborado por</p></div>
+              <div className="border-t-2 border-slate-300 pt-3 text-center"><p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Aprobado por</p></div>
+            </div>
+            <p className="text-center text-[10px] text-slate-300 mt-8 uppercase tracking-widest">Documento generado el {dd(today())} · Supply ERP — Servicios Jiret G&B, C.A.</p>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div>
         <Card title="Cuentas Bancarias" subtitle={`${cuentas.length} cuentas — Tasa activa: ${tasaActiva} Bs/$`} action={<Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nueva Cuenta</Bg>}>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr><Th>Tipo de Banco</Th><Th>Banco</Th><Th>N° Cuenta</Th><Th>Titular</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>Equiv. USD</Th><Th></Th></tr></thead>
+              <thead><tr><Th>Clasificación</Th><Th>Banco</Th><Th>Nro. Cuenta</Th><Th>Titular</Th><Th>Cta. Contable</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>Equiv. $</Th><Th></Th></tr></thead>
               <tbody>
-                {cuentas.length===0&&<tr><td colSpan={8}><EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas para gestionar tesorería"/></td></tr>}
+                {cuentas.length===0&&<tr><td colSpan={9}><EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas bancarias"/></td></tr>}
                 {cuentas.map(c=>{
-                  const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];
-                  const esBS=c.moneda==='BS';
+                  const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0]; const bs=c.moneda==='BS';
                   return <tr key={c.id} className="hover:bg-slate-50">
-                    <Td><div className="flex items-center gap-1.5"><span>{tb.flag}</span><span className="text-[10px] font-bold text-slate-500 uppercase">{tb.id}</span></div></Td>
+                    <Td><div className="flex items-center gap-1.5"><span>{tb.flag}</span><span className="text-[9px] font-black uppercase text-slate-500">{c.tipoBanco}</span></div></Td>
                     <Td className="font-semibold">{c.banco}</Td>
-                    <Td mono className="text-slate-600 text-[11px]">{c.numeroCuenta}</Td>
-                    <Td className="uppercase text-slate-400 text-[11px] max-w-[120px] truncate">{c.titular}</Td>
-                    <Td><Pill usd={!esBS}>{c.moneda}</Pill></Td>
-                    <Td right mono className="font-black">{esBS?'Bs.':'$'} {fmt(c.saldo)}</Td>
-                    <Td right mono className="text-emerald-600 font-black">${fmt(esBS?Number(c.saldo)/tasaActiva:Number(c.saldo))}</Td>
-                    <Td><button onClick={()=>deleteDoc(dref('banco_cuentas',c.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12}/></button></Td>
+                    <Td mono className="text-[11px] text-slate-600">{c.numeroCuenta}</Td>
+                    <Td className="uppercase text-[11px] text-slate-400 max-w-[100px] truncate">{c.titular}</Td>
+                    <Td mono className="text-[10px] text-blue-600 font-black">{c.cuentaContable||'—'}</Td>
+                    <Td><Pill usd={!bs}>{c.moneda}</Pill></Td>
+                    <Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td>
+                    <Td right mono className="text-emerald-600 font-black">${fmt(bs?Number(c.saldo)/tasaActiva:Number(c.saldo))}</Td>
+                    <Td>
+                      <div className="flex gap-1">
+                        <button onClick={()=>{setCertCuenta(c);setViewMode('cert');}} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg transition-colors" title="Certificación"><FileText size={12}/></button>
+                        {canDelete(c)&&<button onClick={()=>deleteDoc(dref('banco_cuentas',c.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12}/></button>}
+                      </div>
+                    </Td>
                   </tr>;
                 })}
               </tbody>
             </table>
           </div>
         </Card>
-        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Cuenta Bancaria" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar Cuenta'}</Bg></>}>
+        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Cuenta Bancaria" wide footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar Cuenta'}</Bg></>}>
           <div className="grid grid-cols-2 gap-4">
             <FG label="Clasificación de Banco" full>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {TIPO_BANCO.map(t=>(
-                  <label key={t.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.tipoBanco===t.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-300'}`}>
-                    <input type="radio" name="tipoBanco" value={t.id} checked={form.tipoBanco===t.id} onChange={e=>setForm({...form,tipoBanco:e.target.value})} className="accent-blue-500"/>
-                    <span className="text-xl">{t.flag}</span>
-                    <div><p className="text-xs font-black text-slate-800">{t.id}</p><p className="text-[10px] text-slate-400">{t.label}</p></div>
-                    <span className="ml-auto"><Pill usd={t.moneda!=='BS'}>{t.moneda}</Pill></span>
+                  <label key={t.id} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.tipoBanco===t.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-300'}`}>
+                    <input type="radio" name="tipoBanco" value={t.id} checked={form.tipoBanco===t.id} onChange={e=>setForm({...form,tipoBanco:e.target.value})} className="sr-only"/>
+                    <span className="text-2xl">{t.flag}</span>
+                    <p className="text-[9px] font-black text-slate-700 uppercase text-center leading-tight">{t.id}</p>
+                    <Pill usd={t.moneda!=='BS'}>{t.moneda}</Pill>
                   </label>
                 ))}
               </div>
             </FG>
-            <FG label="Banco / Entidad"><input className={inp} value={form.banco} onChange={e=>setForm({...form,banco:e.target.value.toUpperCase()})} placeholder="BANESCO"/></FG>
+            <FG label="Banco / Entidad"><input className={inp} value={form.banco} onChange={e=>setForm({...form,banco:e.target.value.toUpperCase()})} placeholder="BANESCO UNIVERSAL"/></FG>
             <FG label="Número de Cuenta"><input className={inp} value={form.numeroCuenta} onChange={e=>setForm({...form,numeroCuenta:e.target.value})} placeholder="0134-0000-00-0000000000"/></FG>
-            <FG label="Tipo de Cuenta"><select className={sel} value={form.tipoCuenta} onChange={e=>setForm({...form,tipoCuenta:e.target.value})}><option>Corriente</option><option>Ahorro</option><option>Nómina</option><option>Divisas</option><option>Swift</option></select></FG>
-            <FG label="Titular" full><input className={inp} value={form.titular} onChange={e=>setForm({...form,titular:e.target.value.toUpperCase()})} placeholder="SERVICIOS JIRET G&B C.A."/></FG>
+            <FG label="Tipo de Cuenta"><select className={sel} value={form.tipoCuenta} onChange={e=>setForm({...form,tipoCuenta:e.target.value})}><option>Corriente</option><option>Ahorros</option><option>Nómina</option><option>Divisas</option><option>Custodia</option><option>Swift</option></select></FG>
+            <FG label="Titular de la Cuenta" full><input className={inp} value={form.titular} onChange={e=>setForm({...form,titular:e.target.value.toUpperCase()})} placeholder="SERVICIOS JIRET G&B C.A."/></FG>
+            <FG label="Cuenta Contable Asociada (PUC)" full>
+              <select className={sel} value={form.cuentaContableId} onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);setForm({...form,cuentaContableId:e.target.value,cuentaContable:c?`${c.codigo} · ${c.nombre}`:''})}}>
+                <option value="">— Sin vincular —</option>
+                {contCuentas.filter(c=>String(c.codigo).startsWith('1')).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+              </select>
+            </FG>
             <FG label={`Saldo Inicial (${monedaDe(form.tipoBanco)})`}><input type="number" step="0.01" className={inp} value={form.saldo} onChange={e=>setForm({...form,saldo:e.target.value})}/></FG>
           </div>
         </Modal>
@@ -1123,161 +1169,213 @@ function BancoApp({ fbUser, onBack }) {
     );
   };
 
-  // ── Registro de Movimientos con Terceros + Conversión ────────────────────
+  // ── 3. TRANSACCIONES ───────────────────────────────────────────────────────
   const MovimientosView = () => {
     const [modal, setModal] = useState(false);
     const [busy, setBusy] = useState(false);
-    const [filterCuenta, setFilterCuenta] = useState('');
+    const [filterCuenta, setFilter] = useState('');
 
-    const initForm = () => ({ fecha:today(), tipo:'Ingreso', cuentaId:'', concepto:'', montoNativo:'', referencia:'', aplicaTercero:false, tipoTercero:'Cliente', terceroId:'', cerrarCuenta:false, facturaId:'', tasa:String(tasaActiva) });
-    const [form, setForm] = useState(initForm());
+    const initF = ()=>({fecha:today(),tipo:'Ingreso',cuentaId:'',cuentaDestinoId:'',
+      origenIngreso:'Venta',motivoEgreso:'Pago Proveedor',
+      concepto:'',referencia:'',tasa:String(tasaActiva),montoNativo:'',
+      aplicaTercero:true,tipoTercero:'Cliente',terceroId:'',
+      cerrarCxC:false,facturaId:'',
+      cuentaContableContra:'',cuentaContableContraId:''});
+    const [form,setForm] = useState(initF());
 
-    const cuentaSel = cuentas.find(c=>c.id===form.cuentaId);
-    const esBS = cuentaSel?.moneda==='BS';
-    const tasa = Number(form.tasa)||tasaActiva;
-    const montoNativo = Number(form.montoNativo)||0;
-    // Conversión: si cuenta es Bs → entra en Bs, calcula USD; si USD → entra en USD, calcula Bs
-    const montoBs  = esBS ? montoNativo : montoNativo * tasa;
-    const montoUSD = esBS ? montoNativo / tasa : montoNativo;
+    const cuentaSel  = cuentas.find(c=>c.id===form.cuentaId);
+    const cuentaDest = cuentas.find(c=>c.id===form.cuentaDestinoId);
+    const bs     = cuentaSel?.moneda==='BS';
+    const tasa   = Number(form.tasa)||tasaActiva;
+    const mNat   = Number(form.montoNativo)||0;
+    const montoBs  = bs ? mNat : mNat*tasa;
+    const montoUSD = bs ? mNat/tasa : mNat;
 
-    // Terceros disponibles según tipo
     const tercerosSel = form.tipoTercero==='Cliente'
-      ? clientes.map(c=>({id:c.id,label:`${c.rif} · ${c.nombre}`,tipo:'CxC'}))
-      : proveedores.map(p=>({id:p.id,label:`${p.rif||''} · ${p.nombre}`,tipo:'CxP'}));
+      ? clientes.map(c=>({id:c.id,label:`${c.rif} · ${c.nombre}`}))
+      : form.tipoTercero==='Proveedor'
+        ? proveedores.map(p=>({id:p.id,label:`${p.rif||''} · ${p.nombre}`}))
+        : [...clientes.map(c=>({id:c.id,label:`C: ${c.nombre}`})),...proveedores.map(p=>({id:p.id,label:`P: ${p.nombre}`}))];
 
-    // Facturas/cuentas pendientes del tercero seleccionado
-    const pendientesTercero = form.tipoTercero==='Cliente'
-      ? facturas.filter(f=>f.clienteId===form.terceroId && f.estado==='Pendiente')
-      : []; // CxP pendientes (extensible con colección compras)
+    const factPend = form.tipoTercero==='Cliente'
+      ? facturas.filter(f=>f.clienteId===form.terceroId&&f.estado==='Pendiente')
+      : [];
 
-    const save = async () => {
-      if (!form.cuentaId||!form.montoNativo||!form.concepto) return alert('Cuenta, monto y concepto requeridos');
-      if (form.aplicaTercero && !form.terceroId) return alert('Seleccione el tercero');
+    // Sugerencia de cuenta contable contrapartida
+    const sugerirCuenta = () => {
+      if(form.tipo==='Ingreso')
+        return form.origenIngreso==='Venta'
+          ? contCuentas.filter(c=>c.nombre?.toUpperCase().includes('COBRAR')||c.nombre?.toUpperCase().includes('INGRES'))
+          : contCuentas.filter(c=>c.nombre?.toUpperCase().includes('PRÉSTAMO')||c.nombre?.toUpperCase().includes('PASIV'));
+      if(form.tipo==='Egreso')
+        return form.motivoEgreso==='Pago Proveedor'
+          ? contCuentas.filter(c=>c.nombre?.toUpperCase().includes('PAGAR')||c.nombre?.toUpperCase().includes('PROVEEDOR'))
+          : contCuentas.filter(c=>c.nombre?.toUpperCase().includes('GASTO')||c.nombre?.toUpperCase().includes('NÓMIN'));
+      return contCuentas;
+    };
+
+    const save = async()=>{
+      if(!form.cuentaId||!form.montoNativo||!form.concepto) return alert('Cuenta, monto y concepto requeridos');
+      if(form.tipo==='Transferencia'&&!form.cuentaDestinoId) return alert('Seleccione cuenta destino');
+      if(form.aplicaTercero&&!form.terceroId) return alert('Seleccione el tercero');
       setBusy(true);
       try {
-        const cuenta = cuentas.find(c=>c.id===form.cuentaId);
-        const signo  = form.tipo==='Ingreso'?1:-1;
-        const nuevoSaldo = Number(cuenta.saldo) + signo*montoNativo;
-        const id=gid();
-        const batch=writeBatch(db);
+        const cuenta=cuentas.find(c=>c.id===form.cuentaId);
+        const signo=form.tipo==='Ingreso'?1:-1;
+        const nuevoSaldoOrigen=Number(cuenta.saldo)+signo*mNat;
+        const id=gid(); const batch=writeBatch(db);
+        const tercero=(form.tipo==='Ingreso'&&form.origenIngreso==='Venta')||form.tipoTercero==='Cliente'
+          ?clientes.find(c=>c.id===form.terceroId)
+          :proveedores.find(p=>p.id===form.terceroId);
+        const factura=form.cerrarCxC&&form.facturaId?facturas.find(f=>f.id===form.facturaId):null;
 
-        const tercero = form.aplicaTercero
-          ? (form.tipoTercero==='Cliente'?clientes.find(c=>c.id===form.terceroId):proveedores.find(p=>p.id===form.terceroId))
-          : null;
-        const factura = form.cerrarCuenta&&form.facturaId ? facturas.find(f=>f.id===form.facturaId) : null;
+        // Asiento contable sugerido (para referencia)
+        const asientoDebito  = form.tipo==='Ingreso'  ? (cuentaSel?.cuentaContable||'BANCO')  : (form.cuentaContableContra||'CTA CONTRA');
+        const asientoCredito = form.tipo==='Ingreso'  ? (form.cuentaContableContra||'CXC/ING') : (cuentaSel?.cuentaContable||'BANCO');
 
         batch.set(dref('banco_movimientos',id),{
-          id, fecha:form.fecha, tipo:form.tipo,
-          cuentaId:cuenta.id, cuentaNombre:cuenta.banco,
-          tipoBanco:cuenta.tipoBanco, moneda:cuenta.moneda,
-          concepto:form.concepto, referencia:form.referencia,
-          montoNativo, montoBs, montoUSD, tasa,
-          saldoAnterior:Number(cuenta.saldo), saldoResultante:nuevoSaldo,
-          aplicaTercero:form.aplicaTercero,
-          terceroId:tercero?.id||'', terceroNombre:tercero?.nombre||'',
-          tipoTercero:form.tipoTercero,
-          facturaId:factura?.id||'', facturaNumero:factura?.numero||'',
-          ts:serverTimestamp()
+          id,fecha:form.fecha,tipo:form.tipo,
+          cuentaId:cuenta.id,cuentaNombre:cuenta.banco,tipoBanco:cuenta.tipoBanco,moneda:cuenta.moneda,
+          origenIngreso:form.origenIngreso,motivoEgreso:form.motivoEgreso,
+          concepto:form.concepto,referencia:form.referencia,
+          tasa,montoNativo:mNat,montoBs,montoUSD,
+          saldoAnterior:Number(cuenta.saldo),saldoResultante:nuevoSaldoOrigen,
+          aplicaTercero:form.aplicaTercero,tipoTercero:form.tipoTercero,
+          terceroId:tercero?.id||'',terceroNombre:tercero?.nombre||'',
+          facturaId:factura?.id||'',facturaNumero:factura?.numero||'',
+          asientoDebito,asientoCredito,
+          estatus:'No Conciliado',ts:serverTimestamp()
         });
-        batch.update(dref('banco_cuentas',cuenta.id),{saldo:nuevoSaldo});
+        batch.update(dref('banco_cuentas',cuenta.id),{saldo:nuevoSaldoOrigen});
 
-        // Cerrar/abonar CxC si aplica
-        if (factura && form.cerrarCuenta) {
-          const nuevoSaldoFact = Math.max(0, factura.saldoUSD - montoUSD);
-          const nuevoEstado = nuevoSaldoFact<0.01?'Pagada':'Pendiente';
-          batch.update(dref('facturacion_facturas',factura.id),{saldoUSD:nuevoSaldoFact,estado:nuevoEstado});
+        if(form.tipo==='Transferencia'&&cuentaDest){
+          batch.update(dref('banco_cuentas',cuentaDest.id),{saldo:Number(cuentaDest.saldo)+mNat});
         }
-
+        if(factura&&form.cerrarCxC){
+          const ns=Math.max(0,factura.saldoUSD-montoUSD);
+          batch.update(dref('facturacion_facturas',factura.id),{saldoUSD:ns,estado:ns<0.01?'Pagada':'Pendiente'});
+        }
         await batch.commit();
-        setModal(false); setForm(initForm());
+        setModal(false); setForm(initF());
       } finally { setBusy(false); }
     };
 
-    const movFiltrados = filterCuenta ? movimientos.filter(m=>m.cuentaId===filterCuenta) : movimientos;
+    const movFilt = filterCuenta?movimientos.filter(m=>m.cuentaId===filterCuenta):movimientos;
 
     return (
       <div>
-        <Card title="Movimientos Bancarios" subtitle="Ingresos, egresos y transferencias con conversión dual"
+        <Card title="Movimientos Bancarios" subtitle="Ingresos · Egresos · Transferencias"
           action={<div className="flex gap-2">
-            <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700 font-semibold" value={filterCuenta} onChange={e=>setFilterCuenta(e.target.value)}>
+            <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700 font-semibold" value={filterCuenta} onChange={e=>setFilter(e.target.value)}>
               <option value="">Todos los bancos</option>
               {cuentas.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
             </select>
-            <Bg onClick={()=>{setForm(initForm());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
+            <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
           </div>}>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th>Tercero</Th><Th>Ref.</Th><Th right>USD</Th><Th right>Bs.</Th><Th right>Tasa</Th></tr></thead>
+              <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th>Tercero/Factura</Th><Th>Ref.</Th><Th right>USD</Th><Th right>Bs.</Th><Th right>Tasa</Th><Th>Estado</Th></tr></thead>
               <tbody>
-                {movFiltrados.length===0&&<tr><td colSpan={9}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
-                {movFiltrados.map(m=><tr key={m.id} className="hover:bg-slate-50">
+                {movFilt.length===0&&<tr><td colSpan={10}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
+                {movFilt.map(m=><tr key={m.id} className="hover:bg-slate-50">
                   <Td>{dd(m.fecha)}</Td>
                   <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge></Td>
-                  <Td className="font-semibold text-[11px] max-w-[90px] truncate">{m.cuentaNombre}</Td>
+                  <Td className="text-[11px] font-semibold max-w-[80px] truncate">{m.cuentaNombre}</Td>
                   <Td className="max-w-[130px] truncate">{m.concepto}</Td>
-                  <Td>
-                    {m.aplicaTercero
-                      ? <div><p className="text-[10px] font-bold text-slate-700 truncate max-w-[100px]">{m.terceroNombre}</p>{m.facturaNumero&&<p className="text-[9px] text-blue-500 font-black">{m.facturaNumero}</p>}</div>
-                      : <span className="text-slate-300">—</span>}
+                  <Td className="text-[10px] max-w-[110px]">
+                    {m.aplicaTercero?<><p className="font-bold text-slate-700 truncate">{m.terceroNombre}</p>{m.facturaNumero&&<p className="text-blue-500 font-black">{m.facturaNumero}</p>}</>:<span className="text-slate-300">—</span>}
                   </Td>
-                  <Td mono className="text-slate-400 text-[11px]">{m.referencia||'—'}</Td>
-                  <Td right mono className={`font-black text-sm ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
-                  <Td right mono className="text-slate-600 text-xs">Bs.{fmt(m.montoBs)}</Td>
+                  <Td mono className="text-slate-400 text-[10px]">{m.referencia||'—'}</Td>
+                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
+                  <Td right mono className="text-slate-400 text-xs">Bs.{fmt(m.montoBs)}</Td>
                   <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
+                  <Td><Badge v={m.estatus==='Conciliado'?'green':'gray'}>{m.estatus||'No Conciliado'}</Badge></Td>
                 </tr>)}
               </tbody>
             </table>
           </div>
         </Card>
 
-        {/* ── MODAL MOVIMIENTO ── */}
         <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Movimiento Bancario" wide
           footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Registrando...':'Registrar'}</Bg></>}>
           <div className="space-y-5">
-
-            {/* Fila 1 */}
+            {/* Fila básica */}
             <div className="grid grid-cols-3 gap-4">
               <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
-              <FG label="Tipo de Movimiento"><select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})}><option>Ingreso</option><option>Egreso</option><option>Transferencia</option><option>Nota Crédito</option><option>Nota Débito</option></select></FG>
+              <FG label="Tipo">
+                <div className="flex gap-1">
+                  {['Ingreso','Egreso','Transferencia'].map(t=>(
+                    <button key={t} onClick={()=>setForm({...form,tipo:t})}
+                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all border ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':'bg-blue-500 text-white border-blue-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                  ))}
+                </div>
+              </FG>
               <FG label="N° Referencia"><input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="REF-0000000"/></FG>
             </div>
 
-            {/* Cuenta bancaria */}
-            <FG label="Cuenta Bancaria" full>
-              <select className={sel} value={form.cuentaId} onChange={e=>setForm({...form,cuentaId:e.target.value})}>
-                <option value="">— Seleccione cuenta —</option>
-                {TIPO_BANCO.map(tb=>{
-                  const grupo=cuentas.filter(c=>c.tipoBanco===tb.id);
-                  if(!grupo.length) return null;
-                  return <optgroup key={tb.id} label={`${tb.flag} ${tb.label}`}>{grupo.map(c=><option key={c.id} value={c.id}>{c.banco} · {c.numeroCuenta} — Saldo: {c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</option>)}</optgroup>;
-                })}
-              </select>
-            </FG>
+            {/* Sub-tipo */}
+            {form.tipo==='Ingreso'&&(
+              <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                <p className="text-[9px] font-black uppercase text-emerald-700 mb-2 tracking-widest">Origen del Ingreso</p>
+                <div className="flex gap-2">
+                  {['Venta','Préstamo de Terceros','Otros'].map(o=>(
+                    <button key={o} onClick={()=>setForm({...form,origenIngreso:o})}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${form.origenIngreso===o?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {form.tipo==='Egreso'&&(
+              <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+                <p className="text-[9px] font-black uppercase text-red-700 mb-2 tracking-widest">Motivo del Egreso</p>
+                <div className="flex flex-wrap gap-2">
+                  {['Pago Proveedor','Nómina','Gastos Operativos','Impuestos','Préstamo','Otros'].map(o=>(
+                    <button key={o} onClick={()=>setForm({...form,motivoEgreso:o})}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all border ${form.motivoEgreso===o?'bg-red-600 text-white border-red-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cuenta(s) bancaria(s) */}
+            {form.tipo!=='Transferencia'
+              ? <FG label="Cuenta Bancaria" full>
+                  <select className={sel} value={form.cuentaId} onChange={e=>setForm({...form,cuentaId:e.target.value})}>
+                    <option value="">— Seleccione cuenta —</option>
+                    {TIPO_BANCO.map(tb=>{const g=cuentas.filter(c=>c.tipoBanco===tb.id);if(!g.length)return null;return <optgroup key={tb.id} label={`${tb.flag} ${tb.id}`}>{g.map(c=><option key={c.id} value={c.id}>{c.banco} · {c.numeroCuenta} — {c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</option>)}</optgroup>;})}
+                  </select>
+                </FG>
+              : <div className="grid grid-cols-2 gap-4">
+                  <FG label="🏦 Banco Origen">
+                    <select className={sel} value={form.cuentaId} onChange={e=>setForm({...form,cuentaId:e.target.value})}><option value="">— Origen —</option>{cuentas.map(c=><option key={c.id} value={c.id}>{c.banco} · {c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</option>)}</select>
+                  </FG>
+                  <FG label="🏦 Banco Destino">
+                    <select className={sel} value={form.cuentaDestinoId} onChange={e=>setForm({...form,cuentaDestinoId:e.target.value})}><option value="">— Destino —</option>{cuentas.filter(c=>c.id!==form.cuentaId).map(c=><option key={c.id} value={c.id}>{c.banco} · {c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</option>)}</select>
+                  </FG>
+                </div>
+            }
 
             {/* Monto + Tasa + Conversión */}
-            {cuentaSel && (
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-3">
+            {cuentaSel&&(
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
                 <div className="grid grid-cols-3 gap-4">
                   <FG label={`Monto (${cuentaSel.moneda})`}>
-                    <input type="number" step="0.01" className={`${inp} font-black text-lg`}
-                      value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/>
+                    <input type="number" step="0.01" className={`${inp} font-black text-lg`} value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/>
                   </FG>
                   <FG label="Tasa de Cambio (Bs/$)">
-                    <input type="number" step="0.01" className={inp}
-                      value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/>
+                    <div className="relative"><input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-300 font-black">BCV</span></div>
                   </FG>
                   <div className="flex flex-col justify-end pb-0.5">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Conversión calculada</p>
-                    <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
-                      <p className="text-emerald-400 font-mono font-black text-lg">${fmt(montoUSD)}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Bs. {fmt(montoBs)}</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Equivalencia</p>
+                    <div className="rounded-xl p-3" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+                      <p className="text-emerald-400 font-mono font-black text-lg leading-none">${fmt(montoUSD)}</p>
+                      <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-4 text-[10px] font-black uppercase text-slate-500">
-                  <span>📌 Tipo: <strong className="text-slate-700">{TIPO_BANCO.find(t=>t.id===cuentaSel.tipoBanco)?.id||'—'}</strong></span>
-                  <span>💱 {esBS?`Bs.${fmt(montoNativo)} ÷ ${tasa} = $${fmt(montoUSD)}`:`$${fmt(montoNativo)} × ${tasa} = Bs.${fmt(montoBs)}`}</span>
-                </div>
+                <p className="text-[9px] text-slate-400 font-bold mt-2">
+                  {bs?`${fmt(mNat)} Bs ÷ ${tasa} = $${fmt(montoUSD)}`:`$${fmt(mNat)} × ${tasa} = Bs. ${fmt(montoBs)}`}
+                </p>
               </div>
             )}
 
@@ -1286,291 +1384,391 @@ function BancoApp({ fbUser, onBack }) {
               <input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} placeholder="Descripción del movimiento..."/>
             </FG>
 
-            {/* Terceros */}
-            <div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-black text-slate-700 uppercase tracking-wide">Vincular a Tercero</p>
-                  <p className="text-[10px] text-slate-400">Asociar a cliente (CxC) o proveedor (CxP)</p>
-                </div>
-                <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:'',facturaId:'',cerrarCuenta:false})}
-                  className={`w-12 h-6 rounded-full transition-all relative ${form.aplicaTercero?'bg-orange-500':'bg-slate-200'}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${form.aplicaTercero?'left-6':'left-0.5'}`}/>
-                </button>
-              </div>
-
-              {form.aplicaTercero && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <FG label="Tipo de Tercero">
-                      <div className="flex gap-2">
-                        {['Cliente','Proveedor'].map(t=>(
-                          <button key={t} onClick={()=>setForm({...form,tipoTercero:t,terceroId:'',facturaId:''})}
-                            className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all border-2 ${form.tipoTercero===t?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>{t}</button>
-                        ))}
-                      </div>
-                    </FG>
-                    <FG label={form.tipoTercero==='Cliente'?'Seleccionar Cliente':'Seleccionar Proveedor'}>
-                      <select className={sel} value={form.terceroId} onChange={e=>setForm({...form,terceroId:e.target.value,facturaId:''})}>
-                        <option value="">— Seleccione —</option>
-                        {tercerosSel.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
-                      </select>
-                    </FG>
+            {/* Asiento contable sugerido */}
+            {form.tipo!=='Transferencia'&&(
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                <p className="text-[9px] font-black uppercase text-blue-700 mb-2 tracking-widest">Asiento Contable Automático (referencia)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white rounded-lg p-3 border border-blue-100">
+                    <p className="text-[9px] font-black text-emerald-600 uppercase mb-1">DÉBITO →</p>
+                    <p className="text-xs font-bold text-slate-700">{form.tipo==='Ingreso'?(cuentaSel?.cuentaContable||'Banco / Caja'):'Cuenta de Gasto/Proveedor'}</p>
                   </div>
+                  <div className="bg-white rounded-lg p-3 border border-blue-100">
+                    <p className="text-[9px] font-black text-red-500 uppercase mb-1">CRÉDITO ←</p>
+                    <p className="text-xs font-bold text-slate-700">{form.tipo==='Egreso'?(cuentaSel?.cuentaContable||'Banco / Caja'):'CxC / Ingreso'}</p>
+                  </div>
+                </div>
+                <FG label="Cuenta Contable Contrapartida (opcional)">
+                  <select className={sel} value={form.cuentaContableContraId} onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);setForm({...form,cuentaContableContraId:e.target.value,cuentaContableContra:c?`${c.codigo} · ${c.nombre}`:''})}}>
+                    <option value="">— Seleccionar del PUC —</option>
+                    {sugerirCuenta().map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                    <optgroup label="Todas las cuentas">{contCuentas.sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>
+                  </select>
+                </FG>
+              </div>
+            )}
 
-                  {/* Facturas pendientes del cliente */}
-                  {form.tipoTercero==='Cliente' && form.terceroId && pendientesTercero.length>0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black uppercase text-slate-600">Facturas Pendientes — Cerrar Cuenta por Cobrar</p>
-                        <button onClick={()=>setForm({...form,cerrarCuenta:!form.cerrarCuenta,facturaId:''})}
-                          className={`w-10 h-5 rounded-full transition-all relative ${form.cerrarCuenta?'bg-blue-500':'bg-slate-200'}`}>
-                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.cerrarCuenta?'left-5':'left-0.5'}`}/>
-                        </button>
-                      </div>
-                      {form.cerrarCuenta && (
-                        <div className="space-y-1">
-                          {pendientesTercero.map(f=>(
-                            <label key={f.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.facturaId===f.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-100'}`}>
-                              <input type="radio" name="facturaId" value={f.id} checked={form.facturaId===f.id} onChange={()=>setForm({...form,facturaId:f.id})} className="accent-blue-500"/>
-                              <div className="flex-1">
-                                <p className="font-black text-xs text-slate-900">{f.numero} <span className="font-medium text-slate-400">·</span> {dd(f.fechaVencimiento)}</p>
-                                <p className="text-[10px] text-slate-400">{f.clienteNombre}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="font-mono font-black text-orange-500">${fmt(f.saldoUSD)}</p>
-                                <p className="text-[9px] text-slate-400">pendiente</p>
-                              </div>
-                              {f.fechaVencimiento<today()&&<Badge v="red">Vencida</Badge>}
-                            </label>
+            {/* Terceros */}
+            {form.tipo!=='Transferencia'&&(
+              <div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div><p className="text-xs font-black text-slate-700 uppercase tracking-wide">Vincular a Tercero</p><p className="text-[10px] text-slate-400">Asociar cliente (CxC) o proveedor (CxP)</p></div>
+                  <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:'',facturaId:'',cerrarCxC:false})}
+                    className={`w-12 h-6 rounded-full transition-all relative ${form.aplicaTercero?'bg-orange-500':'bg-slate-200'}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${form.aplicaTercero?'left-6':'left-0.5'}`}/>
+                  </button>
+                </div>
+                {form.aplicaTercero&&(
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <FG label="Tipo">
+                        <div className="flex gap-1">
+                          {['Cliente','Proveedor'].map(t=>(
+                            <button key={t} onClick={()=>setForm({...form,tipoTercero:t,terceroId:'',facturaId:''})}
+                              className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${form.tipoTercero===t?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
                           ))}
                         </div>
-                      )}
+                      </FG>
+                      <FG label={form.tipoTercero==='Cliente'?'Cliente':'Proveedor'}>
+                        <select className={sel} value={form.terceroId} onChange={e=>setForm({...form,terceroId:e.target.value,facturaId:''})}>
+                          <option value="">— Seleccione —</option>
+                          {tercerosSel.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                      </FG>
                     </div>
-                  )}
-                  {form.tipoTercero==='Cliente' && form.terceroId && pendientesTercero.length===0 && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2">
-                      <CheckCircle size={14} className="text-emerald-500"/>
-                      <p className="text-[11px] font-black text-emerald-700">Este cliente no tiene facturas pendientes.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                    {form.tipoTercero==='Cliente'&&form.terceroId&&factPend.length>0&&(
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-black uppercase text-slate-600">Cerrar Cuenta por Cobrar</p>
+                          <button onClick={()=>setForm({...form,cerrarCxC:!form.cerrarCxC,facturaId:''})}
+                            className={`w-10 h-5 rounded-full transition-all relative ${form.cerrarCxC?'bg-blue-500':'bg-slate-200'}`}>
+                            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.cerrarCxC?'left-5':'left-0.5'}`}/>
+                          </button>
+                        </div>
+                        {form.cerrarCxC&&factPend.map(f=>(
+                          <label key={f.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.facturaId===f.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-100'}`}>
+                            <input type="radio" name="fid" value={f.id} checked={form.facturaId===f.id} onChange={()=>setForm({...form,facturaId:f.id})} className="accent-blue-500"/>
+                            <div className="flex-1"><p className="font-black text-xs text-slate-900">{f.numero} · {dd(f.fechaVencimiento)}</p></div>
+                            <p className="font-mono font-black text-orange-500">${fmt(f.saldoUSD)}</p>
+                            {f.fechaVencimiento<today()&&<Badge v="red">Vencida</Badge>}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {form.tipoTercero==='Cliente'&&form.terceroId&&factPend.length===0&&(
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-500"/><p className="text-[10px] font-black text-emerald-700">Sin facturas pendientes de cobro.</p></div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       </div>
     );
   };
 
-  // ── Tasas de Cambio ───────────────────────────────────────────────────────
-  const TasasView = () => {
-    const [modal, setModal] = useState(false);
-    const [form, setForm] = useState({fecha:today(),modulo:'Todos',moneda:'USD',tasaRef:'',fuente:'Oficial / BCV'});
-    const [busy, setBusy] = useState(false);
-    const save = async () => {
-      if (!form.tasaRef) return alert('Tasa requerida'); setBusy(true);
-      try { const id=gid(); await setDoc(dref('banco_tasas',id),{...form,tasaRef:Number(form.tasaRef),id,ts:serverTimestamp()}); setModal(false); setForm({fecha:today(),modulo:'Todos',moneda:'USD',tasaRef:'',fuente:'Oficial / BCV'}); } finally { setBusy(false); }
+  // ── 4. CONCILIACIÓN BANCARIA ───────────────────────────────────────────────
+  const ConciliacionView = () => {
+    const [cuentaId, setCuentaId]   = useState('');
+    const [desde,    setDesde]      = useState(mesActual()+'-01');
+    const [hasta,    setHasta]      = useState(today());
+    const [saldoBanco, setSaldoBco] = useState('');
+    const [marcados,   setMarcados] = useState({});  // id → true/false
+    const [ajustes,    setAjustes]  = useState([]);  // [{tipo,concepto,monto}]
+    const [busy,       setBusy]     = useState(false);
+
+    const cuenta = cuentas.find(c=>c.id===cuentaId);
+    const movPeriodo = movimientos.filter(m=>m.cuentaId===cuentaId&&m.fecha>=desde&&m.fecha<=hasta&&m.estatus!=='Conciliado');
+    const movHistorico = movimientos.filter(m=>m.cuentaId===cuentaId&&m.fecha<desde&&m.estatus!=='Conciliado');
+    const todosParaConciliar = [...movHistorico,...movPeriodo];
+
+    const toggle = (id)=>setMarcados(prev=>({...prev,[id]:!prev[id]}));
+
+    const egresosTransito = todosParaConciliar.filter(m=>m.tipo==='Egreso'&&!marcados[m.id]).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const ingresosTransito = todosParaConciliar.filter(m=>m.tipo==='Ingreso'&&!marcados[m.id]).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const cargosNoCont  = ajustes.filter(a=>a.tipo==='Cargo' ).reduce((a,x)=>a+Number(x.monto||0),0);
+    const abonosNoCont  = ajustes.filter(a=>a.tipo==='Abono' ).reduce((a,x)=>a+Number(x.monto||0),0);
+
+    const saldoLibros   = cuenta ? Number(cuenta.moneda==='BS'?Number(cuenta.saldo)/tasaActiva:cuenta.saldo) : 0;
+    const saldoConcil   = saldoLibros + cargosNoCont - abonosNoCont + egresosTransito - ingresosTransito;
+    const saldoBancoNum = Number(saldoBanco)||0;
+    const diferencia    = saldoBancoNum - saldoConcil;
+    const OK            = Math.abs(diferencia)<0.01 && saldoBancoNum>0;
+
+    const aprobar = async()=>{
+      if(!OK) return alert('Diferencia debe ser 0.00 para aprobar');
+      if(!window.confirm('¿Confirmar cierre de conciliación? Esta acción es IRREVERSIBLE.')) return;
+      setBusy(true);
+      try {
+        const batch=writeBatch(db);
+        const ids=Object.entries(marcados).filter(([,v])=>v).map(([k])=>k);
+        ids.forEach(id=>batch.update(dref('banco_movimientos',id),{estatus:'Conciliado'}));
+        const concId=gid();
+        batch.set(dref('banco_conciliaciones',concId),{id:concId,cuentaId,cuentaNombre:cuenta.banco,desde,hasta,saldoBanco:saldoBancoNum,saldoLibros,egresosTransito,ingresosTransito,cargosNoCont,abonosNoCont,saldoConciliado:saldoConcil,diferencia,movsConciliados:ids.length,ajustes,aprobado:true,fecha:today(),ts:serverTimestamp()});
+        await batch.commit();
+        setMarcados({}); setSaldoBco(''); setAjustes([]);
+        alert(`✅ Conciliación aprobada. ${ids.length} movimiento(s) marcados como Conciliados.`);
+      } finally { setBusy(false); }
     };
-    return (
-      <div>
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <KPI label="Tasa Global Activa" value={`${tasas.find(t=>t.modulo==='Todos')?.tasaRef||'—'} Bs/$`} accent="gold" Icon={Globe}/>
-          <KPI label="Registros" value={tasas.length} accent="blue" Icon={TrendingUp}/>
-          <KPI label="Última Actualización" value={dd(tasas[0]?.fecha||'')} accent="green" Icon={CalendarDays}/>
-        </div>
-        <Card title="Tasas de Cambio" subtitle="Historial BCV y tasas de mercado" action={<Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nueva Tasa</Bg>}>
-          <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Módulo</Th><Th>Moneda</Th><Th right>Tasa (Bs/$)</Th><Th>Fuente</Th></tr></thead>
-            <tbody>
-              {tasas.length===0&&<tr><td colSpan={5}><EmptyState icon={Globe} title="Sin tasas" desc="Registre la tasa de cambio actual"/></td></tr>}
-              {tasas.map(t=><tr key={t.id} className="hover:bg-slate-50">
-                <Td>{dd(t.fecha)}</Td><Td><Badge v={t.modulo==='Todos'?'gray':'blue'}>{t.modulo}</Badge></Td>
-                <Td><Pill usd={t.moneda==='USD'}>{t.moneda}</Pill></Td>
-                <Td right mono className="font-black text-slate-900 text-base">{t.tasaRef}</Td>
-                <Td className="text-slate-400 text-[10px] uppercase font-semibold">{t.fuente}</Td>
-              </tr>)}
-            </tbody>
-          </table>
-        </Card>
-        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Tasa de Cambio"
-          footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar'}</Bg></>}>
-          <div className="grid grid-cols-2 gap-4">
-            <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
-            <FG label="Moneda"><select className={sel} value={form.moneda} onChange={e=>setForm({...form,moneda:e.target.value})}><option>USD</option><option>EUR</option></select></FG>
-            <FG label="Tasa Bs/$"><input type="number" step="0.01" className={inp} value={form.tasaRef} onChange={e=>setForm({...form,tasaRef:e.target.value})} placeholder="39.50"/></FG>
-            <FG label="Módulo"><select className={sel} value={form.modulo} onChange={e=>setForm({...form,modulo:e.target.value})}><option>Todos</option><option>Banco</option><option>Facturación</option><option>Inventario</option></select></FG>
-            <FG label="Fuente" full><input className={inp} value={form.fuente} onChange={e=>setForm({...form,fuente:e.target.value})} placeholder="Oficial / BCV / Paralelo"/></FG>
-          </div>
-        </Modal>
-      </div>
-    );
-  };
-
-  // ── Proveedores (Terceros de Compras) ─────────────────────────────────────
-  const ProveedoresView = () => {
-    const [modal, setModal] = useState(false);
-    const [form, setForm] = useState({nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0'});
-    const [busy, setBusy] = useState(false);
-    const [search, setSearch] = useState('');
-    const filtered = proveedores.filter(p=>p.nombre?.toUpperCase().includes(search.toUpperCase())||p.rif?.includes(search.toUpperCase()));
-    const save = async () => {
-      if (!form.nombre||!form.rif) return alert('Nombre y RIF requeridos'); setBusy(true);
-      try { const id=gid(); await setDoc(dref('compras_proveedores',id),{...form,id,ts:serverTimestamp()}); setModal(false); setForm({nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0'}); } finally { setBusy(false); }
-    };
-    return (
-      <div>
-        <Card title="Directorio de Proveedores" subtitle={`${proveedores.length} proveedores registrados`}
-          action={<div className="flex gap-2"><div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-blue-500 w-36"/></div><Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nuevo</Bg></div>}>
-          <table className="w-full"><thead><tr><Th>RIF</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>Días Crédito</Th><Th></Th></tr></thead>
-            <tbody>
-              {filtered.length===0&&<tr><td colSpan={6}><EmptyState icon={Users} title="Sin proveedores" desc="Registre sus proveedores"/></td></tr>}
-              {filtered.map(p=><tr key={p.id} className="hover:bg-slate-50">
-                <Td mono className="font-black text-slate-900">{p.rif}</Td>
-                <Td className="uppercase font-semibold">{p.nombre}</Td>
-                <Td>{p.telefono||'—'}</Td>
-                <Td className="text-slate-400">{p.email||'—'}</Td>
-                <Td mono>{p.diasCredito} días</Td>
-                <Td><button onClick={()=>deleteDoc(dref('compras_proveedores',p.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></Td>
-              </tr>)}
-            </tbody>
-          </table>
-        </Card>
-        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Proveedor"
-          footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar'}</Bg></>}>
-          <div className="grid grid-cols-2 gap-4">
-            <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="SUMINISTROS ABC C.A."/></FG>
-            <FG label="RIF / NIT"><input className={inp} value={form.rif} onChange={e=>setForm({...form,rif:e.target.value.toUpperCase()})} placeholder="J-12345678-9"/></FG>
-            <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})} placeholder="0212-0000000"/></FG>
-            <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="proveedor@email.com"/></FG>
-            <FG label="Días de Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e=>setForm({...form,diasCredito:e.target.value})}/></FG>
-            <FG label="Dirección" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value})}/></FG>
-          </div>
-        </Modal>
-      </div>
-    );
-  };
-
-  // ── Reportes Bancarios ────────────────────────────────────────────────────
-  const ReportesView = () => {
-    const [rptCuenta, setRptCuenta] = useState('');
-    const [rptDesde, setRptDesde] = useState(mesActual()+'-01');
-    const [rptHasta, setRptHasta] = useState(today());
-
-    const filtrado = movimientos.filter(m => {
-      const porCuenta = !rptCuenta || m.cuentaId===rptCuenta;
-      const porDesde  = !rptDesde  || m.fecha>=rptDesde;
-      const porHasta  = !rptHasta  || m.fecha<=rptHasta;
-      return porCuenta&&porDesde&&porHasta;
-    });
-
-    const totIngUSD = filtrado.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);
-    const totEgrUSD = filtrado.filter(m=>m.tipo==='Egreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);
-    const totIngBs  = filtrado.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoBs||0),0);
-    const totEgrBs  = filtrado.filter(m=>m.tipo==='Egreso').reduce((a,m)=>a+Number(m.montoBs||0),0);
-    const neto = totIngUSD - totEgrUSD;
 
     return (
       <div className="space-y-5">
-        {/* Filtros */}
-        <Card title="Filtros del Reporte">
-          <div className="grid grid-cols-3 gap-4">
-            <FG label="Cuenta Bancaria">
-              <select className={sel} value={rptCuenta} onChange={e=>setRptCuenta(e.target.value)}>
-                <option value="">Todas las cuentas</option>
-                {cuentas.map(c=><option key={c.id} value={c.id}>{c.banco} · {c.numeroCuenta}</option>)}
+        {/* Parámetros */}
+        <Card title="Parámetros de Conciliación">
+          <div className="grid grid-cols-4 gap-4">
+            <FG label="Cuenta Bancaria" full>
+              <select className={sel} value={cuentaId} onChange={e=>{setCuentaId(e.target.value);setMarcados({});}}>
+                <option value="">— Seleccione cuenta —</option>
+                {cuentas.map(c=><option key={c.id} value={c.id}>{TIPO_BANCO.find(t=>t.id===c.tipoBanco)?.flag||''} {c.banco} · {c.numeroCuenta} · Saldo: {c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</option>)}
               </select>
             </FG>
-            <FG label="Desde"><input type="date" className={inp} value={rptDesde} onChange={e=>setRptDesde(e.target.value)}/></FG>
-            <FG label="Hasta"><input type="date" className={inp} value={rptHasta} onChange={e=>setRptHasta(e.target.value)}/></FG>
+            <FG label="Desde"><input type="date" className={inp} value={desde} onChange={e=>setDesde(e.target.value)}/></FG>
+            <FG label="Hasta"><input type="date" className={inp} value={hasta} onChange={e=>setHasta(e.target.value)}/></FG>
+            <FG label="Saldo Final según Banco ($)">
+              <input type="number" step="0.01" className={`${inp} font-black text-lg ${OK?'border-emerald-400 bg-emerald-50':saldoBancoNum>0?'border-amber-400 bg-amber-50':''}`}
+                value={saldoBanco} onChange={e=>setSaldoBco(e.target.value)} placeholder="0.00"/>
+            </FG>
           </div>
         </Card>
 
-        {/* Totales */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPI label="Total Ingresos (USD)" value={`$${fmt(totIngUSD)}`} accent="green" Icon={ArrowUpCircle} sub={`Bs. ${fmt(totIngBs)}`}/>
-          <KPI label="Total Egresos (USD)" value={`$${fmt(totEgrUSD)}`} accent="red" Icon={ArrowDownCircle} sub={`Bs. ${fmt(totEgrBs)}`}/>
-          <KPI label="Flujo Neto (USD)" value={`$${fmt(neto)}`} accent={neto>=0?'green':'red'} Icon={ArrowLeftRight}/>
-          <KPI label="Transacciones" value={filtrado.length} accent="blue" Icon={FileText}/>
-        </div>
+        {cuentaId&&(
+          <div className="grid lg:grid-cols-3 gap-5">
+            {/* Lista de movimientos */}
+            <div className="lg:col-span-2 space-y-3">
+              <Card title={`Movimientos a Conciliar — ${todosParaConciliar.length}`} subtitle="Marque los que aparecen en el estado de cuenta del banco">
+                {todosParaConciliar.length===0
+                  ?<EmptyState icon={CheckCircle} title="Sin movimientos pendientes" desc="No hay movimientos sin conciliar para este período"/>
+                  :<div className="divide-y divide-slate-100">
+                    {todosParaConciliar.map(m=>(
+                      <label key={m.id} className={`flex items-center gap-4 py-3 px-2 cursor-pointer rounded-xl hover:bg-slate-50 transition-colors ${marcados[m.id]?'bg-emerald-50/60':''}`}>
+                        <input type="checkbox" checked={!!marcados[m.id]} onChange={()=>toggle(m.id)} className="w-4 h-4 accent-emerald-500 rounded flex-shrink-0"/>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge>
+                            <span className="text-[10px] text-slate-400">{dd(m.fecha)}</span>
+                            {m.fecha<desde&&<Badge v="gold">Anterior</Badge>}
+                          </div>
+                          <p className="text-xs font-semibold text-slate-700 truncate">{m.concepto}</p>
+                          {m.terceroNombre&&<p className="text-[10px] text-slate-400 truncate">{m.terceroNombre}</p>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={`font-mono font-black text-sm ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</p>
+                          <p className="text-[10px] text-slate-400">Bs.{fmt(m.montoBs)}</p>
+                        </div>
+                        {marcados[m.id]&&<CheckCircle size={16} className="text-emerald-500 flex-shrink-0"/>}
+                      </label>
+                    ))}
+                  </div>}
+              </Card>
 
-        {/* Resumen por banco */}
-        {!rptCuenta && (
-          <Card title="Resumen por Banco">
-            <table className="w-full">
-              <thead><tr><Th>Banco</Th><Th>Tipo</Th><Th right>Ingresos USD</Th><Th right>Egresos USD</Th><Th right>Ingresos Bs.</Th><Th right>Egresos Bs.</Th><Th right>Txns</Th></tr></thead>
-              <tbody>
-                {cuentas.map(c=>{
-                  const mv = movimientos.filter(m=>m.cuentaId===c.id&&m.fecha>=rptDesde&&m.fecha<=rptHasta);
-                  const ingUSD=mv.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);
-                  const egrUSD=mv.filter(m=>m.tipo==='Egreso' ).reduce((a,m)=>a+Number(m.montoUSD||0),0);
-                  const ingBs =mv.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoBs||0),0);
-                  const egrBs =mv.filter(m=>m.tipo==='Egreso' ).reduce((a,m)=>a+Number(m.montoBs||0),0);
-                  return <tr key={c.id} className="hover:bg-slate-50">
-                    <Td className="font-semibold">{c.banco}</Td>
-                    <Td><span className="text-[9px] font-black uppercase text-slate-400">{c.tipoBanco}</span></Td>
-                    <Td right mono className="text-emerald-600 font-bold">${fmt(ingUSD)}</Td>
-                    <Td right mono className="text-red-500 font-bold">${fmt(egrUSD)}</Td>
-                    <Td right mono className="text-emerald-700 text-[11px]">Bs.{fmt(ingBs)}</Td>
-                    <Td right mono className="text-red-600 text-[11px]">Bs.{fmt(egrBs)}</Td>
-                    <Td right mono className="font-black">{mv.length}</Td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
-          </Card>
+              {/* Ajustes (NC/ND bancarios) */}
+              <Card title="Ajustes Bancarios" subtitle="Notas de débito/crédito del banco no contabilizadas"
+                action={<button onClick={()=>setAjustes([...ajustes,{tipo:'Cargo',concepto:'',monto:''}])} className="text-[10px] font-black uppercase text-blue-500 flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded-lg"><Plus size={12}/> Ajuste</button>}>
+                {ajustes.length===0?<p className="text-xs text-slate-400 text-center py-3">Sin ajustes. Agregue comisiones, intereses, etc.</p>:
+                  <div className="space-y-2">
+                    {ajustes.map((a,i)=>(
+                      <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
+                        <select className={`${sel} w-28 flex-shrink-0`} value={a.tipo} onChange={e=>{const n=[...ajustes];n[i].tipo=e.target.value;setAjustes(n);}}>
+                          <option value="Cargo">N. Débito</option><option value="Abono">N. Crédito</option>
+                        </select>
+                        <input className={`${inp} flex-1`} placeholder="Comisión bancaria, intereses..." value={a.concepto} onChange={e=>{const n=[...ajustes];n[i].concepto=e.target.value;setAjustes(n);}}/>
+                        <input type="number" step="0.01" className={`${inp} w-28 text-right`} placeholder="USD" value={a.monto} onChange={e=>{const n=[...ajustes];n[i].monto=e.target.value;setAjustes(n);}}/>
+                        <button onClick={()=>setAjustes(ajustes.filter((_,j)=>j!==i))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button>
+                      </div>
+                    ))}
+                  </div>}
+              </Card>
+            </div>
+
+            {/* Panel de cuadre */}
+            <div className="space-y-4">
+              <div className="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden shadow-sm sticky top-4">
+                <div className="px-5 py-4 border-b border-slate-100" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+                  <p className="font-black text-white text-sm uppercase tracking-widest">Panel de Cuadre</p>
+                  <p className="text-slate-400 text-[10px] mt-0.5">Tiempo real</p>
+                </div>
+                <div className="p-5 space-y-3">
+                  {[
+                    {label:'Saldo en Libros (Sistema)',value:saldoLibros,color:'text-slate-900',bold:true},
+                    {label:'(+) Cargos NC no contabilizados',value:cargosNoCont,color:'text-red-600'},
+                    {label:'(−) Abonos NC no contabilizados',value:abonosNoCont,color:'text-emerald-600'},
+                    {label:'(+) Egresos en Tránsito',value:egresosTransito,color:'text-red-500'},
+                    {label:'(−) Ingresos en Tránsito',value:ingresosTransito,color:'text-emerald-500'},
+                  ].map(({label,value,color,bold})=>(
+                    <div key={label} className="flex items-center justify-between">
+                      <p className={`text-[10px] ${bold?'font-black text-slate-700':'font-medium text-slate-500'} leading-tight max-w-[150px]`}>{label}</p>
+                      <p className={`font-mono font-black text-sm ${color}`}>${fmt(value)}</p>
+                    </div>
+                  ))}
+                  <div className="border-t-2 border-slate-200 pt-3 mt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] font-black text-slate-700 uppercase">= Saldo Conciliado</p>
+                      <p className="font-mono font-black text-base text-blue-600">${fmt(saldoConcil)}</p>
+                    </div>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] font-black text-slate-500 uppercase">Saldo según Banco</p>
+                      <p className="font-mono font-black text-base text-slate-900">${fmt(saldoBancoNum)}</p>
+                    </div>
+                  </div>
+                  <div className={`rounded-xl p-4 text-center border-2 ${OK?'border-emerald-400 bg-emerald-50':'border-amber-400 bg-amber-50'}`}>
+                    <p className="text-[9px] font-black uppercase tracking-widest mb-1 text-slate-500">Diferencia</p>
+                    <p className={`font-mono font-black text-2xl ${OK?'text-emerald-600':'text-amber-600'}`}>${fmt(diferencia)}</p>
+                    {OK?<p className="text-[10px] text-emerald-600 font-black mt-1">✓ Cuadrado al centavo</p>:<p className="text-[10px] text-amber-600 font-black mt-1">Pendiente de cuadrar</p>}
+                  </div>
+                  <div className="flex flex-col gap-2 pt-2">
+                    <Bg onClick={aprobar} disabled={!OK||busy}>
+                      {busy?<><RefreshCw size={13} className="animate-spin"/> Procesando...</>:<><CheckCircle size={13}/> Aprobar Conciliación</>}
+                    </Bg>
+                    <p className="text-[9px] text-slate-400 text-center">Al aprobar, los movimientos quedan bloqueados de forma permanente.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Historial de conciliaciones */}
+              {conciliaciones.filter(c=>c.cuentaId===cuentaId).length>0&&(
+                <Card title="Conciliaciones Cerradas">
+                  {conciliaciones.filter(c=>c.cuentaId===cuentaId).slice(0,5).map(c=>(
+                    <div key={c.id} className="flex items-center justify-between py-2 border-b border-slate-50">
+                      <div><p className="text-[10px] font-black text-slate-700">{dd(c.desde)} — {dd(c.hasta)}</p><p className="text-[9px] text-slate-400">{c.movsConciliados} mov. conciliados</p></div>
+                      <div className="text-right"><p className="font-mono font-black text-emerald-600 text-xs">${fmt(c.saldoBanco)}</p><Badge v="green">Aprobada</Badge></div>
+                    </div>
+                  ))}
+                </Card>
+              )}
+            </div>
+          </div>
         )}
-
-        {/* Detalle de transacciones */}
-        <Card title={`Detalle de Transacciones — ${filtrado.length} registros`}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th>Tercero / Factura</Th><Th>Referencia</Th><Th right>USD</Th><Th right>Bs.</Th><Th right>Tasa</Th></tr></thead>
-              <tbody>
-                {filtrado.length===0&&<tr><td colSpan={9}><EmptyState icon={BarChart3} title="Sin transacciones" desc="No hay datos para los filtros seleccionados"/></td></tr>}
-                {filtrado.map(m=><tr key={m.id} className="hover:bg-slate-50">
-                  <Td>{dd(m.fecha)}</Td>
-                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge></Td>
-                  <Td className="font-semibold text-[11px] max-w-[80px] truncate">{m.cuentaNombre}</Td>
-                  <Td className="max-w-[140px] truncate">{m.concepto}</Td>
-                  <Td className="text-[10px] max-w-[110px]">
-                    {m.aplicaTercero?<><p className="font-bold text-slate-700 truncate">{m.terceroNombre}</p>{m.facturaNumero&&<p className="text-blue-500 font-black">{m.facturaNumero}</p>}</>:<span className="text-slate-300">—</span>}
-                  </Td>
-                  <Td mono className="text-slate-400 text-[10px]">{m.referencia||'—'}</Td>
-                  <Td right mono className={`font-black text-sm ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
-                  <Td right mono className="text-slate-500 text-xs">Bs.{fmt(m.montoBs)}</Td>
-                  <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
-                </tr>)}
-              </tbody>
-              {filtrado.length>0&&<tfoot><tr className="bg-slate-900">
-                <td colSpan={6} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 tracking-widest">TOTALES DEL PERÍODO</td>
-                <td className="px-4 py-3 text-right font-mono font-black text-white">${fmt(totIngUSD-totEgrUSD)}</td>
-                <td className="px-4 py-3 text-right font-mono font-black text-slate-300 text-xs">Bs.{fmt(totIngBs-totEgrBs)}</td>
-                <td></td>
-              </tr></tfoot>}
-            </table>
-          </div>
-        </Card>
+        {!cuentaId&&<EmptyState icon={Building2} title="Seleccione una cuenta" desc="Elija la cuenta bancaria para comenzar la conciliación"/>}
       </div>
     );
   };
 
+  // ── 5. PROVEEDORES ─────────────────────────────────────────────────────────
+  const ProveedoresView = () => {
+    const [modal,setModal]=useState(false); const [busy,setBusy]=useState(false);
+    const [form,setForm]=useState({nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0'});
+    const save=async()=>{if(!form.nombre||!form.rif)return alert('Nombre y RIF requeridos');setBusy(true);try{const id=gid();await setDoc(dref('compras_proveedores',id),{...form,id,ts:serverTimestamp()});setModal(false);setForm({nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0'});}finally{setBusy(false);}};
+    return(<div>
+      <Card title="Directorio de Proveedores" subtitle={`${proveedores.length} proveedores`} action={<Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nuevo</Bg>}>
+        <table className="w-full"><thead><tr><Th>RIF</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>Días Crédito</Th><Th></Th></tr></thead>
+          <tbody>
+            {proveedores.length===0&&<tr><td colSpan={6}><EmptyState icon={Users} title="Sin proveedores" desc="Registre sus proveedores"/></td></tr>}
+            {proveedores.map(p=><tr key={p.id} className="hover:bg-slate-50"><Td mono className="font-black">{p.rif}</Td><Td className="uppercase font-semibold">{p.nombre}</Td><Td>{p.telefono||'—'}</Td><Td className="text-slate-400">{p.email||'—'}</Td><Td mono>{p.diasCredito} días</Td><Td><button onClick={()=>deleteDoc(dref('compras_proveedores',p.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></Td></tr>)}
+          </tbody>
+        </table>
+      </Card>
+      <Modal open={modal} onClose={()=>setModal(false)} title="Nuevo Proveedor" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar'}</Bg></>}>
+        <div className="grid grid-cols-2 gap-4">
+          <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="SUMINISTROS ABC C.A."/></FG>
+          <FG label="RIF / NIT"><input className={inp} value={form.rif} onChange={e=>setForm({...form,rif:e.target.value.toUpperCase()})} placeholder="J-12345678-9"/></FG>
+          <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})}/></FG>
+          <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></FG>
+          <FG label="Días Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e=>setForm({...form,diasCredito:e.target.value})}/></FG>
+          <FG label="Dirección" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value})}/></FG>
+        </div>
+      </Modal>
+    </div>);
+  };
+
+  // ── 6. REPORTES BANCARIOS ─────────────────────────────────────────────────
+  const ReportesView = () => {
+    const [rptCuenta,setRptC]=useState(''); const [rptDesde,setRptD]=useState(mesActual()+'-01'); const [rptHasta,setRptH]=useState(today());
+    const filtrado=movimientos.filter(m=>(!rptCuenta||m.cuentaId===rptCuenta)&&m.fecha>=rptDesde&&m.fecha<=rptHasta);
+    const ingUSD=filtrado.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const egrUSD=filtrado.filter(m=>m.tipo==='Egreso' ).reduce((a,m)=>a+Number(m.montoUSD||0),0);
+    const ingBs =filtrado.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoBs||0),0);
+    const egrBs =filtrado.filter(m=>m.tipo==='Egreso' ).reduce((a,m)=>a+Number(m.montoBs||0),0);
+    const neto  =ingUSD-egrUSD;
+    return(<div className="space-y-5">
+      <Card title="Filtros del Reporte"><div className="grid grid-cols-3 gap-4">
+        <FG label="Cuenta"><select className={sel} value={rptCuenta} onChange={e=>setRptC(e.target.value)}><option value="">Todas las cuentas</option>{cuentas.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}</select></FG>
+        <FG label="Desde"><input type="date" className={inp} value={rptDesde} onChange={e=>setRptD(e.target.value)}/></FG>
+        <FG label="Hasta"><input type="date" className={inp} value={rptHasta} onChange={e=>setRptH(e.target.value)}/></FG>
+      </div></Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPI label="Ingresos (USD)" value={`$${fmt(ingUSD)}`} accent="green" Icon={ArrowUpCircle} sub={`Bs. ${fmt(ingBs)}`}/>
+        <KPI label="Egresos (USD)" value={`$${fmt(egrUSD)}`} accent="red" Icon={ArrowDownCircle} sub={`Bs. ${fmt(egrBs)}`}/>
+        <KPI label="Flujo Neto" value={`$${fmt(neto)}`} accent={neto>=0?'green':'red'} Icon={ArrowLeftRight}/>
+        <KPI label="Transacciones" value={filtrado.length} accent="blue" Icon={FileText}/>
+      </div>
+      {!rptCuenta&&<Card title="Por Banco">
+        <table className="w-full"><thead><tr><Th>Banco</Th><Th>Tipo</Th><Th right>Ingresos $</Th><Th right>Egresos $</Th><Th right>Ingresos Bs.</Th><Th right>Egresos Bs.</Th><Th right>Txns</Th></tr></thead>
+          <tbody>{cuentas.map(c=>{const mv=filtrado.filter(m=>m.cuentaId===c.id);const iU=mv.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);const eU=mv.filter(m=>m.tipo==='Egreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);const iB=mv.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoBs||0),0);const eB=mv.filter(m=>m.tipo==='Egreso').reduce((a,m)=>a+Number(m.montoBs||0),0);
+            return<tr key={c.id} className="hover:bg-slate-50"><Td className="font-semibold">{c.banco}</Td><Td><span className="text-[9px] font-black uppercase text-slate-400">{c.tipoBanco}</span></Td><Td right mono className="text-emerald-600 font-bold">${fmt(iU)}</Td><Td right mono className="text-red-500 font-bold">${fmt(eU)}</Td><Td right mono className="text-emerald-700 text-xs">Bs.{fmt(iB)}</Td><Td right mono className="text-red-600 text-xs">Bs.{fmt(eB)}</Td><Td right mono className="font-black">{mv.length}</Td></tr>;
+          })}</tbody>
+        </table>
+      </Card>}
+      <Card title={`Detalle — ${filtrado.length} transacciones`} action={<button onClick={()=>window.print()} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-700"><Download size={12}/> Imprimir</button>}>
+        <div className="overflow-x-auto"><table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th>Tercero</Th><Th>Ref.</Th><Th right>USD</Th><Th right>Bs.</Th><Th right>Tasa</Th><Th>Estado</Th></tr></thead>
+          <tbody>
+            {filtrado.length===0&&<tr><td colSpan={10}><EmptyState icon={BarChart3} title="Sin transacciones" desc="No hay datos para los filtros seleccionados"/></td></tr>}
+            {filtrado.map(m=><tr key={m.id} className="hover:bg-slate-50">
+              <Td>{dd(m.fecha)}</Td><Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge></Td>
+              <Td className="text-[11px] font-semibold max-w-[80px] truncate">{m.cuentaNombre}</Td>
+              <Td className="max-w-[130px] truncate">{m.concepto}</Td>
+              <Td className="text-[10px] max-w-[100px] truncate">{m.terceroNombre||'—'}</Td>
+              <Td mono className="text-slate-400 text-[10px]">{m.referencia||'—'}</Td>
+              <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
+              <Td right mono className="text-slate-400 text-xs">Bs.{fmt(m.montoBs)}</Td>
+              <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
+              <Td><Badge v={m.estatus==='Conciliado'?'green':'gray'}>{m.estatus||'Pendiente'}</Badge></Td>
+            </tr>)}
+          </tbody>
+          {filtrado.length>0&&<tfoot><tr className="bg-slate-900"><td colSpan={6} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 tracking-widest">TOTALES</td><td className="px-4 py-3 text-right font-mono font-black text-white">${fmt(ingUSD-egrUSD)}</td><td className="px-4 py-3 text-right font-mono text-slate-400 text-xs">Bs.{fmt(ingBs-egrBs)}</td><td colSpan={2}></td></tr></tfoot>}
+        </table></div>
+      </Card>
+    </div>);
+  };
+
+  // ── 7. TASAS ───────────────────────────────────────────────────────────────
+  const TasasView = () => {
+    const [modal,setModal]=useState(false); const [busy,setBusy]=useState(false);
+    const [form,setForm]=useState({fecha:today(),modulo:'Todos',moneda:'USD',tasaRef:'',fuente:'Oficial / BCV'});
+    const save=async()=>{if(!form.tasaRef)return alert('Tasa requerida');setBusy(true);try{const id=gid();await setDoc(dref('banco_tasas',id),{...form,tasaRef:Number(form.tasaRef),id,ts:serverTimestamp()});setModal(false);setForm({fecha:today(),modulo:'Todos',moneda:'USD',tasaRef:'',fuente:'Oficial / BCV'});}finally{setBusy(false);}};
+    return(<div>
+      <div className="grid grid-cols-3 gap-4 mb-5">
+        <KPI label="Tasa Global Activa" value={`${tasas.find(t=>t.modulo==='Todos')?.tasaRef||'—'} Bs/$`} accent="gold" Icon={Globe}/>
+        <KPI label="Registros" value={tasas.length} accent="blue" Icon={TrendingUp}/>
+        <KPI label="Última Actualización" value={dd(tasas[0]?.fecha||'')} accent="green" Icon={CalendarDays}/>
+      </div>
+      <Card title="Tasas de Cambio" subtitle="Historial BCV y de mercado" action={<Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nueva</Bg>}>
+        <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Módulo</Th><Th>Moneda</Th><Th right>Tasa (Bs/$)</Th><Th>Fuente</Th></tr></thead>
+          <tbody>{tasas.length===0&&<tr><td colSpan={5}><EmptyState icon={Globe} title="Sin tasas" desc="Registre la tasa actual"/></td></tr>}{tasas.map(t=><tr key={t.id} className="hover:bg-slate-50"><Td>{dd(t.fecha)}</Td><Td><Badge v={t.modulo==='Todos'?'gray':'blue'}>{t.modulo}</Badge></Td><Td><Pill usd={t.moneda==='USD'}>{t.moneda}</Pill></Td><Td right mono className="font-black text-slate-900 text-base">{t.tasaRef}</Td><Td className="text-slate-400 text-[10px] uppercase font-semibold">{t.fuente}</Td></tr>)}</tbody>
+        </table>
+      </Card>
+      <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Tasa" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar'}</Bg></>}>
+        <div className="grid grid-cols-2 gap-4">
+          <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
+          <FG label="Moneda"><select className={sel} value={form.moneda} onChange={e=>setForm({...form,moneda:e.target.value})}><option>USD</option><option>EUR</option></select></FG>
+          <FG label="Tasa Bs/$"><input type="number" step="0.01" className={inp} value={form.tasaRef} onChange={e=>setForm({...form,tasaRef:e.target.value})} placeholder="39.50"/></FG>
+          <FG label="Módulo"><select className={sel} value={form.modulo} onChange={e=>setForm({...form,modulo:e.target.value})}><option>Todos</option><option>Banco</option><option>Facturación</option><option>Inventario</option></select></FG>
+          <FG label="Fuente" full><input className={inp} value={form.fuente} onChange={e=>setForm({...form,fuente:e.target.value})} placeholder="Oficial / BCV / Paralelo"/></FG>
+        </div>
+      </Modal>
+    </div>);
+  };
+
+  // ── NAV & RENDER ───────────────────────────────────────────────────────────
   const navGroups = [
-    { group: 'Analítica', items: [{ id:'dashboard', label:'Panel de Tesorería', icon:LayoutDashboard }] },
-    { group: 'Bancario', items: [{ id:'cuentas', label:'Cuentas Bancarias', icon:Building2 }, { id:'movimientos', label:'Movimientos', icon:ArrowLeftRight }] },
-    { group: 'Terceros', items: [{ id:'proveedores', label:'Proveedores', icon:Users }] },
-    { group: 'Reportes', items: [{ id:'reportes', label:'Reporte Bancario', icon:BarChart3 }] },
-    { group: 'Config.', items: [{ id:'tasas', label:'Tasas de Cambio', icon:Globe }] },
+    { group:'Analítica',   items:[{id:'dashboard',    label:'Panel de Tesorería', icon:LayoutDashboard}] },
+    { group:'Bancario',    items:[{id:'cuentas',      label:'Cuentas Bancarias',  icon:Building2},
+                                  {id:'movimientos',  label:'Movimientos',        icon:ArrowLeftRight},
+                                  {id:'conciliacion', label:'Conciliación',       icon:CheckCircle}] },
+    { group:'Terceros',    items:[{id:'proveedores',  label:'Proveedores',        icon:Users}] },
+    { group:'Reportes',    items:[{id:'reportes',     label:'Reporte Bancario',   icon:BarChart3}] },
+    { group:'Config.',     items:[{id:'tasas',        label:'Tasas de Cambio',    icon:Globe}] },
   ];
-  const views = { dashboard:<DashboardView/>, cuentas:<CuentasView/>, movimientos:<MovimientosView/>, proveedores:<ProveedoresView/>, reportes:<ReportesView/>, tasas:<TasasView/> };
+  const views = { dashboard:<DashboardView/>, cuentas:<CuentasView/>, movimientos:<MovimientosView/>, conciliacion:<ConciliacionView/>, proveedores:<ProveedoresView/>, reportes:<ReportesView/>, tasas:<TasasView/> };
   const curNav = navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
 
   return (
     <SidebarLayout brand="Supply G&B" brandSub="Bancos & Tesorería" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor={BLUE}
       headerContent={<>
-        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Tesorería <ChevronRight size={8} className="inline"/> Bancos</p></div>
+        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Tesorería <ChevronRight size={8} className="inline"/> {navGroups.find(g=>g.items.find(i=>i.id===sec))?.group}</p></div>
         <div className="flex items-center gap-3">
           <div className="bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5 flex items-center gap-1.5"><DollarSign size={12} className="text-blue-500"/><span className="text-[10px] font-black text-blue-700 font-mono">BCV: {tasaActiva} Bs/$</span></div>
-          <Bg onClick={()=>{setSec('movimientos');}} sm><Plus size={12}/> Transacción</Bg>
+          <Bg onClick={()=>setSec('movimientos')} sm><Plus size={12}/> Transacción</Bg>
         </div>
       </>}>
       {views[sec]}
