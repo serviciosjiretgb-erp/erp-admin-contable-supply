@@ -1319,11 +1319,72 @@ function BancoApp({ fbUser, onBack }) {
         const id=gid(); const batch=writeBatch(db);
         const tercero=form.tipoTercero==='Cliente'?clientes.find(c=>c.id===form.terceroId):provs.find(p=>p.id===form.terceroId);
         const factura=form.cerrarCxC&&form.facturaId?facturas.find(f=>f.id===form.facturaId):null;
-        // Asiento contable
-        const ctaBanco = cuentaSel?.cuentaContable || `Banco ${cuenta.banco}`;
-        const ctaContra = form.ctaContraNombre || (form.tipo==='Ingreso'?'Cuentas por Cobrar':'Cuentas por Pagar');
-        const asientoDebito  = form.tipo==='Ingreso' ? ctaBanco  : ctaContra;
-        const asientoCredito = form.tipo==='Ingreso' ? ctaContra : ctaBanco;
+        // Asiento contable — cuentas
+        const ctaBancoCod  = cuentaSel?.cuentaContable?.split('·')[0]?.trim()||'';
+        const ctaBancoNom  = cuentaSel?.cuentaContable?.split('·')[1]?.trim()||`Banco ${cuenta.banco}`;
+        const ctaContraCod = form.ctaContraNombre?.split('·')[0]?.trim()||'';
+        const ctaContraNom = form.ctaContraNombre?.split('·')[1]?.trim()||form.ctaContraNombre||(form.tipo==='Ingreso'?'Cuentas por Cobrar':'Cuentas por Pagar');
+        const asientoDebito  = form.tipo==='Ingreso' ? ctaBancoNom  : ctaContraNom;
+        const asientoCredito = form.tipo==='Ingreso' ? ctaContraNom : ctaBancoNom;
+
+        // ── AUTO-GENERAR ASIENTO EN LIBRO DIARIO ──────────────────────────
+        // Determinar número comprobante mensual (CB-YYYYMM-NNN)
+        const yyyymm = form.fecha.substring(0,7).replace('-','');
+        const comptRef  = dref('cont_contadores', `banco_${yyyymm}`);
+        // Calcular montos según moneda de la cuenta
+        const esMonedaLocal = cuenta.moneda === 'BS';
+        // Líneas del asiento (Debe y Haber)
+        const debitLinea = {
+          codigo: form.tipo==='Ingreso'?ctaBancoCod:ctaContraCod,
+          cuenta: form.tipo==='Ingreso'?ctaBancoNom:ctaContraNom,
+          tipoLinea:'D',
+          nroDoc: form.referencia||id.substring(0,8).toUpperCase(),
+          concepto: form.concepto,
+          tasa, montoBs, montoUSD,
+          debeBs: esMonedaLocal?montoBs:montoUSD*tasa,
+          haberBs: 0,
+          debeUSD: montoUSD,
+          haberUSD: 0,
+        };
+        const haberLinea = {
+          codigo: form.tipo==='Ingreso'?ctaContraCod:ctaBancoCod,
+          cuenta: form.tipo==='Ingreso'?ctaContraNom:ctaBancoNom,
+          tipoLinea:'H',
+          nroDoc: form.referencia||id.substring(0,8).toUpperCase(),
+          concepto: form.concepto,
+          tasa, montoBs, montoUSD,
+          debeBs: 0,
+          haberBs: esMonedaLocal?montoBs:montoUSD*tasa,
+          debeUSD: 0,
+          haberUSD: montoUSD,
+        };
+        const asientoId = gid();
+        // El numero real se asignará con contador incremental
+        const numComp = `CB-${yyyymm}-${String(movBanco.filter(m=>m.fecha?.startsWith(form.fecha.substring(0,7))).length+1).padStart(4,'0')}`;
+        const mesLabel = form.fecha.substring(5,7)+'/'+form.fecha.substring(0,4);
+        batch.set(dref('cont_asientos',asientoId),{
+          id:asientoId,
+          comprobante: numComp,
+          numero: numComp,
+          mes: mesLabel,
+          fecha: form.fecha,
+          tipo: 'Bancario',
+          subTipo: form.tipo,  // Ingreso/Egreso/Transferencia
+          nroDocumento: form.referencia||'',
+          descripcion: form.concepto.toUpperCase(),
+          tasa,
+          niif: false,
+          efectivo: false,
+          modulo: 'Bancos',
+          movimientoBancoId: id,
+          terceroNombre: tercero?.nombre||'',
+          lineas: [debitLinea, haberLinea],
+          totalDebeBs: esMonedaLocal?montoBs:montoUSD*tasa,
+          totalHaberBs: esMonedaLocal?montoBs:montoUSD*tasa,
+          totalDebeUSD: montoUSD,
+          totalHaberUSD: montoUSD,
+          ts: serverTimestamp()
+        });
 
         batch.set(dref('banco_movimientos',id),{
           id,fecha:form.fecha,tipo:form.tipo,
@@ -1337,6 +1398,7 @@ function BancoApp({ fbUser, onBack }) {
           facturaId:factura?.id||'',facturaNumero:factura?.numero||'',
           ctaContraId:form.ctaContraId,ctaContraNombre:form.ctaContraNombre,
           asientoDebito,asientoCredito,
+          asientoContableId:asientoId,
           estatus:'No Conciliado',ts:serverTimestamp()
         });
         batch.update(dref('banco_cuentas',cuenta.id),{saldo:nuevoSaldo});
@@ -2626,174 +2688,362 @@ function ContabilidadApp({ fbUser, onBack }) {
 }
 function AsientosApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('dashboard');
-  const [asientos, setAsientos] = useState([]);
-  const [cuentas, setCuentas] = useState([]);
+  const [asientos, setAsientos]   = useState([]);
+  const [cuentas, setCuentas]     = useState([]);
 
   useEffect(() => {
     if (!fbUser) return;
     const subs = [
-      onSnapshot(query(col('cont_asientos'), orderBy('fecha', 'desc')), s => setAsientos(s.docs.map(d => d.data()))),
-      onSnapshot(col('cont_cuentas'), s => setCuentas(s.docs.map(d => d.data())))
+      onSnapshot(query(col('cont_asientos'), orderBy('fecha','desc')), s => setAsientos(s.docs.map(d=>d.data()))),
+      onSnapshot(col('cont_cuentas'), s => setCuentas(s.docs.map(d=>d.data()))),
     ];
-    return () => subs.forEach(u => u());
+    return () => subs.forEach(u=>u());
   }, [fbUser]);
 
-  const DashboardView = () => {
-    const mesCnt = asientos.filter(a => a.fecha?.startsWith(mesActual())).length;
-    const totDebitos = asientos.reduce((s, a) => s + (a.lineas || []).reduce((l, li) => l + Number(li.debito || 0), 0), 0);
-    const totCreditos = asientos.reduce((s, a) => s + (a.lineas || []).reduce((l, li) => l + Number(li.credito || 0), 0), 0);
-    const balanceado = Math.abs(totDebitos - totCreditos) < 0.01;
+  // ── Helpers para compatibilidad con asientos viejos (campo debito/credito) y nuevos (debeBs/haberBs) ──
+  const getDebeBs  = l => Number(l.debeBs  ?? l.debito  ?? 0);
+  const getHaberBs = l => Number(l.haberBs ?? l.credito ?? 0);
+  const getDebeUSD = l => Number(l.debeUSD  ?? 0);
+  const getHaberUSD= l => Number(l.haberUSD ?? 0);
 
+  // ── DASHBOARD ──────────────────────────────────────────────────────────────
+  const DashboardView = () => {
+    const mesCnt = asientos.filter(a=>a.fecha?.startsWith(mesActual())).length;
+    const bancarios = asientos.filter(a=>a.modulo==='Bancos').length;
+    const manuales  = asientos.filter(a=>a.modulo!=='Bancos').length;
+    const totDebBs  = asientos.reduce((s,a)=>(a.lineas||[]).reduce((l,li)=>l+getDebeBs(li),s),0);
+    const totHabBs  = asientos.reduce((s,a)=>(a.lineas||[]).reduce((l,li)=>l+getHaberBs(li),s),0);
+    const balOk     = Math.abs(totDebBs-totHabBs)<0.01;
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPI label="Total Asientos" value={asientos.length} accent="blue" Icon={FileText} />
-          <KPI label="Asientos del Mes" value={mesCnt} accent="green" Icon={CalendarDays} />
-          <KPI label="Total Débitos" value={`$${fmt(totDebitos)}`} accent="gold" Icon={ArrowUpCircle} />
-          <KPI label="Balance" value={balanceado ? '✓ OK' : '✗ Error'} accent={balanceado ? 'green' : 'red'} Icon={Scale} sub={balanceado ? 'Partida doble correcta' : 'Revisar asientos'} />
+          <KPI label="Total Asientos" value={asientos.length} accent="blue" Icon={FileText}/>
+          <KPI label="Del Mes" value={mesCnt} accent="green" Icon={CalendarDays}/>
+          <KPI label="Auto-bancarios" value={bancarios} accent="gold" Icon={Building2} sub="Generados de Bancos"/>
+          <KPI label="Balance Gral." value={balOk?'✓ Cuadrado':'✗ Revisar'} accent={balOk?'green':'red'} Icon={Scale}/>
         </div>
-        <Card title="Últimos Asientos de Diario">
-          {asientos.length === 0 ? <EmptyState icon={FileText} title="Libro Diario vacío" desc="Registre el primer asiento contable" /> :
-            <table className="w-full"><thead><tr><Th>Nro.</Th><Th>Fecha</Th><Th>Descripción</Th><Th>Tipo</Th><Th right>Débito</Th><Th right>Crédito</Th></tr></thead>
-              <tbody>{asientos.slice(0, 8).map(a => {
-                const deb = (a.lineas || []).reduce((s, l) => s + Number(l.debito || 0), 0);
-                const cred = (a.lineas || []).reduce((s, l) => s + Number(l.credito || 0), 0);
-                return <tr key={a.id} className="hover:bg-slate-50">
-                  <Td mono className="font-black text-blue-600">{a.numero}</Td>
-                  <Td>{dd(a.fecha)}</Td>
-                  <Td className="max-w-[200px] truncate">{a.descripcion}</Td>
-                  <Td><Badge v={a.tipo === 'Manual' ? 'blue' : a.tipo === 'Apertura' ? 'green' : 'gray'}>{a.tipo || 'Manual'}</Badge></Td>
-                  <Td right mono className="text-emerald-700 font-black">${fmt(deb)}</Td>
-                  <Td right mono className="text-red-600 font-black">${fmt(cred)}</Td>
-                </tr>;
-              })}</tbody>
-            </table>}
-        </Card>
+        <div className="grid lg:grid-cols-2 gap-5">
+          <Card title="Últimos Asientos">
+            {asientos.length===0?<EmptyState icon={FileText} title="Sin asientos" desc="Los asientos de banco se generan automáticamente"/>:
+              <table className="w-full"><thead><tr><Th>Comprobante</Th><Th>Fecha</Th><Th>Concepto</Th><Th>Módulo</Th><Th right>Debe Bs</Th></tr></thead>
+                <tbody>{asientos.slice(0,8).map(a=>{
+                  const dBs=(a.lineas||[]).reduce((s,l)=>s+getDebeBs(l),0);
+                  return <tr key={a.id} className="hover:bg-slate-50">
+                    <Td mono className="font-black text-blue-600">{a.comprobante||a.numero}</Td>
+                    <Td>{dd(a.fecha)}</Td>
+                    <Td className="max-w-[160px] truncate">{a.descripcion}</Td>
+                    <Td><Badge v={a.modulo==='Bancos'?'blue':'gray'}>{a.modulo||'Manual'}</Badge></Td>
+                    <Td right mono className="text-emerald-700 font-black">Bs.{fmt(dBs)}</Td>
+                  </tr>;
+                })}</tbody>
+              </table>}
+          </Card>
+          <Card title="Posición Contable">
+            <div className="space-y-3">
+              {[{l:'Débitos Bs.',v:`Bs. ${fmt(totDebBs)}`,c:'text-emerald-600'},{l:'Haberes Bs.',v:`Bs. ${fmt(totHabBs)}`,c:'text-red-600'},{l:'Débitos USD',v:`$${fmt(asientos.reduce((s,a)=>(a.lineas||[]).reduce((l,li)=>l+getDebeUSD(li),s),0))}`,c:'text-emerald-700'},{l:'Haberes USD',v:`$${fmt(asientos.reduce((s,a)=>(a.lineas||[]).reduce((l,li)=>l+getHaberUSD(li),s),0))}`,c:'text-red-700'}].map(({l,v,c})=>(
+                <div key={l} className="flex justify-between py-2 border-b border-slate-50"><span className="text-xs text-slate-500 font-medium">{l}</span><span className={`font-mono font-black text-sm ${c}`}>{v}</span></div>
+              ))}
+              <div className={`flex justify-between py-3 px-4 rounded-xl ${balOk?'bg-emerald-50':'bg-red-50'}`}><span className="font-black text-xs uppercase tracking-wide">Diferencia</span><span className={`font-mono font-black ${balOk?'text-emerald-600':'text-red-600'}`}>Bs. {fmt(Math.abs(totDebBs-totHabBs))}</span></div>
+            </div>
+          </Card>
+        </div>
       </div>
     );
   };
 
+  // ── LIBRO DIARIO — TABLA PLANA FORMATO COMPROBANTE ────────────────────────
   const LibroDiarioView = () => {
     const [search, setSearch] = useState('');
-    const filtered = asientos.filter(a => a.descripcion?.toLowerCase().includes(search.toLowerCase()) || a.numero?.includes(search));
+    const [filtMes, setFiltMes] = useState('');
+    const [filtMod, setFiltMod] = useState('');
+    const [expandidos, setExp]  = useState({});
+
+    const meses = [...new Set(asientos.map(a=>a.mes||a.fecha?.substring(0,7)||''))].filter(Boolean).sort().reverse();
+
+    const filtered = asientos.filter(a=>{
+      if(filtMes && (a.mes||a.fecha?.substring(0,7)||'') !== filtMes) return false;
+      if(filtMod && (a.modulo||'Manual') !== filtMod) return false;
+      if(search && !a.descripcion?.toLowerCase().includes(search.toLowerCase()) && !(a.comprobante||a.numero)?.includes(search)) return false;
+      return true;
+    });
+
+    // Generar filas planas para la tabla
+    const filas = [];
+    let saldoAcumBs = 0, saldoAcumUSD = 0;
+    [...filtered].sort((a,b)=>a.fecha?.localeCompare(b.fecha)||0).forEach(a=>{
+      (a.lineas||[]).forEach(l=>{
+        const dBs=getDebeBs(l), hBs=getHaberBs(l), dUSD=getDebeUSD(l), hUSD=getHaberUSD(l);
+        saldoAcumBs  += dBs - hBs;
+        saldoAcumUSD += dUSD - hUSD;
+        filas.push({
+          comprobante: a.comprobante||a.numero||'',
+          mes: a.mes||a.fecha?.substring(5,7)+'/'+a.fecha?.substring(0,4)||'',
+          fecha: a.fecha,
+          codigo: l.codigo||l.cuentaCodigo||'',
+          cuenta: l.cuenta||l.cuentaNombre||'',
+          tipo: l.tipoLinea||((dBs>0||dUSD>0)?'D':'H'),
+          nroDoc: l.nroDoc||a.nroDocumento||a.referencia||'',
+          concepto: l.concepto||a.descripcion||'',
+          tasa: Number(l.tasa||a.tasa||0),
+          debeBs: dBs,
+          haberBs: hBs,
+          saldoBs: saldoAcumBs,
+          debeUSD: dUSD,
+          haberUSD: hUSD,
+          saldoUSD: saldoAcumUSD,
+          modulo: a.modulo||'Manual',
+          asientoId: a.id,
+        });
+      });
+    });
+
+    const exportarExcel = () => {
+      let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"><style>body{font-size:10px;font-family:Arial}th{background:#1e3a5f;color:#fff;border:1px solid #94a3b8;padding:4px 8px;font-size:9px;text-transform:uppercase}td{border:1px solid #e2e8f0;padding:3px 8px}tr:nth-child(even) td{background:#f8fafc}.D td:first-child{color:#16a34a}.H td:first-child{color:#dc2626}</style></head><body>
+      <p style="font-size:13px;font-weight:bold">Libro Diario — Servicios Jiret G&amp;B, C.A.</p>
+      <p style="font-size:10px;color:#666">Generado: ${dd(today())} · ${filas.length} líneas</p>
+      <table><thead><tr><th>Comprobante</th><th>Mes</th><th>Fecha</th><th>Código</th><th>Cuenta de movimiento</th><th>Tipo</th><th>Nro Documento</th><th>CONCEPTO</th><th>Tasa</th><th>Debe Bs</th><th>Haber Bs</th><th>Saldo Bs</th><th>Debe USD</th><th>Haber USD</th><th>Saldo USD</th></tr></thead><tbody>`;
+      filas.forEach(f=>{
+        html+=`<tr class="${f.tipo}"><td style="font-family:Courier New;font-weight:bold">${f.comprobante}</td><td>${f.mes}</td><td>${dd(f.fecha)}</td><td style="font-family:Courier New;color:#1e40af;font-weight:bold">${f.codigo}</td><td>${f.cuenta}</td><td style="font-weight:bold;${f.tipo==='D'?'color:#16a34a':'color:#dc2626'}">${f.tipo}</td><td>${f.nroDoc}</td><td>${f.concepto}</td><td style="text-align:right">${f.tasa}</td><td style="text-align:right">${f.debeBs>0?fmt(f.debeBs):''}</td><td style="text-align:right">${f.haberBs>0?fmt(f.haberBs):''}</td><td style="text-align:right">${fmt(f.saldoBs)}</td><td style="text-align:right">${f.debeUSD>0?fmt(f.debeUSD):''}</td><td style="text-align:right">${f.haberUSD>0?fmt(f.haberUSD):''}</td><td style="text-align:right">${fmt(f.saldoUSD)}</td></tr>`;
+      });
+      html+=`</tbody></table></body></html>`;
+      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`libro_diario_${today()}.xls`;a.click();URL.revokeObjectURL(url);
+    };
+
     return (
-      <Card title="Libro Diario" subtitle={`${asientos.length} asientos registrados`}
-        action={<div className="flex gap-2"><div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-blue-500 w-36" /></div></div>}>
-        {filtered.length === 0 ? <EmptyState icon={BookMarked} title="Sin asientos" desc="No hay asientos que coincidan" /> :
-          <div className="space-y-3">
-            {filtered.map(a => {
-              const deb = (a.lineas || []).reduce((s, l) => s + Number(l.debito || 0), 0);
-              const cred = (a.lineas || []).reduce((s, l) => s + Number(l.credito || 0), 0);
-              const balOk = Math.abs(deb - cred) < 0.01;
-              return (
-                <div key={a.id} className="border border-slate-100 rounded-xl overflow-hidden hover:border-blue-200 transition-colors">
-                  <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-b border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono font-black text-blue-600 text-sm">{a.numero}</span>
-                      <span className="text-xs text-slate-500">{dd(a.fecha)}</span>
-                      <Badge v={a.tipo === 'Manual' ? 'blue' : 'green'}>{a.tipo || 'Manual'}</Badge>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {!balOk && <Badge v="red">Desbalanceado</Badge>}
-                      <button onClick={() => deleteDoc(dref('cont_asientos', a.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12} /></button>
-                    </div>
-                  </div>
-                  <div className="px-5 py-3"><p className="text-xs font-semibold text-slate-700 mb-3">{a.descripcion}</p>
-                    <table className="w-full">
-                      <thead><tr><th className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-left pb-1.5 w-24">Código</th><th className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-left pb-1.5">Cuenta</th><th className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-right pb-1.5 w-28">Débito</th><th className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-right pb-1.5 w-28">Crédito</th></tr></thead>
-                      <tbody>{(a.lineas || []).map((l, i) => <tr key={i} className={l.debito > 0 ? '' : 'bg-slate-50/50'}>
-                        <td className="font-mono font-bold text-xs text-blue-600 py-1 pr-3">{l.cuentaCodigo}</td>
-                        <td className={`text-xs py-1 ${l.debito > 0 ? 'font-semibold text-slate-800' : 'pl-8 text-slate-500'}`}>{l.cuentaNombre}</td>
-                        <td className="text-right font-mono text-xs py-1 text-emerald-700 font-bold">{Number(l.debito) > 0 ? `$${fmt(l.debito)}` : ''}</td>
-                        <td className="text-right font-mono text-xs py-1 text-red-600 font-bold">{Number(l.credito) > 0 ? `$${fmt(l.credito)}` : ''}</td>
-                      </tr>)}</tbody>
-                      <tfoot><tr className="border-t-2 border-slate-200"><td colSpan={2} className="pt-2 text-[10px] font-black uppercase text-slate-400">TOTALES</td><td className="pt-2 text-right font-mono font-black text-xs text-emerald-700">${fmt(deb)}</td><td className="pt-2 text-right font-mono font-black text-xs text-red-600">${fmt(cred)}</td></tr></tfoot>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
+      <Card title="Libro Diario" subtitle={`${filas.length} líneas · ${filtered.length} comprobantes`}
+        action={<div className="flex gap-2 flex-wrap items-center">
+          <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtMes} onChange={e=>setFiltMes(e.target.value)}>
+            <option value="">Todos los meses</option>
+            {meses.map(m=><option key={m} value={m}>{m}</option>)}
+          </select>
+          <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtMod} onChange={e=>setFiltMod(e.target.value)}>
+            <option value="">Todos</option><option value="Bancos">Bancos</option><option value="Manual">Manual</option>
+          </select>
+          <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs outline-none focus:border-blue-500 w-36"/></div>
+          <button onClick={exportarExcel} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><Download size={12}/> Excel</button>
+        </div>}>
+        {filas.length===0?<EmptyState icon={BookMarked} title="Sin registros" desc="Los asientos de banco se generan automáticamente al registrar movimientos"/>:
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead><tr style={{background:'#0f172a'}}>
+                {['Comprobante','Mes','Fecha','Código','Cuenta de movimiento','T','Nro Doc.','Concepto','Tasa','Debe Bs','Haber Bs','Saldo Bs','Debe USD','Haber USD','Saldo USD'].map(h=>(
+                  <th key={h} className="px-3 py-2.5 text-left font-black uppercase tracking-wider whitespace-nowrap text-[9px]" style={{color:'#94a3b8',borderBottom:'2px solid #1e293b'}}>{h}</th>
+                ))}
+              </thead>
+              <tbody>
+                {filas.map((f,i)=>{
+                  const isD = f.tipo==='D';
+                  const cambiaComp = i===0 || filas[i-1].comprobante!==f.comprobante;
+                  return (
+                    <tr key={i} className={`hover:bg-blue-50/40 transition-colors ${cambiaComp&&i>0?'border-t-2 border-blue-100':''}`}
+                      style={{background: isD ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)'}}>
+                      <td className="px-3 py-2 font-mono font-black text-blue-600 whitespace-nowrap">{cambiaComp?f.comprobante:''}</td>
+                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{cambiaComp?f.mes:''}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-600">{cambiaComp?dd(f.fecha):''}</td>
+                      <td className="px-3 py-2 font-mono font-black text-blue-700 whitespace-nowrap">{f.codigo}</td>
+                      <td className="px-3 py-2 font-medium text-slate-800 max-w-[180px]">
+                        <span className={`${!isD?'pl-4':''} block truncate`}>{f.cuenta}</span>
+                      </td>
+                      <td className={`px-3 py-2 font-black text-center ${isD?'text-emerald-600':'text-red-500'}`}>{f.tipo}</td>
+                      <td className="px-3 py-2 font-mono text-slate-400 whitespace-nowrap">{f.nroDoc}</td>
+                      <td className="px-3 py-2 text-slate-600 max-w-[160px]"><span className="block truncate">{f.concepto}</span></td>
+                      <td className="px-3 py-2 font-mono text-slate-500 text-right whitespace-nowrap">{f.tasa||''}</td>
+                      <td className="px-3 py-2 font-mono font-black text-emerald-600 text-right whitespace-nowrap">{f.debeBs>0?`Bs.${fmt(f.debeBs)}`:''}</td>
+                      <td className="px-3 py-2 font-mono font-black text-red-500 text-right whitespace-nowrap">{f.haberBs>0?`Bs.${fmt(f.haberBs)}`:''}</td>
+                      <td className="px-3 py-2 font-mono text-slate-700 text-right whitespace-nowrap font-bold">Bs.{fmt(f.saldoBs)}</td>
+                      <td className="px-3 py-2 font-mono text-emerald-700 text-right whitespace-nowrap">{f.debeUSD>0?`$${fmt(f.debeUSD)}`:''}</td>
+                      <td className="px-3 py-2 font-mono text-red-600 text-right whitespace-nowrap">{f.haberUSD>0?`$${fmt(f.haberUSD)}`:''}</td>
+                      <td className="px-3 py-2 font-mono text-slate-600 text-right whitespace-nowrap">$${fmt(f.saldoUSD)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {/* Totales */}
+              <tfoot><tr style={{background:'#0f172a'}}>
+                <td colSpan={9} className="px-3 py-3 font-black text-xs text-slate-400 uppercase tracking-widest">TOTALES PERÍODO</td>
+                <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right whitespace-nowrap">Bs.{fmt(filas.reduce((a,f)=>a+f.debeBs,0))}</td>
+                <td className="px-3 py-3 font-mono font-black text-red-400 text-right whitespace-nowrap">Bs.{fmt(filas.reduce((a,f)=>a+f.haberBs,0))}</td>
+                <td className="px-3 py-3"></td>
+                <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right whitespace-nowrap">${fmt(filas.reduce((a,f)=>a+f.debeUSD,0))}</td>
+                <td className="px-3 py-3 font-mono font-black text-red-400 text-right whitespace-nowrap">${fmt(filas.reduce((a,f)=>a+f.haberUSD,0))}</td>
+                <td className="px-3 py-3"></td>
+              </tr></tfoot>
+            </table>
           </div>}
       </Card>
     );
   };
 
+  // ── NUEVO ASIENTO MANUAL — CON TASA Y USD ─────────────────────────────────
   const NuevoAsientoView = () => {
-    const [form, setForm] = useState({ fecha: today(), descripcion: '', tipo: 'Manual', referencia: '' });
-    const [lineas, setLineas] = useState([{ cuentaId: '', cuentaCodigo: '', cuentaNombre: '', debito: '', credito: '' }, { cuentaId: '', cuentaCodigo: '', cuentaNombre: '', debito: '', credito: '' }]);
+    const [form, setForm] = useState({
+      fecha: today(), descripcion:'', tipo:'Manual', referencia:'',
+      tasa:'', niif:false, efectivo:false, modulo:'Manual'
+    });
+    const [lineas, setLineas] = useState([
+      {cuentaId:'',codigo:'',cuenta:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''},
+      {cuentaId:'',codigo:'',cuenta:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''},
+    ]);
     const [busy, setBusy] = useState(false);
-    const totDeb = lineas.reduce((s, l) => s + Number(l.debito || 0), 0);
-    const totCred = lineas.reduce((s, l) => s + Number(l.credito || 0), 0);
-    const balOk = totDeb > 0 && Math.abs(totDeb - totCred) < 0.01;
+    const tasaNum = Number(form.tasa)||1;
+
+    const totDebeBs  = lineas.reduce((s,l)=>s+Number(l.debeBs||0),0);
+    const totHaberBs = lineas.reduce((s,l)=>s+Number(l.haberBs||0),0);
+    const totDebeUSD = lineas.reduce((s,l)=>s+Number(l.debeUSD||0),0);
+    const totHaberUSD= lineas.reduce((s,l)=>s+Number(l.haberUSD||0),0);
+    const balOkBs    = totDebeBs>0 && Math.abs(totDebeBs-totHaberBs)<0.01;
+    const balOkUSD   = totDebeUSD>0 && Math.abs(totDebeUSD-totHaberUSD)<0.01;
+    const balOk      = balOkBs && balOkUSD;
 
     const setCuenta = (i, cuentaId) => {
-      const c = cuentas.find(x => x.id === cuentaId);
-      const n = [...lineas]; n[i] = { ...n[i], cuentaId, cuentaCodigo: c?.codigo || '', cuentaNombre: c?.nombre || '' }; setLineas(n);
+      const c = cuentas.find(x=>x.id===cuentaId);
+      const n = [...lineas]; n[i] = {...n[i], cuentaId, codigo:c?.codigo||'', cuenta:c?.nombre||''}; setLineas(n);
+    };
+
+    // Cuando cambia Bs, calcular USD automáticamente (y vice versa) según tasa
+    const setDebeBs = (i, val) => {
+      const n=[...lineas]; n[i].debeBs=val;
+      if(tasaNum>0 && val) n[i].debeUSD=String(Number(val)/tasaNum);
+      setLineas(n);
+    };
+    const setHaberBs = (i, val) => {
+      const n=[...lineas]; n[i].haberBs=val;
+      if(tasaNum>0 && val) n[i].haberUSD=String(Number(val)/tasaNum);
+      setLineas(n);
+    };
+    const setDebeUSD = (i, val) => {
+      const n=[...lineas]; n[i].debeUSD=val;
+      if(tasaNum>0 && val) n[i].debeBs=String(Number(val)*tasaNum);
+      setLineas(n);
+    };
+    const setHaberUSD = (i, val) => {
+      const n=[...lineas]; n[i].haberUSD=val;
+      if(tasaNum>0 && val) n[i].haberBs=String(Number(val)*tasaNum);
+      setLineas(n);
     };
 
     const save = async () => {
-      if (!form.descripcion) return alert('Ingrese la descripción del asiento');
-      if (!balOk) return alert('El asiento no está balanceado (Débitos ≠ Créditos)');
-      const lineasValidas = lineas.filter(l => l.cuentaId && (Number(l.debito) > 0 || Number(l.credito) > 0));
-      if (lineasValidas.length < 2) return alert('Se requieren al menos 2 líneas contables');
+      if (!form.descripcion) return alert('Ingrese la descripción');
+      if (!balOkBs) return alert('Débitos Bs. ≠ Haberes Bs. — el asiento debe estar balanceado');
+      const lineasV = lineas.filter(l=>l.cuentaId&&(Number(l.debeBs)>0||Number(l.haberBs)>0));
+      if (lineasV.length < 2) return alert('Se requieren al menos 2 líneas');
       setBusy(true);
       try {
-        const numero = `AS-${String(asientos.length + 1).padStart(5, '0')}`; const id = gid();
-        await setDoc(dref('cont_asientos', id), { id, numero, fecha: form.fecha, descripcion: form.descripcion.toUpperCase(), tipo: form.tipo, referencia: form.referencia, lineas: lineasValidas.map(l => ({ ...l, debito: Number(l.debito || 0), credito: Number(l.credito || 0) })), totalDebito: totDeb, totalCredito: totCred, ts: serverTimestamp() });
-        setForm({ fecha: today(), descripcion: '', tipo: 'Manual', referencia: '' }); setLineas([{ cuentaId: '', cuentaCodigo: '', cuentaNombre: '', debito: '', credito: '' }, { cuentaId: '', cuentaCodigo: '', cuentaNombre: '', debito: '', credito: '' }]);
+        const yyyymm = form.fecha.substring(0,7).replace('-','');
+        const mesLabel = form.fecha.substring(5,7)+'/'+form.fecha.substring(0,4);
+        const numManuales = asientos.filter(a=>a.modulo==='Manual'&&a.fecha?.startsWith(form.fecha.substring(0,7))).length+1;
+        const numero = `CD-${yyyymm}-${String(numManuales).padStart(4,'0')}`;
+        const id = gid();
+        const lineasFinal = lineasV.map(l=>({
+          ...l,
+          codigo:l.codigo, cuenta:l.cuenta,
+          tipoLinea: Number(l.debeBs)>0?'D':'H',
+          nroDoc: form.referencia,
+          concepto: form.descripcion.toUpperCase(),
+          tasa: tasaNum,
+          debeBs:Number(l.debeBs||0), haberBs:Number(l.haberBs||0),
+          debeUSD:Number(l.debeUSD||0), haberUSD:Number(l.haberUSD||0),
+        }));
+        await setDoc(dref('cont_asientos',id),{
+          id, comprobante:numero, numero,
+          mes:mesLabel, fecha:form.fecha, tipo:form.tipo,
+          nroDocumento:form.referencia, descripcion:form.descripcion.toUpperCase(),
+          tasa:tasaNum, niif:form.niif, efectivo:form.efectivo,
+          modulo:'Manual',
+          lineas:lineasFinal,
+          totalDebeBs:totDebeBs, totalHaberBs:totHaberBs,
+          totalDebeUSD:totDebeUSD, totalHaberUSD:totHaberUSD,
+          ts:serverTimestamp()
+        });
+        setForm({fecha:today(),descripcion:'',tipo:'Manual',referencia:'',tasa:'',niif:false,efectivo:false,modulo:'Manual'});
+        setLineas([{cuentaId:'',codigo:'',cuenta:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''},{cuentaId:'',codigo:'',cuenta:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]);
         setSec('libro');
       } finally { setBusy(false); }
     };
 
     return (
       <div>
-        <Card title="Nuevo Asiento de Diario">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 pb-6 border-b border-slate-100">
-            <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></FG>
-            <FG label="Tipo"><select className={sel} value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}><option>Manual</option><option>Apertura</option><option>Cierre</option><option>Ajuste</option><option>Nómina</option></select></FG>
-            <FG label="Referencia"><input className={inp} value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="FACT-00001 / OC-001" /></FG>
-            <FG label="Descripción" full><input className={inp} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Descripción del asiento contable..." /></FG>
-          </div>
-
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-black uppercase text-slate-700 tracking-wide">Líneas del Asiento (Partida Doble)</h4>
-            <button onClick={() => setLineas([...lineas, { cuentaId: '', cuentaCodigo: '', cuentaNombre: '', debito: '', credito: '' }])} className="text-[10px] font-black uppercase text-blue-500 flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors"><Plus size={12} /> Línea</button>
-          </div>
-
-          <div className="border border-slate-200 rounded-xl overflow-hidden mb-4">
-            <div className="grid grid-cols-12 gap-0 bg-slate-50 px-4 py-2 border-b border-slate-200">
-              <div className="col-span-7 text-[9px] font-black uppercase tracking-widest text-slate-400">Cuenta Contable</div>
-              <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right">Débito</div>
-              <div className="col-span-2 text-[9px] font-black uppercase tracking-widest text-slate-400 text-right">Crédito</div>
-              <div className="col-span-1"></div>
+        <Card title="Nuevo Comprobante de Diario">
+          {/* Encabezado del comprobante — estilo imagen del sistema */}
+          <div className="rounded-2xl border-2 border-slate-200 overflow-hidden mb-6">
+            <div className="px-5 py-3 flex items-center gap-3" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+              <FileText size={16} className="text-blue-400"/>
+              <p className="font-black text-white text-sm uppercase tracking-widest">Comprobante Contable</p>
+              <Badge v="blue">{form.tipo}</Badge>
             </div>
-            {lineas.map((l, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 px-3 py-2 border-b border-slate-100 items-center">
-                <div className="col-span-7">
-                  <select className={`${sel} text-[11px]`} value={l.cuentaId} onChange={e => setCuenta(i, e.target.value)}>
-                    <option value="">— Seleccione cuenta —</option>
-                    {[...cuentas].sort((a, b) => String(a.codigo).localeCompare(String(b.codigo))).map(c => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
-                  </select>
+            <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50">
+              <FG label="Tipo"><select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})}>
+                <option>Manual</option><option>Apertura</option><option>Cierre</option><option>Ajuste</option><option>Nómina</option><option>Diferencia Cambiaria</option>
+              </select></FG>
+              <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
+              <FG label="Nro. Documento / Ref."><input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="OC-001 / FACT-001"/></FG>
+              <FG label="Tasa de Cambio (Bs/$)"><input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})} placeholder="39.50"/></FG>
+              <FG label="Descripción / Concepto" full><input className={inp} value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})} placeholder="Descripción del comprobante..."/></FG>
+              <FG label="Opciones">
+                <div className="flex gap-4 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.niif} onChange={e=>setForm({...form,niif:e.target.checked})} className="accent-blue-500 w-4 h-4"/>
+                    <span className="text-xs font-black uppercase text-slate-600">NIIF</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.efectivo} onChange={e=>setForm({...form,efectivo:e.target.checked})} className="accent-emerald-500 w-4 h-4"/>
+                    <span className="text-xs font-black uppercase text-slate-600">Efectivo</span>
+                  </label>
                 </div>
-                <div className="col-span-2"><input type="number" step="0.01" className={`${inp} text-right text-emerald-700 font-black`} value={l.debito} onChange={e => { const n = [...lineas]; n[i].debito = e.target.value; if (e.target.value) n[i].credito = ''; setLineas(n); }} placeholder="0.00" /></div>
-                <div className="col-span-2"><input type="number" step="0.01" className={`${inp} text-right text-red-600 font-black`} value={l.credito} onChange={e => { const n = [...lineas]; n[i].credito = e.target.value; if (e.target.value) n[i].debito = ''; setLineas(n); }} placeholder="0.00" /></div>
-                <div className="col-span-1 flex justify-center"><button onClick={() => { const n = [...lineas]; n.splice(i, 1); setLineas(n); }} className="p-1 text-red-400 hover:text-red-600 transition-colors"><Trash2 size={12} /></button></div>
+              </FG>
+            </div>
+          </div>
+
+          {/* Líneas del asiento — con Bs y USD */}
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-xs font-black uppercase text-slate-700 tracking-wide">Líneas Contables — Partida Doble (Bs. y USD)</h4>
+            <button onClick={()=>setLineas([...lineas,{cuentaId:'',codigo:'',cuenta:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}])} className="text-[10px] font-black uppercase text-blue-500 flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded-lg"><Plus size={12}/> Línea</button>
+          </div>
+
+          <div className="border border-slate-200 rounded-xl overflow-hidden mb-5">
+            {/* Cabecera */}
+            <div className="grid gap-0 bg-slate-800 px-3 py-2.5 text-[9px] font-black uppercase tracking-widest" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+              <div className="text-slate-400">Cuenta Contable</div>
+              <div className="text-emerald-400 text-right">Debe Bs.</div>
+              <div className="text-red-400 text-right">Haber Bs.</div>
+              <div className="text-emerald-300 text-right">Debe USD</div>
+              <div className="text-red-300 text-right">Haber USD</div>
+              <div></div>
+            </div>
+
+            {lineas.map((l, i) => (
+              <div key={i} className="grid gap-2 px-3 py-2 border-b border-slate-100 items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                <select className={`${sel} text-[11px]`} value={l.cuentaId} onChange={e=>setCuenta(i,e.target.value)}>
+                  <option value="">— Seleccione cuenta —</option>
+                  {[...cuentas].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                </select>
+                <input type="number" step="0.01" className={`${inp} text-right font-black text-emerald-700`} value={l.debeBs} onChange={e=>setDebeBs(i,e.target.value)} placeholder="0.00"/>
+                <input type="number" step="0.01" className={`${inp} text-right font-black text-red-600`} value={l.haberBs} onChange={e=>setHaberBs(i,e.target.value)} placeholder="0.00"/>
+                <input type="number" step="0.01" className={`${inp} text-right text-emerald-600`} value={l.debeUSD} onChange={e=>setDebeUSD(i,e.target.value)} placeholder="0.00"/>
+                <input type="number" step="0.01" className={`${inp} text-right text-red-500`} value={l.haberUSD} onChange={e=>setHaberUSD(i,e.target.value)} placeholder="0.00"/>
+                <button onClick={()=>{const n=[...lineas];n.splice(i,1);setLineas(n);}} className="p-1 text-red-400 hover:text-red-600 flex justify-center"><Trash2 size={12}/></button>
               </div>
             ))}
-            <div className="grid grid-cols-12 gap-2 px-3 py-3 bg-slate-900 items-center">
-              <div className="col-span-7 text-[10px] font-black uppercase text-slate-400 tracking-widest">TOTALES</div>
-              <div className={`col-span-2 text-right font-mono font-black text-sm ${balOk ? 'text-emerald-400' : 'text-white'}`}>${fmt(totDeb)}</div>
-              <div className={`col-span-2 text-right font-mono font-black text-sm ${balOk ? 'text-emerald-400' : 'text-white'}`}>${fmt(totCred)}</div>
-              <div className="col-span-1 text-center">{balOk ? <CheckCircle size={16} className="text-emerald-400 mx-auto" /> : <X size={16} className="text-red-400 mx-auto" />}</div>
+
+            {/* Totales */}
+            <div className="grid gap-2 px-3 py-3 items-center bg-slate-900" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+              <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">TOTALES</div>
+              <div className={`text-right font-mono font-black text-sm ${balOkBs?'text-emerald-400':'text-white'}`}>Bs.{fmt(totDebeBs)}</div>
+              <div className={`text-right font-mono font-black text-sm ${balOkBs?'text-emerald-400':'text-white'}`}>Bs.{fmt(totHaberBs)}</div>
+              <div className={`text-right font-mono font-black text-sm ${balOkUSD?'text-emerald-400':'text-slate-400'}`}>${fmt(totDebeUSD)}</div>
+              <div className={`text-right font-mono font-black text-sm ${balOkUSD?'text-emerald-400':'text-slate-400'}`}>${fmt(totHaberUSD)}</div>
+              <div className="flex justify-center">{balOk?<CheckCircle size={16} className="text-emerald-400"/>:<X size={16} className="text-red-400"/>}</div>
             </div>
           </div>
 
-          {!balOk && totDeb > 0 && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2"><AlertTriangle size={14} className="text-amber-600 flex-shrink-0" /><p className="text-[10px] font-black text-amber-700 uppercase">Diferencia: ${fmt(Math.abs(totDeb - totCred))} — El asiento debe estar balanceado para registrar.</p></div>}
-          {balOk && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-600 flex-shrink-0" /><p className="text-[10px] font-black text-emerald-700 uppercase">Asiento balanceado — Partida doble correcta.</p></div>}
+          {/* Estado de balance */}
+          {!balOkBs && totDebeBs>0 && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2"><AlertTriangle size={14} className="text-amber-600"/><p className="text-[10px] font-black text-amber-700 uppercase">Diferencia Bs.: {fmt(Math.abs(totDebeBs-totHaberBs))} — Debe estar en cero para registrar.</p></div>}
+          {balOk && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-600"/><p className="text-[10px] font-black text-emerald-700 uppercase">Partida doble balanceada en Bs. y USD ✓</p></div>}
 
           <div className="flex justify-end gap-3">
-            <Bo onClick={() => setSec('libro')}>Cancelar</Bo>
-            <Bg onClick={save} disabled={busy || !balOk}>{busy ? 'Registrando...' : 'Registrar Asiento'}</Bg>
+            <Bo onClick={()=>setSec('libro')}>Cancelar</Bo>
+            <Bg onClick={save} disabled={busy||!balOkBs}>{busy?'Registrando...':'Registrar Comprobante'}</Bg>
           </div>
         </Card>
       </div>
@@ -2801,26 +3051,25 @@ function AsientosApp({ fbUser, onBack }) {
   };
 
   const navGroups = [
-    { group: 'Analítica', items: [{ id: 'dashboard', label: 'Resumen Contable', icon: LayoutDashboard }] },
-    { group: 'Libro Diario', items: [{ id: 'libro', label: 'Ver Asientos', icon: BookMarked }, { id: 'nuevo', label: 'Nuevo Asiento', icon: Plus }] },
+    { group:'Analítica', color:'#f97316', items:[{id:'dashboard',label:'Resumen Contable',icon:LayoutDashboard}] },
+    { group:'Libro Diario', color:'#3b82f6', items:[{id:'libro',label:'Ver Libro Diario',icon:BookMarked},{id:'nuevo',label:'Nuevo Comprobante',icon:Plus}] },
   ];
-  const views = { dashboard: <DashboardView />, libro: <LibroDiarioView />, nuevo: <NuevoAsientoView /> };
-  const curNav = navGroups.flatMap(g => g.items).find(n => n.id === sec);
+  const views = { dashboard:<DashboardView/>, libro:<LibroDiarioView/>, nuevo:<NuevoAsientoView/> };
+  const curNav = navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
 
   return (
     <SidebarLayout brand="Supply G&B" brandSub="Libro Diario" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor={BLUE}
       headerContent={<>
-        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Contabilidad <ChevronRight size={8} className="inline" /> Libro Diario</p></div>
-        <Bg onClick={() => setSec('nuevo')} sm><Plus size={12} /> Nuevo Asiento</Bg>
+        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Contabilidad <ChevronRight size={8} className="inline"/> Libro Diario</p></div>
+        <div className="flex gap-2">
+          <Bg onClick={()=>setSec('nuevo')} sm><Plus size={12}/> Comprobante</Bg>
+        </div>
       </>}>
       {views[sec]}
     </SidebarLayout>
   );
 }
 
-// ============================================================================
-// MÓDULO BALANCES (Placeholder informativo)
-// ============================================================================
 function BalancesApp({ onBack }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{ background: BG }}>
