@@ -1273,7 +1273,9 @@ function BancoApp({ fbUser, onBack }) {
     const [detalleId, setDetalle] = useState(null);
     const [editId, setEditId]     = useState(null);
     const [busy, setBusy]         = useState(false);
-    const [filtC, setFiltC]       = useState('');
+    const [filtC,    setFiltC]    = useState('');
+    const [filtDesde,setFiltD]    = useState('');
+    const [filtHasta,setFiltH]    = useState('');
     const initF = ()=>({fecha:today(),tipo:'Ingreso',cuentaId:'',cuentaDestinoId:'',
       origenIngreso:'Venta',motivoEgreso:'Pago Proveedor',
       concepto:'',referencia:'',tasa:String(tasaActiva),montoNativo:'',
@@ -1352,17 +1354,50 @@ function BancoApp({ fbUser, onBack }) {
     // Movimiento en detalle
     const movDetalle = movBanco.find(m=>m.id===detalleId);
 
-    // Guardar edición rápida (solo concepto/referencia/fecha)
+    // Guardar EDICIÓN COMPLETA (todos los campos)
     const saveEdit = async()=>{
-      if(!editId) return; setBusy(true);
+      if(!editId) return;
+      if(!form.cuentaId) return alert('Seleccione una cuenta bancaria');
+      if(!form.montoNativo||mNat<=0) return alert('Ingrese un monto válido');
+      if(!form.concepto) return alert('Ingrese el concepto');
+      setBusy(true);
       try {
-        await updateDoc(dref('banco_movimientos',editId),{concepto:form.concepto,referencia:form.referencia,fecha:form.fecha});
+        const movOriginal = movBanco.find(m=>m.id===editId);
+        const cuentaOrig  = cuentas.find(c=>c.id===movOriginal?.cuentaId);
+        const cuentaNueva = cuentas.find(c=>c.id===form.cuentaId);
+        const batch = writeBatch(db);
+        // Revertir saldo original
+        const signoOrig = movOriginal?.tipo==='Ingreso'?-1:1;
+        if(cuentaOrig) batch.update(dref('banco_cuentas',cuentaOrig.id),{saldo:Number(cuentaOrig.saldo)+signoOrig*Number(movOriginal?.montoNativo||0)});
+        // Aplicar nuevo saldo
+        const signoNuevo = form.tipo==='Ingreso'?1:-1;
+        const saldoBase = cuentaOrig?.id===form.cuentaId ? Number(cuentaOrig.saldo)+signoOrig*Number(movOriginal?.montoNativo||0) : Number(cuentaNueva?.saldo||0);
+        const nuevoSaldo = saldoBase + signoNuevo*mNat;
+        if(cuentaNueva && cuentaOrig?.id!==form.cuentaId) batch.update(dref('banco_cuentas',cuentaNueva.id),{saldo:nuevoSaldo});
+        else if(cuentaOrig?.id===form.cuentaId) batch.update(dref('banco_cuentas',form.cuentaId),{saldo:nuevoSaldo});
+        const ctaBanco  = cuentaSel?.cuentaContable||`Banco ${cuentaNueva?.banco||''}`;
+        const ctaContra = form.ctaContraNombre||(form.tipo==='Ingreso'?'Cuentas por Cobrar':'Cuentas por Pagar');
+        const tercero   = form.tipoTercero==='Cliente'?clientes.find(c=>c.id===form.terceroId):provs.find(p=>p.id===form.terceroId);
+        batch.update(dref('banco_movimientos',editId),{
+          fecha:form.fecha,tipo:form.tipo,
+          cuentaId:cuentaNueva?.id||form.cuentaId,cuentaNombre:cuentaNueva?.banco||'',
+          tipoBanco:cuentaNueva?.tipoBanco||'',moneda:cuentaNueva?.moneda||'',
+          origenIngreso:form.origenIngreso,motivoEgreso:form.motivoEgreso,
+          concepto:form.concepto,referencia:form.referencia,
+          tasa,montoNativo:mNat,montoBs,montoUSD,saldoResultante:nuevoSaldo,
+          aplicaTercero:form.aplicaTercero,tipoTercero:form.tipoTercero,
+          terceroId:tercero?.id||'',terceroNombre:tercero?.nombre||'',
+          ctaContraId:form.ctaContraId,ctaContraNombre:form.ctaContraNombre,
+          asientoDebito:form.tipo==='Ingreso'?ctaBanco:ctaContra,
+          asientoCredito:form.tipo==='Ingreso'?ctaContra:ctaBanco,
+        });
+        await batch.commit();
         setEditId(null); setDetalle(null); setForm(initF());
       } finally { setBusy(false); }
     };
 
     const eliminar = async(m)=>{
-      if(!window.confirm(`¿Eliminar movimiento ${m.concepto}? Esta acción es IRREVERSIBLE y ajustará el saldo de la cuenta.`)) return;
+      if(!window.confirm(`¿Eliminar movimiento "${m.concepto}"? Se ajustará el saldo de la cuenta.`)) return;
       setBusy(true);
       try {
         const signo = m.tipo==='Ingreso'?-1:1;
@@ -1375,29 +1410,134 @@ function BancoApp({ fbUser, onBack }) {
       } finally { setBusy(false); }
     };
 
-    const movFilt = filtC?movBanco.filter(m=>m.cuentaId===filtC):movBanco;
+    const abrirEdicion = (m)=>{
+      setEditId(m.id); setDetalle(m.id);
+      setForm({...initF(),fecha:m.fecha,tipo:m.tipo,cuentaId:m.cuentaId,
+        origenIngreso:m.origenIngreso||'Venta',motivoEgreso:m.motivoEgreso||'Pago Proveedor',
+        concepto:m.concepto,referencia:m.referencia||'',
+        tasa:String(m.tasa||tasaActiva),montoNativo:String(m.montoNativo||''),
+        aplicaTercero:m.aplicaTercero||false,tipoTercero:m.tipoTercero||'Cliente',terceroId:m.terceroId||'',
+        ctaContraId:m.ctaContraId||'',ctaContraNombre:m.ctaContraNombre||''});
+    };
+
+    const movFilt = movBanco.filter(m=>{
+      if(filtC     && m.cuentaId!==filtC)   return false;
+      if(filtDesde && m.fecha<filtDesde)     return false;
+      if(filtHasta && m.fecha>filtHasta)     return false;
+      return true;
+    });
 
     return (
       <div>
         {/* ── MODAL DETALLE / EDICIÓN ── */}
         {movDetalle && (
-          <Modal open={!!movDetalle} onClose={()=>{setDetalle(null);setEditId(null);setForm(initF());}} title={`Movimiento — ${movDetalle.concepto}`} wide
+          <Modal open={!!movDetalle} onClose={()=>{setDetalle(null);setEditId(null);setForm(initF());}} title={editId?`✏ Editando — ${movDetalle.concepto}`:`Movimiento — ${movDetalle.concepto}`} wide
             footer={
-              editId ? <><Bo onClick={()=>{setEditId(null);setForm(initF());}}>Cancelar</Bo><Bg onClick={saveEdit} disabled={busy}>{busy?'Guardando...':'Guardar Cambios'}</Bg></>
-              : <><Bd onClick={()=>eliminar(movDetalle)} disabled={busy||movDetalle.estatus==='Conciliado'}>{movDetalle.estatus==='Conciliado'?'🔒 Conciliado':'🗑 Eliminar'}</Bd><div className="flex-1"/><Bg onClick={()=>{setEditId(movDetalle.id);setForm({...initF(),concepto:movDetalle.concepto,referencia:movDetalle.referencia||'',fecha:movDetalle.fecha});}}>✏ Editar</Bg></>
+              editId
+                ? <><Bo onClick={()=>{setEditId(null);setForm(initF());}}>Cancelar</Bo><Bg onClick={saveEdit} disabled={busy}>{busy?'Guardando...':'Guardar Cambios'}</Bg></>
+                : <><Bd onClick={()=>eliminar(movDetalle)} disabled={busy||movDetalle.estatus==='Conciliado'}>{movDetalle.estatus==='Conciliado'?'🔒 Conciliado':'🗑 Eliminar'}</Bd><div className="flex-1"/><Bg onClick={()=>abrirEdicion(movDetalle)}>✏ Editar</Bg></>
             }>
             {editId ? (
-              <div className="space-y-4">
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2"><AlertTriangle size={14} className="text-amber-600"/><p className="text-[10px] font-black text-amber-700 uppercase">Editando: solo concepto, referencia y fecha son modificables.</p></div>
-                <div className="grid grid-cols-2 gap-4">
+              /* MODO EDICIÓN COMPLETO */
+              <div className="space-y-5">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
+                  <Settings size={14} className="text-blue-600"/><p className="text-[10px] font-black text-blue-700 uppercase">Editando todos los campos del movimiento</p>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
                   <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
+                  <FG label="Tipo">
+                    <div className="flex gap-1">{['Ingreso','Egreso','Transferencia'].map(t=>(
+                      <button key={t} onClick={()=>setForm({...form,tipo:t})}
+                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':'bg-blue-500 text-white border-blue-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                    ))}</div>
+                  </FG>
                   <FG label="N° Referencia"><input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})}/></FG>
-                  <FG label="Concepto" full><input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})}/></FG>
+                </div>
+                {form.tipo==='Ingreso'&&<div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                  <p className="text-[9px] font-black uppercase text-emerald-700 mb-2 tracking-widest">Origen del Ingreso</p>
+                  <div className="flex gap-2 flex-wrap">{['Venta','Préstamo de Terceros','Depósito','Otros'].map(o=>(
+                    <button key={o} onClick={()=>setForm({...form,origenIngreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.origenIngreso===o?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+                  ))}</div>
+                </div>}
+                {form.tipo==='Egreso'&&<div className="bg-red-50 rounded-xl p-3 border border-red-100">
+                  <p className="text-[9px] font-black uppercase text-red-700 mb-2 tracking-widest">Motivo del Egreso</p>
+                  <div className="flex gap-2 flex-wrap">{['Pago Proveedor','Nómina','Gastos Operativos','Impuestos','Préstamo','Otros'].map(o=>(
+                    <button key={o} onClick={()=>setForm({...form,motivoEgreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.motivoEgreso===o?'bg-red-600 text-white border-red-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+                  ))}</div>
+                </div>}
+                <FG label={`Cuenta Bancaria (${cuentas.length} disponibles)`} full>
+                  <select className={sel} value={form.cuentaId} onChange={e=>setForm({...form,cuentaId:e.target.value})}>
+                    <option value="">— Seleccione la cuenta —</option>
+                    {cuentas.map(c=>{const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];return<option key={c.id} value={c.id}>{tb.flag} {c.banco} · {c.numeroCuenta} · {c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</option>;})}
+                  </select>
+                </FG>
+                {cuentaSel&&<div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                  <div className="grid grid-cols-3 gap-4">
+                    <FG label={`Monto (${cuentaSel.moneda})`}><input type="number" step="0.01" min="0.01" className={`${inp} font-black text-lg`} value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/></FG>
+                    <FG label="Tasa Bs/$"><input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/></FG>
+                    <div className="flex flex-col justify-end pb-0.5">
+                      <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+                        <p className="text-emerald-400 font-mono font-black text-lg leading-none">${fmt(montoUSD)}</p>
+                        <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>}
+                <FG label="Concepto / Descripción" full><input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})}/></FG>
+                {/* Asiento contable con moneda correcta */}
+                {form.tipo!=='Transferencia'&&cuentaSel&&(
+                  <div className="rounded-2xl overflow-hidden border border-blue-100">
+                    <div className="px-5 py-3 bg-blue-600 flex items-center gap-2">
+                      <BookOpen size={14} className="text-blue-200"/><p className="text-[10px] font-black uppercase text-white tracking-widest">Asiento Contable — {bs?'Bs. (c/equiv. USD)':'USD (c/equiv. Bs.)'}</p>
+                    </div>
+                    <div className="p-4 bg-blue-50 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white rounded-xl p-3 border-l-4 border-emerald-500 border border-slate-100">
+                          <p className="text-[8px] font-black uppercase text-emerald-600 tracking-widest mb-1">DÉBITO +</p>
+                          <p className="text-[11px] font-black text-slate-800">{form.tipo==='Ingreso'?(cuentaSel.cuentaContable||`Banco ${cuentaSel.banco}`):(form.ctaContraNombre||'[Cuenta Gasto/Proveedor]')}</p>
+                          {mNat>0&&<div className="mt-1"><p className="font-mono font-black text-emerald-600 text-xs">{bs?`Bs. ${fmt(montoBs)}`:`$${fmt(montoUSD)}`}</p><p className="font-mono text-slate-400 text-[10px]">{bs?`≈ $${fmt(montoUSD)}`:`≈ Bs. ${fmt(montoBs)}`}</p></div>}
+                        </div>
+                        <div className="bg-white rounded-xl p-3 border-l-4 border-red-500 border border-slate-100">
+                          <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-1">CRÉDITO −</p>
+                          <p className="text-[11px] font-black text-slate-800">{form.tipo==='Egreso'?(cuentaSel.cuentaContable||`Banco ${cuentaSel.banco}`):(form.ctaContraNombre||'[CxC / Ingreso]')}</p>
+                          {mNat>0&&<div className="mt-1"><p className="font-mono font-black text-red-600 text-xs">{bs?`Bs. ${fmt(montoBs)}`:`$${fmt(montoUSD)}`}</p><p className="font-mono text-slate-400 text-[10px]">{bs?`≈ $${fmt(montoUSD)}`:`≈ Bs. ${fmt(montoBs)}`}</p></div>}
+                        </div>
+                      </div>
+                      <FG label="Cuenta Contrapartida (PUC)">
+                        <select className={sel} value={form.ctaContraId} onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);setForm({...form,ctaContraId:e.target.value,ctaContraNombre:c?`${c.codigo} · ${c.nombre}`:''})}}>
+                          <option value="">— Seleccionar del Plan de Cuentas —</option>
+                          {sugs.length>0&&<optgroup label="✨ Sugeridas">{sugs.slice(0,8).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>}
+                          <optgroup label="Todas">{[...contCuentas].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>
+                        </select>
+                      </FG>
+                    </div>
+                  </div>
+                )}
+                {/* Terceros en edición */}
+                <div className="border-2 border-slate-100 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-black text-slate-700 uppercase tracking-wide">Tercero Vinculado</p>
+                    <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:''})}
+                      className={`w-12 h-6 rounded-full transition-all relative ${form.aplicaTercero?'bg-orange-500':'bg-slate-200'}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${form.aplicaTercero?'left-6':'left-0.5'}`}/>
+                    </button>
+                  </div>
+                  {form.aplicaTercero&&<div className="grid grid-cols-2 gap-3">
+                    <FG label="Tipo"><div className="flex gap-1">{['Cliente','Proveedor'].map(t=>(
+                      <button key={t} onClick={()=>setForm({...form,tipoTercero:t,terceroId:''})} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase border-2 ${form.tipoTercero===t?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                    ))}</div></FG>
+                    <FG label="Tercero">
+                      <select className={sel} value={form.terceroId} onChange={e=>setForm({...form,terceroId:e.target.value})}>
+                        <option value="">— Seleccione —</option>
+                        {form.tipoTercero==='Cliente'?clientes.map(c=><option key={c.id} value={c.id}>{c.rif} · {c.nombre}</option>):provs.map(p=><option key={p.id} value={p.id}>{p.rif||''} · {p.nombre}</option>)}
+                      </select>
+                    </FG>
+                  </div>}
                 </div>
               </div>
             ) : (
+              /* MODO VISTA DETALLE */
               <div className="space-y-5">
-                {/* Header con tipo */}
                 <div className="flex items-center gap-4 p-4 rounded-2xl" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${movDetalle.tipo==='Ingreso'?'bg-emerald-500':movDetalle.tipo==='Egreso'?'bg-red-500':'bg-blue-500'}`}>
                     {movDetalle.tipo==='Ingreso'?<ArrowUpCircle size={22} className="text-white"/>:movDetalle.tipo==='Egreso'?<ArrowDownCircle size={22} className="text-white"/>:<ArrowLeftRight size={22} className="text-white"/>}
@@ -1408,23 +1548,17 @@ function BancoApp({ fbUser, onBack }) {
                     <p className="text-slate-400 text-[10px] mt-0.5">{dd(movDetalle.fecha)} · {movDetalle.referencia||'Sin referencia'}</p>
                   </div>
                   <div className="text-right">
-                    <p className={`font-mono font-black text-2xl ${movDetalle.tipo==='Ingreso'?'text-emerald-400':'text-red-400'}`}>${fmt(movDetalle.montoUSD)}</p>
-                    <p className="text-slate-400 text-xs">Bs.{fmt(movDetalle.montoBs)}</p>
+                    {movDetalle.moneda==='BS'
+                      ? <><p className="font-mono font-black text-2xl text-emerald-400">Bs. {fmt(movDetalle.montoBs)}</p><p className="text-slate-400 text-xs">≈ ${fmt(movDetalle.montoUSD)}</p></>
+                      : <><p className="font-mono font-black text-2xl text-emerald-400">${fmt(movDetalle.montoUSD)}</p><p className="text-slate-400 text-xs">≈ Bs. {fmt(movDetalle.montoBs)}</p></>
+                    }
                     <p className="text-slate-500 text-[10px]">Tasa: {movDetalle.tasa}</p>
                   </div>
                 </div>
-
-                {/* Datos en grid */}
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    ['Banco / Cuenta',   movDetalle.cuentaNombre],
-                    ['Tipo de Banco',    movDetalle.tipoBanco||'—'],
-                    ['Moneda',           movDetalle.moneda],
-                    ['Fecha',            dd(movDetalle.fecha)],
-                    ['Saldo Anterior',   `${movDetalle.moneda==='BS'?'Bs.':'$'} ${fmt(movDetalle.saldoAnterior)}`],
-                    ['Saldo Resultante', `${movDetalle.moneda==='BS'?'Bs.':'$'} ${fmt(movDetalle.saldoResultante)}`],
-                    ['N° Referencia',    movDetalle.referencia||'—'],
-                    ['Estado',           movDetalle.estatus||'No Conciliado'],
+                  {[['Banco / Cuenta',movDetalle.cuentaNombre],['Tipo de Banco',movDetalle.tipoBanco||'—'],['Moneda',movDetalle.moneda],['Fecha',dd(movDetalle.fecha)],
+                    ['Saldo Anterior',`${movDetalle.moneda==='BS'?'Bs.':'$'} ${fmt(movDetalle.saldoAnterior)}`],['Saldo Resultante',`${movDetalle.moneda==='BS'?'Bs.':'$'} ${fmt(movDetalle.saldoResultante)}`],
+                    ['N° Referencia',movDetalle.referencia||'—'],['Estado',movDetalle.estatus||'No Conciliado'],
                   ].map(([k,v])=>(
                     <div key={k} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                       <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-0.5">{k}</p>
@@ -1432,32 +1566,28 @@ function BancoApp({ fbUser, onBack }) {
                     </div>
                   ))}
                 </div>
-
-                {/* Tercero vinculado */}
-                {movDetalle.aplicaTercero && movDetalle.terceroNombre && (
+                {movDetalle.aplicaTercero&&movDetalle.terceroNombre&&(
                   <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
                     <p className="text-[9px] font-black uppercase text-orange-700 tracking-widest mb-1">Tercero Vinculado</p>
                     <p className="font-black text-slate-900">{movDetalle.terceroNombre}</p>
                     {movDetalle.facturaNumero&&<p className="text-[10px] text-blue-600 font-black mt-0.5">Factura: {movDetalle.facturaNumero}</p>}
                   </div>
                 )}
-
-                {/* Asiento contable generado */}
-                {(movDetalle.asientoDebito||movDetalle.asientoCredito) && (
+                {(movDetalle.asientoDebito||movDetalle.asientoCredito)&&(
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                    <p className="text-[9px] font-black uppercase text-blue-700 tracking-widest mb-3">Asiento Contable Generado</p>
+                    <p className="text-[9px] font-black uppercase text-blue-700 tracking-widest mb-3">Asiento Contable — {movDetalle.moneda==='BS'?'Bs. (c/equiv. USD)':'USD (c/equiv. Bs.)'}</p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-3 bg-white rounded-lg p-3 border border-blue-100">
                         <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"/>
                         <p className="text-[9px] font-black uppercase text-emerald-700 w-14">DÉBITO</p>
                         <p className="text-xs font-semibold text-slate-700 flex-1">{movDetalle.asientoDebito}</p>
-                        <p className="font-mono font-black text-slate-900 text-xs">${fmt(movDetalle.montoUSD)}</p>
+                        <div className="text-right"><p className="font-mono font-black text-xs text-emerald-700">{movDetalle.moneda==='BS'?`Bs. ${fmt(movDetalle.montoBs)}`:`$${fmt(movDetalle.montoUSD)}`}</p><p className="font-mono text-[9px] text-slate-400">{movDetalle.moneda==='BS'?`≈ $${fmt(movDetalle.montoUSD)}`:`≈ Bs. ${fmt(movDetalle.montoBs)}`}</p></div>
                       </div>
                       <div className="flex items-center gap-3 bg-white rounded-lg p-3 border border-blue-100">
                         <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"/>
                         <p className="text-[9px] font-black uppercase text-red-600 w-14">CRÉDITO</p>
                         <p className="text-xs font-semibold text-slate-700 flex-1 pl-3">{movDetalle.asientoCredito}</p>
-                        <p className="font-mono font-black text-slate-900 text-xs">${fmt(movDetalle.montoUSD)}</p>
+                        <div className="text-right"><p className="font-mono font-black text-xs text-red-600">{movDetalle.moneda==='BS'?`Bs. ${fmt(movDetalle.montoBs)}`:`$${fmt(movDetalle.montoUSD)}`}</p><p className="font-mono text-[9px] text-slate-400">{movDetalle.moneda==='BS'?`≈ $${fmt(movDetalle.montoUSD)}`:`≈ Bs. ${fmt(movDetalle.montoBs)}`}</p></div>
                       </div>
                     </div>
                   </div>
@@ -1467,13 +1597,19 @@ function BancoApp({ fbUser, onBack }) {
           </Modal>
         )}
 
-        {/* ── TABLA ── */}
+        {/* ── FILTROS + TABLA ── */}
         <Card title="Movimientos Bancarios" subtitle="Ingresos · Egresos · Transferencias"
-          action={<div className="flex gap-2">
+          action={<div className="flex gap-2 flex-wrap items-center">
             <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
               <option value="">Todos los bancos</option>
               {cuentas.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
             </select>
+            <div className="flex items-center gap-1.5">
+              <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtDesde} onChange={e=>setFiltD(e.target.value)} title="Desde"/>
+              <span className="text-slate-400 text-xs font-bold">—</span>
+              <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
+            </div>
+            {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
             <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
           </div>}>
           <div className="overflow-x-auto">
@@ -1495,7 +1631,7 @@ function BancoApp({ fbUser, onBack }) {
                   <Td>
                     <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
                       <button onClick={()=>setDetalle(m.id)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Ver detalle"><Search size={12}/></button>
-                      <button onClick={()=>{setDetalle(m.id);setEditId(m.id);setForm({...initF(),concepto:m.concepto,referencia:m.referencia||'',fecha:m.fecha});}} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
+                      <button onClick={()=>abrirEdicion(m)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
                       <button onClick={()=>eliminar(m)} disabled={m.estatus==='Conciliado'} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg disabled:opacity-30" title="Eliminar"><Trash2 size={12}/></button>
                     </div>
                   </Td>
@@ -1583,7 +1719,7 @@ function BancoApp({ fbUser, onBack }) {
               <div className="rounded-2xl overflow-hidden border border-blue-100">
                 <div className="px-5 py-3 bg-blue-600 flex items-center gap-2">
                   <BookOpen size={14} className="text-blue-200"/>
-                  <p className="text-[10px] font-black uppercase text-white tracking-widest">Asiento Contable Automático</p>
+                  <p className="text-[10px] font-black uppercase text-white tracking-widest">Asiento Contable — {bs?'Bs. (moneda funcional) + equiv. USD':'USD (moneda funcional) + equiv. Bs.'}</p>
                 </div>
                 <div className="p-4 bg-blue-50 space-y-3">
                   <div className="grid grid-cols-2 gap-3">
@@ -1591,13 +1727,19 @@ function BancoApp({ fbUser, onBack }) {
                     <div className="bg-white rounded-xl p-3 border-l-4 border-emerald-500 border border-slate-100">
                       <p className="text-[8px] font-black uppercase text-emerald-600 tracking-widest mb-1.5">DÉBITO +</p>
                       <p className="text-[11px] font-black text-slate-800">{form.tipo==='Ingreso'?(cuentaSel.cuentaContable||`Banco ${cuentaSel.banco}`):(form.ctaContraNombre||'[Cuenta de Gasto/Proveedor]')}</p>
-                      {mNat>0&&<p className="font-mono text-emerald-600 font-black text-xs mt-1">${fmt(montoUSD)}</p>}
+                      {mNat>0&&<div className="mt-1.5 space-y-0.5">
+                        <p className="font-mono font-black text-emerald-600 text-sm">{bs?`Bs. ${fmt(montoBs)}`:`$${fmt(montoUSD)}`}</p>
+                        <p className="font-mono text-slate-400 text-[10px]">{bs?`≈ $${fmt(montoUSD)} USD`:`≈ Bs. ${fmt(montoBs)}`}</p>
+                      </div>}
                     </div>
                     {/* CRÉDITO */}
                     <div className="bg-white rounded-xl p-3 border-l-4 border-red-500 border border-slate-100">
                       <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-1.5">CRÉDITO −</p>
                       <p className="text-[11px] font-black text-slate-800">{form.tipo==='Egreso'?(cuentaSel.cuentaContable||`Banco ${cuentaSel.banco}`):(form.ctaContraNombre||'[CxC / Ingreso]')}</p>
-                      {mNat>0&&<p className="font-mono text-red-600 font-black text-xs mt-1">${fmt(montoUSD)}</p>}
+                      {mNat>0&&<div className="mt-1.5 space-y-0.5">
+                        <p className="font-mono font-black text-red-600 text-sm">{bs?`Bs. ${fmt(montoBs)}`:`$${fmt(montoUSD)}`}</p>
+                        <p className="font-mono text-slate-400 text-[10px]">{bs?`≈ $${fmt(montoUSD)} USD`:`≈ Bs. ${fmt(montoBs)}`}</p>
+                      </div>}
                     </div>
                   </div>
                   {/* Selector de cuenta contrapartida */}
@@ -2080,7 +2222,406 @@ function BancoApp({ fbUser, onBack }) {
 // ============================================================================
 function ContabilidadApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('dashboard');
-  const [cuentas, setCuentas] = useState([]);
+  const [cuentas, setCuentas]   = useState([]);
+  const [movBanco, setMovBanco] = useState([]);
+  const [movCaja,  setMovCaja]  = useState([]);
+  const [tasas,    setTasas]    = useState([]);
+
+  useEffect(() => {
+    if (!fbUser) return;
+    const subs = [
+      onSnapshot(col('cont_cuentas'), s => setCuentas(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('banco_movimientos'), orderBy('fecha','desc')), s => setMovBanco(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('caja_movimientos'),  orderBy('fecha','desc')), s => setMovCaja(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('banco_tasas'), orderBy('fecha','desc')), s => setTasas(s.docs.map(d=>d.data()))),
+    ];
+    return () => subs.forEach(u=>u());
+  }, [fbUser]);
+
+  const tasaActiva = tasas.find(t=>t.modulo==='Todos')?.tasaRef || tasas[0]?.tasaRef || 39.50;
+
+  const grupos = [
+    {codigo:'1',nombre:'ACTIVOS',color:'green'},{codigo:'2',nombre:'PASIVOS',color:'red'},
+    {codigo:'3',nombre:'PATRIMONIO',color:'purple'},{codigo:'4',nombre:'INGRESOS',color:'blue'},
+    {codigo:'5',nombre:'COSTOS',color:'gold'},{codigo:'6',nombre:'GASTOS',color:'gray'},
+  ];
+
+  // ── Exportar PUC ──────────────────────────────────────────────────
+  const exportarPUC = (formato) => {
+    const sorted = [...cuentas].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+    if(formato==='xls') {
+      const grupoNames = {'1':'ACTIVOS','2':'PASIVOS','3':'PATRIMONIO','4':'INGRESOS','5':'COSTOS','6':'GASTOS'};
+      let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:11px}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:#fff;font-weight:bold;border:1px solid #94a3b8;padding:6px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:1px}td{border:1px solid #e2e8f0;padding:4px 10px}tr:nth-child(even) td{background:#f8fafc}</style></head><body>
+        <p style="font-size:14px;font-weight:bold;margin-bottom:4px">Plan de Cuentas — Servicios Jiret G&amp;B, C.A.</p>
+        <p style="font-size:10px;color:#666;margin-bottom:16px">RIF: J-412309374 · ${sorted.length} cuentas · ${dd(today())}</p>
+        <table><thead><tr><th>Código</th><th>Cuenta de movimiento</th><th>Grupo</th><th>Sub-grupo</th><th>Cuenta</th><th>Subcuenta</th><th>Tipo</th><th>Naturaleza</th></tr></thead><tbody>`;
+      sorted.forEach(c=>{
+        const cod=String(c.codigo); const partes=cod.split('.');
+        const grKey=partes[0]||cod.charAt(0); const grNom=grupoNames[grKey]||c.grupo||grKey;
+        const subgr=c.subgrupo||(partes.length>=2?partes.slice(0,2).join('.'):cod);
+        const cta=c.cuenta||(partes.length>=4?partes.slice(0,4).join('.'):cod);
+        const subc=c.subcuenta||(partes.length>4?cod:'');
+        html+=`<tr><td style="font-family:Courier New;font-weight:bold;color:#1e40af">${cod}</td><td style="font-weight:500">${c.nombre}</td><td>${grNom}</td><td>${subgr}</td><td>${cta}</td><td>${subc}</td><td>${c.tipo||''}</td><td>${c.naturaleza||''}</td></tr>`;
+      });
+      html+=`</tbody></table></body></html>`;
+      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`plan_cuentas_${today()}.xls`;a.click();URL.revokeObjectURL(url);return;
+    }
+    const HEADERS=['Código','Cuenta de movimiento','Grupo','Sub-grupo','Cuenta','Subcuenta'];
+    const rows=sorted.map(c=>{
+      const cod=String(c.codigo);const partes=cod.split('.');const grKey=partes[0]||cod.charAt(0);
+      const gN={'1':'ACTIVOS','2':'PASIVOS','3':'PATRIMONIO','4':'INGRESOS','5':'COSTOS','6':'GASTOS'};
+      return[cod,c.nombre,gN[grKey]||c.grupo||grKey,c.subgrupo||(partes.length>=2?partes.slice(0,2).join('.'):cod),c.cuenta||(partes.length>=4?partes.slice(0,4).join('.'):cod),c.subcuenta||(partes.length>4?cod:'')];
+    });
+    const content=[HEADERS,...rows].map(row=>row.join('\t')).join('\r\n');
+    const blob=new Blob(['\uFEFF'+content],{type:'text/plain;charset=utf-8'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`plan_cuentas_${today()}.txt`;a.click();URL.revokeObjectURL(url);
+  };
+
+  // ── Importar PUC ──────────────────────────────────────────────────
+  const importarPUC = async (event) => {
+    const file=event.target.files[0];if(!file)return;
+    const text=await file.text();
+    const lines=text.split(/\r?\n/).filter(l=>l.trim());
+    if(lines.length<1){alert('Archivo vacío.');event.target.value='';return;}
+    const firstCell=lines[0].split('\t')[0].trim();
+    const hasHeader=!/^\d/.test(firstCell);
+    const dataLines=hasHeader?lines.slice(1):lines;
+    const existentes=new Set(cuentas.map(c=>String(c.codigo)));
+    const batch=writeBatch(db);let importados=0,omitidos=0;
+    const grupoMap={'ACTIVOS':'1','ACTIVO':'1','PASIVOS':'2','PASIVO':'2','PATRIMONIO':'3','INGRESOS':'4','INGRESO':'4','COSTOS':'5','COSTO':'5','GASTOS':'6','GASTO':'6','GASTOS ISLR':'6'};
+    for(const line of dataLines){
+      const parts=line.split('\t').map(v=>v.trim());
+      if(parts.length<2)continue;
+      const codigo=parts[0];const nombre=parts[1];const grupoTxt=parts[2]||'';const subgrupo=parts[3]||'';const cuenta=parts[4]||'';const subcuenta=parts[5]||'';
+      if(!codigo||!nombre)continue;
+      if(existentes.has(codigo)){omitidos++;continue;}
+      const grupoNum=grupoMap[grupoTxt.toUpperCase().trim()]||codigo.charAt(0);
+      const naturaleza=['1','5','6'].includes(grupoNum)?'Deudora':'Acreedora';
+      const partesCod=codigo.split('.');const tipo=partesCod.length<=2?'Mayor':partesCod.length<=4?'Auxiliar':'Analítica';
+      const id=gid();batch.set(dref('cont_cuentas',id),{id,codigo,nombre:nombre.toUpperCase(),grupo:grupoNum,subgrupo,cuenta,subcuenta,tipo,naturaleza,descripcion:'',ts:serverTimestamp()});
+      importados++;
+    }
+    if(importados===0){alert(`No se importaron cuentas.${omitidos>0?` (${omitidos} ya existían)`:' Verifique el formato.'}`);event.target.value='';return;}
+    await batch.commit();alert(`✅ ${importados} cuenta(s) importada(s).${omitidos>0?` (${omitidos} omitidas)`:''}`);;event.target.value='';
+  };
+
+  // ── DASHBOARD ──────────────────────────────────────────────────────
+  const DashboardView = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {grupos.map(g=>{const cnt=cuentas.filter(c=>String(c.codigo).startsWith(g.codigo)).length;return<KPI key={g.codigo} label={`${g.codigo} — ${g.nombre}`} value={cnt} accent={g.color} Icon={BookOpen} sub={`${cnt} cuentas`}/>;})}</div>
+      <Card title="Estructura del PUC" subtitle={`${cuentas.length} cuentas activas`}>
+        {cuentas.length===0?<EmptyState icon={BookOpen} title="PUC vacío" desc="Registre o importe el plan de cuentas"/>:
+          <div className="space-y-1">{grupos.map(g=>{
+            const gc=cuentas.filter(c=>String(c.codigo).startsWith(g.codigo)).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+            if(!gc.length)return null;
+            return(<div key={g.codigo}>
+              <div className="flex items-center gap-2 py-2 px-3 bg-slate-50 rounded-lg mt-3 mb-1"><span className="font-mono font-black text-xs text-slate-500">{g.codigo}</span><span className="font-black text-sm text-slate-900 uppercase tracking-wide">{g.nombre}</span><span className="ml-auto text-[10px] text-slate-400">{gc.length} cuentas</span></div>
+              {gc.map(c=><div key={c.id} className="flex items-center gap-3 py-2 px-4 hover:bg-slate-50 rounded-lg border-l-2 border-slate-100" style={{marginLeft:`${(String(c.codigo).split('.').length-1)*12}px`}}>
+                <span className="font-mono font-black text-xs text-slate-400 w-20 flex-shrink-0">{c.codigo}</span>
+                <span className="text-xs font-semibold text-slate-700 flex-1">{c.nombre}</span>
+                <Badge v={c.naturaleza==='Deudora'?'blue':'red'}>{c.naturaleza}</Badge>
+              </div>)}
+            </div>);
+          })}</div>}
+      </Card>
+    </div>
+  );
+
+  // ── PLAN DE CUENTAS con EDITAR ──────────────────────────────────────
+  const PlanCuentasView = () => {
+    const [modal,setModal]=useState(false);const [busy,setBusy]=useState(false);
+    const [search,setSearch]=useState('');const [editCuenta,setEditC]=useState(null);
+    const initF=()=>({codigo:'',nombre:'',grupo:'1',tipo:'Auxiliar',naturaleza:'Deudora',descripcion:'',subgrupo:'',cuenta:'',subcuenta:''});
+    const [form,setForm]=useState(initF());
+    const filtered=cuentas.filter(c=>c.nombre?.toUpperCase().includes(search.toUpperCase())||String(c.codigo).includes(search));
+
+    const openEdit=(c)=>{setEditC(c);setForm({codigo:c.codigo,nombre:c.nombre,grupo:c.grupo||'1',tipo:c.tipo||'Auxiliar',naturaleza:c.naturaleza||'Deudora',descripcion:c.descripcion||'',subgrupo:c.subgrupo||'',cuenta:c.cuenta||'',subcuenta:c.subcuenta||''});setModal(true);};
+    const openNew=()=>{setEditC(null);setForm(initF());setModal(true);};
+
+    const save=async()=>{
+      if(!form.codigo||!form.nombre)return alert('Código y nombre requeridos');
+      if(!editCuenta&&cuentas.find(c=>String(c.codigo)===String(form.codigo)))return alert('El código ya existe');
+      setBusy(true);
+      try{
+        if(editCuenta){await updateDoc(dref('cont_cuentas',editCuenta.id),{...form});}
+        else{const id=gid();await setDoc(dref('cont_cuentas',id),{...form,id,ts:serverTimestamp()});}
+        setModal(false);setEditC(null);setForm(initF());
+      }finally{setBusy(false);}
+    };
+
+    return(
+      <div>
+        <Card title="Plan de Cuentas (PUC)" subtitle={`${cuentas.length} cuentas · Formato: Código | Cuenta de movimiento | Grupo | Sub-grupo | Cuenta | Subcuenta`}
+          action={<div className="flex gap-2 flex-wrap">
+            <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar código o cuenta..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-blue-500 w-48"/></div>
+            <div className="relative group"><button className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-blue-400 hover:text-blue-600 transition-colors"><Download size={12}/> Exportar ▾</button>
+              <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 overflow-hidden min-w-[160px] hidden group-hover:block">
+                <button onClick={()=>exportarPUC('xls')} className="w-full px-4 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"><FileSpreadsheet size={12} className="text-green-600"/> Excel (.xls) — Columnas</button>
+                <button onClick={()=>exportarPUC('txt')} className="w-full px-4 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"><FileText size={12} className="text-blue-500"/> TXT Tabulado (importable)</button>
+              </div>
+            </div>
+            <label className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-emerald-400 hover:text-emerald-600 transition-colors cursor-pointer"><Upload size={12}/> Importar<input type="file" accept=".csv,.txt,.xls,.xlsx" className="sr-only" onChange={importarPUC}/></label>
+            <Bg onClick={openNew} sm><Plus size={12}/> Nueva</Bg>
+          </div>}>
+
+          <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start gap-2">
+            <FileText size={14} className="text-blue-500 flex-shrink-0 mt-0.5"/>
+            <div><p className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-0.5">Formato de Importación</p><p className="text-[10px] text-blue-600 font-mono">Código ⇥ Cuenta de movimiento ⇥ Grupo ⇥ Sub-grupo ⇥ Cuenta ⇥ Subcuenta</p><p className="text-[9px] text-blue-400 mt-0.5">Compatible con TXT tabulado. Primera fila puede ser encabezado.</p></div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr><Th>Código</Th><Th>Cuenta de movimiento</Th><Th>Grupo</Th><Th>Sub-grupo</Th><Th>Cuenta</Th><Th>Subcuenta</Th><Th>Tipo</Th><Th>Naturaleza</Th><Th></Th></tr></thead>
+              <tbody>
+                {filtered.length===0&&<tr><td colSpan={9}><EmptyState icon={BookOpen} title="Sin cuentas" desc="Registre o importe el PUC"/></td></tr>}
+                {[...filtered].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=>{
+                  const cod=String(c.codigo);const partes=cod.split('.');const grKey=partes[0]||cod.charAt(0);
+                  const gN={'1':'ACTIVOS','2':'PASIVOS','3':'PATRIMONIO','4':'INGRESOS','5':'COSTOS','6':'GASTOS'};
+                  const subgr=c.subgrupo||(partes.length>=2?partes.slice(0,2).join('.'):cod);
+                  const ctaCol=c.cuenta||(partes.length>=4?partes.slice(0,4).join('.'):cod);
+                  const subc=c.subcuenta||(partes.length>4?cod:'—');
+                  return<tr key={c.id} className="hover:bg-slate-50">
+                    <Td mono className="font-black text-blue-600 text-sm">{c.codigo}</Td>
+                    <Td className="font-semibold max-w-[220px]">{c.nombre}</Td>
+                    <Td className="text-[10px] font-semibold text-slate-500 max-w-[100px] truncate">{gN[grKey]||c.grupo||grKey}</Td>
+                    <Td mono className="text-slate-500 text-[11px] max-w-[120px] truncate">{subgr}</Td>
+                    <Td mono className="text-slate-500 text-[11px] max-w-[100px] truncate">{ctaCol}</Td>
+                    <Td mono className="text-slate-400 text-[11px] max-w-[100px] truncate">{subc}</Td>
+                    <Td><Badge v={c.tipo==='Mayor'?'gold':'gray'}>{c.tipo}</Badge></Td>
+                    <Td><Badge v={c.naturaleza==='Deudora'?'blue':'red'}>{c.naturaleza}</Badge></Td>
+                    <Td><div className="flex gap-1">
+                      <button onClick={()=>openEdit(c)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
+                      <button onClick={()=>deleteDoc(dref('cont_cuentas',c.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button>
+                    </div></Td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Modal open={modal} onClose={()=>{setModal(false);setEditC(null);}} title={editCuenta?`Editar Cuenta — ${editCuenta.codigo}`:'Registrar Cuenta Contable'} wide
+          footer={<><Bo onClick={()=>{setModal(false);setEditC(null);}}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':(editCuenta?'Guardar Cambios':'Guardar Cuenta')}</Bg></>}>
+          <div className="grid grid-cols-2 gap-4">
+            <FG label="Código de Cuenta"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value})} placeholder="1.1.01.01.001" readOnly={!!editCuenta} style={editCuenta?{background:'#f8fafc'}:{}}/></FG>
+            <FG label="Cuenta de movimiento"><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="CAJA PRINCIPAL"/></FG>
+            <FG label="Grupo Principal"><select className={sel} value={form.grupo} onChange={e=>setForm({...form,grupo:e.target.value})}>{grupos.map(g=><option key={g.codigo} value={g.codigo}>{g.codigo} — {g.nombre}</option>)}</select></FG>
+            <FG label="Tipo"><select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})}><option>Mayor</option><option>Auxiliar</option><option>Analítica</option></select></FG>
+            <FG label="Naturaleza"><select className={sel} value={form.naturaleza} onChange={e=>setForm({...form,naturaleza:e.target.value})}><option>Deudora</option><option>Acreedora</option></select></FG>
+            <FG label="Sub-grupo"><input className={inp} value={form.subgrupo} onChange={e=>setForm({...form,subgrupo:e.target.value})} placeholder="Ej: ACTIVO CIRCULANTE"/></FG>
+            <FG label="Cuenta"><input className={inp} value={form.cuenta} onChange={e=>setForm({...form,cuenta:e.target.value})} placeholder="Ej: DISPONIBLE"/></FG>
+            <FG label="Subcuenta"><input className={inp} value={form.subcuenta} onChange={e=>setForm({...form,subcuenta:e.target.value})} placeholder="Ej: BANCOS NACIONALES"/></FG>
+            <FG label="Descripción / Uso" full><input className={inp} value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})} placeholder="Descripción y uso de la cuenta..."/></FG>
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
+  // ── COMPROBANTE DIARIO ──────────────────────────────────────────────
+  const ComprobanteDiarioView = () => {
+    const [modulo, setModulo]   = useState('Banco');
+    const [desde,  setDesde]    = useState(mesActual()+'-01');
+    const [hasta,  setHasta]    = useState(today());
+    const [nroComp,setNroComp]  = useState('');
+
+    // Generar filas del comprobante desde movimientos bancarios
+    const generarFilas = () => {
+      const movsFiltrados = (modulo==='Banco'?movBanco:movCaja)
+        .filter(m=>m.fecha>=desde && m.fecha<=hasta && m.asientoDebito)
+        .sort((a,b)=>a.fecha.localeCompare(b.fecha));
+
+      const filas = [];
+      const mes = desde.substring(0,7).replace('-','.');
+      let comp = 1;
+      let saldoBsAcum = 0;
+      let saldoUSDacum = 0;
+
+      movsFiltrados.forEach(m => {
+        const esBs = m.moneda==='BS';
+        const nroDoc = m.referencia || m.facturaNumero || `${m.tipo.substring(0,3).toUpperCase()}-${String(comp).padStart(4,'0')}`;
+        const nComp = nroComp || `CB-${String(comp).padStart(4,'0')}`;
+
+        // Línea DÉBITO
+        const debBs  = m.tipo==='Ingreso' ? Number(m.montoBs||0)  : 0;
+        const habBs  = m.tipo==='Ingreso' ? 0 : Number(m.montoBs||0);
+        const debUSD = m.tipo==='Ingreso' ? Number(m.montoUSD||0) : 0;
+        const habUSD = m.tipo==='Ingreso' ? 0 : Number(m.montoUSD||0);
+        saldoBsAcum  += debBs  - habBs;
+        saldoUSDacum += debUSD - habUSD;
+
+        filas.push({
+          comprobante: nComp,
+          mes,
+          fecha: m.fecha,
+          codigo: m.ctaContraId ? cuentas.find(c=>c.id===m.ctaContraId)?.codigo||'—' : '—',
+          cuenta: m.asientoDebito,
+          tipo: 'D',
+          nroDoc,
+          concepto: m.concepto,
+          tasa: m.tasa||tasaActiva,
+          debeBs:  debBs,
+          haberBs: habBs,
+          saldoBs: saldoBsAcum,
+          debeUSD: debUSD,
+          haberUSD:habUSD,
+          saldoUSD:saldoUSDacum,
+        });
+
+        // Línea CRÉDITO
+        const debBs2  = m.tipo==='Ingreso' ? 0 : Number(m.montoBs||0);
+        const habBs2  = m.tipo==='Ingreso' ? Number(m.montoBs||0) : 0;
+        const debUSD2 = m.tipo==='Ingreso' ? 0 : Number(m.montoUSD||0);
+        const habUSD2 = m.tipo==='Ingreso' ? Number(m.montoUSD||0) : 0;
+        saldoBsAcum  += debBs2 - habBs2;
+        saldoUSDacum += debUSD2- habUSD2;
+
+        filas.push({
+          comprobante: nComp,
+          mes,
+          fecha: m.fecha,
+          codigo: m.ctaContraId ? cuentas.find(c=>c.id===m.ctaContraId)?.codigo||'—' : '—',
+          cuenta: m.asientoCredito,
+          tipo: 'H',
+          nroDoc,
+          concepto: m.concepto,
+          tasa: m.tasa||tasaActiva,
+          debeBs:  debBs2,
+          haberBs: habBs2,
+          saldoBs: saldoBsAcum,
+          debeUSD: debUSD2,
+          haberUSD:habUSD2,
+          saldoUSD:saldoUSDacum,
+        });
+        comp++;
+      });
+      return filas;
+    };
+
+    const filas = generarFilas();
+    const totDebBs  = filas.reduce((a,f)=>a+f.debeBs,0);
+    const totHabBs  = filas.reduce((a,f)=>a+f.haberBs,0);
+    const totDebUSD = filas.reduce((a,f)=>a+f.debeUSD,0);
+    const totHabUSD = filas.reduce((a,f)=>a+f.haberUSD,0);
+
+    const exportarComprobante = () => {
+      const HDRS=['Comprobante','Mes','Fecha','Código','Cuenta de movimiento','Tipo','Nro Documento','CONCEPTO','Tasa','Debe Bs','Haber Bs','Saldo Bs','Debe USD','Haber USD','Saldo USD'];
+      const grupoNames={'1':'ACTIVOS','2':'PASIVOS','3':'PATRIMONIO','4':'INGRESOS','5':'COSTOS','6':'GASTOS'};
+      let html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="utf-8"><style>body{font-family:Arial;font-size:10px}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:#fff;border:1px solid #94a3b8;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase}td{border:1px solid #e2e8f0;padding:3px 8px}tr:nth-child(even) td{background:#f8fafc}.debe{color:#065f46;font-weight:bold}.haber{color:#7f1d1d;font-weight:bold}.saldo{color:#1e3a5f}.tot{background:#1e293b;color:#fff;font-weight:bold}</style></head><body>
+        <p style="font-size:13px;font-weight:bold">Comprobante Diario — ${modulo} · Servicios Jiret G&amp;B, C.A.</p>
+        <p style="font-size:10px;color:#666">Período: ${dd(desde)} al ${dd(hasta)} · Generado: ${dd(today())}</p>
+        <table><thead><tr>${HDRS.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+      filas.forEach(f=>{
+        html+=`<tr><td>${f.comprobante}</td><td>${f.mes}</td><td>${dd(f.fecha)}</td><td style="font-family:Courier New;color:#1e40af;font-weight:bold">${f.codigo}</td><td>${f.cuenta}</td>
+          <td style="text-align:center;font-weight:bold;color:${f.tipo==='D'?'#065f46':'#7f1d1d'}">${f.tipo}</td>
+          <td>${f.nroDoc}</td><td>${f.concepto}</td><td style="text-align:right">${f.tasa}</td>
+          <td class="debe" style="text-align:right">${f.debeBs>0?fmt(f.debeBs):''}</td>
+          <td class="haber" style="text-align:right">${f.haberBs>0?fmt(f.haberBs):''}</td>
+          <td class="saldo" style="text-align:right">${fmt(f.saldoBs)}</td>
+          <td class="debe" style="text-align:right">${f.debeUSD>0?fmt(f.debeUSD):''}</td>
+          <td class="haber" style="text-align:right">${f.haberUSD>0?fmt(f.haberUSD):''}</td>
+          <td class="saldo" style="text-align:right">${fmt(f.saldoUSD)}</td></tr>`;
+      });
+      html+=`<tr class="tot"><td colspan="9" style="text-align:right">TOTALES</td>
+        <td style="text-align:right">${fmt(totDebBs)}</td><td style="text-align:right">${fmt(totHabBs)}</td><td style="text-align:right">${fmt(filas[filas.length-1]?.saldoBs||0)}</td>
+        <td style="text-align:right">${fmt(totDebUSD)}</td><td style="text-align:right">${fmt(totHabUSD)}</td><td style="text-align:right">${fmt(filas[filas.length-1]?.saldoUSD||0)}</td></tr>
+      </tbody></table></body></html>`;
+      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`comprobante_${modulo.toLowerCase()}_${desde.substring(0,7)}.xls`;a.click();URL.revokeObjectURL(url);
+    };
+
+    return (
+      <div className="space-y-5">
+        <Card title="Parámetros del Comprobante">
+          <div className="grid grid-cols-4 gap-4">
+            <FG label="Módulo">
+              <div className="flex gap-1">{['Banco','Caja'].map(m=>(
+                <button key={m} onClick={()=>setModulo(m)} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${modulo===m?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{m}</button>
+              ))}</div>
+            </FG>
+            <FG label="Desde"><input type="date" className={inp} value={desde} onChange={e=>setDesde(e.target.value)}/></FG>
+            <FG label="Hasta"><input type="date" className={inp} value={hasta} onChange={e=>setHasta(e.target.value)}/></FG>
+            <FG label="N° Comprobante (opc.)"><input className={inp} value={nroComp} onChange={e=>setNroComp(e.target.value)} placeholder="CB-0001"/></FG>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI label="Asientos Generados" value={filas.length/2|0} accent="blue" Icon={FileText} sub="operaciones"/>
+          <KPI label="Debe Bs." value={`Bs. ${fmt(totDebBs)}`} accent="green" Icon={ArrowUpCircle}/>
+          <KPI label="Haber Bs." value={`Bs. ${fmt(totHabBs)}`} accent="red" Icon={ArrowDownCircle}/>
+          <KPI label="Saldo Final Bs." value={`Bs. ${fmt(totDebBs-totHabBs)}`} accent={totDebBs>=totHabBs?'green':'red'} Icon={Scale}/>
+        </div>
+
+        <Card title={`Comprobante Diario — ${modulo} — ${dd(desde)} al ${dd(hasta)}`} subtitle={`${filas.length} líneas contables`}
+          action={<button onClick={exportarComprobante} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><Download size={12}/> Exportar Excel</button>}>
+          {filas.length===0?<EmptyState icon={FileText} title="Sin movimientos con asiento contable" desc="Registre movimientos con cuenta contrapartida del PUC"/>:
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{minWidth:'1200px'}}>
+              <thead>
+                <tr>
+                  {['Comprobante','Mes','Fecha','Código','Cuenta de movimiento','Tipo','Nro Documento','CONCEPTO','Tasa','Debe Bs','Haber Bs','Saldo Bs','Debe USD','Haber USD','Saldo USD'].map(h=>(
+                    <th key={h} className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest bg-slate-800 text-white border-b-2 border-slate-700 text-left whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filas.map((f,i)=>(
+                  <tr key={i} className={`${i%4<2?'bg-white':'bg-slate-50'} hover:bg-blue-50 border-b border-slate-100`}>
+                    <td className="px-3 py-2 font-mono font-black text-blue-600 text-[10px]">{f.comprobante}</td>
+                    <td className="px-3 py-2 text-slate-500">{f.mes}</td>
+                    <td className="px-3 py-2 font-mono text-slate-700 whitespace-nowrap">{dd(f.fecha)}</td>
+                    <td className="px-3 py-2 font-mono font-black text-blue-700 text-[10px]">{f.codigo}</td>
+                    <td className="px-3 py-2 font-semibold text-slate-800 max-w-[200px] truncate">{f.cuenta}</td>
+                    <td className={`px-3 py-2 font-black text-center text-sm ${f.tipo==='D'?'text-emerald-700':'text-red-600'}`}>{f.tipo}</td>
+                    <td className="px-3 py-2 font-mono text-slate-500 text-[10px]">{f.nroDoc}</td>
+                    <td className="px-3 py-2 max-w-[160px] truncate">{f.concepto}</td>
+                    <td className="px-3 py-2 font-mono text-right text-slate-500">{f.tasa}</td>
+                    <td className="px-3 py-2 font-mono font-black text-right text-emerald-700">{f.debeBs>0?fmt(f.debeBs):''}</td>
+                    <td className="px-3 py-2 font-mono font-black text-right text-red-600">{f.haberBs>0?fmt(f.haberBs):''}</td>
+                    <td className="px-3 py-2 font-mono font-black text-right text-blue-800">{fmt(f.saldoBs)}</td>
+                    <td className="px-3 py-2 font-mono font-black text-right text-emerald-600">{f.debeUSD>0?fmt(f.debeUSD):''}</td>
+                    <td className="px-3 py-2 font-mono font-black text-right text-red-500">{f.haberUSD>0?fmt(f.haberUSD):''}</td>
+                    <td className="px-3 py-2 font-mono font-black text-right text-blue-700">{fmt(f.saldoUSD)}</td>
+                  </tr>
+                ))}
+                {/* Totales */}
+                <tr className="font-black" style={{background:'#0f172a'}}>
+                  <td colSpan={9} className="px-3 py-3 text-right text-[10px] uppercase tracking-widest text-slate-400">TOTALES DEL PERÍODO</td>
+                  <td className="px-3 py-3 font-mono text-right text-emerald-400">{fmt(totDebBs)}</td>
+                  <td className="px-3 py-3 font-mono text-right text-red-400">{fmt(totHabBs)}</td>
+                  <td className="px-3 py-3 font-mono text-right text-blue-300">{fmt(filas[filas.length-1]?.saldoBs||0)}</td>
+                  <td className="px-3 py-3 font-mono text-right text-emerald-400">{fmt(totDebUSD)}</td>
+                  <td className="px-3 py-3 font-mono text-right text-red-400">{fmt(totHabUSD)}</td>
+                  <td className="px-3 py-3 font-mono text-right text-blue-300">{fmt(filas[filas.length-1]?.saldoUSD||0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>}
+        </Card>
+      </div>
+    );
+  };
+
+  const navGroups=[
+    {group:'Analítica',color:'#3b82f6',items:[{id:'dashboard',label:'Resumen PUC',icon:LayoutDashboard}]},
+    {group:'Contabilidad',color:'#3b82f6',items:[{id:'plan',label:'Plan de Cuentas',icon:BookOpen}]},
+    {group:'Comprobantes',color:'#10b981',items:[{id:'comprobante',label:'Comprobante Diario',icon:FileSpreadsheet}]},
+  ];
+  const views={dashboard:<DashboardView/>,plan:<PlanCuentasView/>,comprobante:<ComprobanteDiarioView/>};
+  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
+  return (
+    <SidebarLayout brand="Supply G&B" brandSub="Plan de Cuentas" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor={BLUE}
+      headerContent={<>
+        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Contabilidad <ChevronRight size={8} className="inline"/> {navGroups.find(g=>g.items.find(i=>i.id===sec))?.group}</p></div>
+        {sec==='comprobante'?<button onClick={()=>{}} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><Download size={12}/> Exportar</button>:<Bg onClick={()=>setSec('plan')} sm><Plus size={12}/> Nueva Cuenta</Bg>}
+      </>}>
+      {views[sec]}
+    </SidebarLayout>
+  );
+}
 
   useEffect(() => {
     if (!fbUser) return;
@@ -2276,107 +2817,6 @@ function ContabilidadApp({ fbUser, onBack }) {
   );
 
   // ── Plan de Cuentas ──────────────────────────────────────────────────
-  const PlanCuentasView = () => {
-    const [modal,setModal]=useState(false);const [busy,setBusy]=useState(false);const [search,setSearch]=useState('');
-    const [form,setForm]=useState({codigo:'',nombre:'',grupo:'1',tipo:'Auxiliar',naturaleza:'Deudora',descripcion:''});
-    const filtered=cuentas.filter(c=>c.nombre?.toUpperCase().includes(search.toUpperCase())||String(c.codigo).includes(search));
-    const save=async()=>{
-      if(!form.codigo||!form.nombre)return alert('Código y nombre requeridos');
-      if(cuentas.find(c=>String(c.codigo)===String(form.codigo)))return alert('El código ya existe');
-      setBusy(true);try{const id=gid();await setDoc(dref('cont_cuentas',id),{...form,id,ts:serverTimestamp()});setModal(false);setForm({codigo:'',nombre:'',grupo:'1',tipo:'Auxiliar',naturaleza:'Deudora',descripcion:''});}finally{setBusy(false);}
-    };
-    return (
-      <div>
-        <Card title="Plan de Cuentas (PUC)" subtitle={`${cuentas.length} cuentas registradas — Formato: Código | Cuenta de movimiento | Grupo | Sub-grupo | Cuenta | Subcuenta`}
-          action={
-            <div className="flex gap-2 flex-wrap">
-              <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-blue-500 w-32"/></div>
-              {/* Exportar */}
-              <div className="relative group">
-                <button className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-blue-400 hover:text-blue-600 transition-colors">
-                  <Download size={12}/> Exportar ▾
-                </button>
-                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 overflow-hidden min-w-[160px] hidden group-hover:block">
-                  <button onClick={()=>exportarPUC('xls')} className="w-full px-4 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"><FileSpreadsheet size={12} className="text-green-600"/> Excel (.xls) — Columnas</button>
-                  <button onClick={()=>exportarPUC('txt')} className="w-full px-4 py-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"><FileText size={12} className="text-blue-500"/> TXT Tabulado (importable)</button>
-                </div>
-              </div>
-              {/* Importar */}
-              <label className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-emerald-400 hover:text-emerald-600 transition-colors cursor-pointer">
-                <Upload size={12}/> Importar
-                <input type="file" accept=".csv,.txt,.xls,.xlsx" className="sr-only" onChange={importarPUC}/>
-              </label>
-              <Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nueva</Bg>
-            </div>
-          }>
-
-          {/* Formato reference */}
-          <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-start gap-2">
-            <FileText size={14} className="text-blue-500 flex-shrink-0 mt-0.5"/>
-            <div>
-              <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-0.5">Formato de Importación</p>
-              <p className="text-[10px] text-blue-600 font-mono">Código &nbsp;|&nbsp; Cuenta de movimiento &nbsp;|&nbsp; Grupo &nbsp;|&nbsp; Sub-grupo &nbsp;|&nbsp; Cuenta &nbsp;|&nbsp; Subcuenta</p>
-              <p className="text-[9px] text-blue-400 mt-0.5">Compatible con archivos CSV (coma) o TXT (tabulación). Primera fila = encabezados.</p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead><tr><Th>Código</Th><Th>Cuenta de movimiento</Th><Th>Grupo</Th><Th>Sub-grupo</Th><Th>Cuenta</Th><Th>Subcuenta</Th><Th>Tipo</Th><Th>Naturaleza</Th><Th></Th></tr></thead>
-              <tbody>
-                {filtered.length===0&&<tr><td colSpan={9}><EmptyState icon={BookOpen} title="Sin cuentas" desc="Registre o importe el PUC"/></td></tr>}
-                {[...filtered].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=>{
-                  const cod=String(c.codigo); const partes=cod.split('.');
-                  const grKey=partes[0]||cod.charAt(0);
-                  const grupoNombres={'1':'ACTIVOS','2':'PASIVOS','3':'PATRIMONIO','4':'INGRESOS','5':'COSTOS','6':'GASTOS'};
-                  const grNom=grupoNombres[grKey]||c.grupo||grKey;
-                  const subgr=c.subgrupo||(partes.length>=2?partes.slice(0,2).join('.'):cod);
-                  const ctaCol=c.cuenta||(partes.length>=4?partes.slice(0,4).join('.'):cod);
-                  const subc=c.subcuenta||(partes.length>4?cod:'—');
-                  return <tr key={c.id} className="hover:bg-slate-50">
-                    <Td mono className="font-black text-blue-600 text-sm">{c.codigo}</Td>
-                    <Td className="font-semibold max-w-[220px]">{c.nombre}</Td>
-                    <Td className="text-[10px] font-semibold text-slate-500 max-w-[100px] truncate">{grNom}</Td>
-                    <Td mono className="text-slate-500 text-[11px] max-w-[120px] truncate">{subgr}</Td>
-                    <Td mono className="text-slate-500 text-[11px] max-w-[100px] truncate">{ctaCol}</Td>
-                    <Td mono className="text-slate-400 text-[11px] max-w-[100px] truncate">{subc}</Td>
-                    <Td><Badge v={c.tipo==='Mayor'?'gold':'gray'}>{c.tipo}</Badge></Td>
-                    <Td><Badge v={c.naturaleza==='Deudora'?'blue':'red'}>{c.naturaleza}</Badge></Td>
-                    <Td><button onClick={()=>deleteDoc(dref('cont_cuentas',c.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12}/></button></Td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Cuenta Contable"
-          footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar Cuenta'}</Bg></>}>
-          <div className="grid grid-cols-2 gap-4">
-            <FG label="Código de Cuenta"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value})} placeholder="101001"/></FG>
-            <FG label="Cuenta de movimiento"><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="CAJA PRINCIPAL"/></FG>
-            <FG label="Grupo Principal"><select className={sel} value={form.grupo} onChange={e=>setForm({...form,grupo:e.target.value})}>{grupos.map(g=><option key={g.codigo} value={g.codigo}>{g.codigo} — {g.nombre}</option>)}</select></FG>
-            <FG label="Tipo"><select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})}><option>Mayor</option><option>Auxiliar</option><option>Analítica</option></select></FG>
-            <FG label="Naturaleza"><select className={sel} value={form.naturaleza} onChange={e=>setForm({...form,naturaleza:e.target.value})}><option>Deudora</option><option>Acreedora</option></select></FG>
-            <FG label="Descripción" full><input className={inp} value={form.descripcion} onChange={e=>setForm({...form,descripcion:e.target.value})} placeholder="Uso y descripción de la cuenta..."/></FG>
-          </div>
-        </Modal>
-      </div>
-    );
-  };
-
-  const navGroups=[{group:'Analítica',items:[{id:'dashboard',label:'Resumen PUC',icon:LayoutDashboard}]},{group:'Contabilidad',items:[{id:'plan',label:'Plan de Cuentas',icon:BookOpen}]}];
-  const views={dashboard:<DashboardView/>,plan:<PlanCuentasView/>};
-  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
-  return (
-    <SidebarLayout brand="Supply G&B" brandSub="Plan de Cuentas" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor={BLUE}
-      headerContent={<>
-        <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Contabilidad <ChevronRight size={8} className="inline"/> PUC</p></div>
-        <Bg onClick={()=>setSec('plan')} sm><Plus size={12}/> Nueva Cuenta</Bg>
-      </>}>
-      {views[sec]}
-    </SidebarLayout>
-  );
-}
 
 function AsientosApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('dashboard');
