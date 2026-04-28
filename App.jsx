@@ -1724,8 +1724,8 @@ function BancoApp({ fbUser, onBack }) {
     const [filtDesde,setFiltD]    = useState('');
     const [filtHasta,setFiltH]    = useState('');
     const [monedaVista,setMonedaVista] = useState('BS'); // BS o USD
-    // Búsqueda instantánea en selectores del formulario
-    const [searchPUC,     setSearchPUC]     = useState('');
+    // Búsqueda de cuentas para contrapartidas (indexadas por posición)
+    const [busqCtas, setBusqCtas] = useState({});
     const [searchTercero, setSearchTercero] = useState('');
     const [searchBanco,   setSearchBanco]   = useState('');
 
@@ -1894,7 +1894,7 @@ function BancoApp({ fbUser, onBack }) {
           batch.update(dref('facturacion_facturas',factura.id),{saldoUSD:ns,estado:ns<0.01?'Pagada':'Pendiente'});
         }
         await batch.commit();
-        setModal(false); setForm(initF());
+        setModal(false); setForm(initF()); setBusqCtas({});
       } finally { setBusy(false); }
     };
 
@@ -2414,8 +2414,8 @@ function BancoApp({ fbUser, onBack }) {
                   {/* Líneas de contrapartida (editables, múltiples) */}
                   <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mt-1 mb-1">Contrapartidas</p>
                   {form.lineasContra.map((l,i)=>{
-                    const cta=contCuentas.find(c=>c.id===l.ctaId);
-                    const [busqCta,setBusqCta]=useState('');
+                    const busqCta = busqCtas[i]||'';
+                    const setBusqCta = (v) => setBusqCtas(prev=>({...prev,[i]:v}));
                     const ctasFiltradas=[...contCuentas]
                       .filter(c=>!busqCta||(c.codigo+' '+c.nombre).toUpperCase().includes(busqCta.toUpperCase()))
                       .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
@@ -2582,7 +2582,7 @@ function BancoApp({ fbUser, onBack }) {
       try {
         const id=gid(); const tercero=form.tipoTercero==='Cliente'?clientes.find(c=>c.id===form.terceroId):provs.find(p=>p.id===form.terceroId);
         await setDoc(dref('caja_movimientos',id),{id,fecha:form.fecha,tipo:form.tipo,moneda:form.moneda,concepto:form.concepto,referencia:form.referencia,monto,montoBs,montoUSD,tasa,aplicaTercero:form.aplicaTercero,tipoTercero:form.tipoTercero,terceroId:tercero?.id||'',terceroNombre:tercero?.nombre||'',ts:serverTimestamp()});
-        setModal(false); setForm(initF());
+        setModal(false); setForm(initF()); setBusqCtas({});
       } finally { setBusy(false); }
     };
 
