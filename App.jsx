@@ -69,7 +69,7 @@ const mesActual = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 const DARK = '#000000';
 const ORANGE = '#f97316';
 const BLUE = '#3b82f6';
-const BG = '#f1f5f9';
+const BG = '#ffffff';
 
 // ── Letterhead PDF generator ────────────────────────────────────────────────
 const LETTERHEAD_CSS = `
@@ -1448,41 +1448,75 @@ function BancoApp({ fbUser, onBack }) {
     };
 
     return (
-      <div>
+      <div className="space-y-5">
         <style>{PRINT_STYLE}</style>
-        <Card title="Cuentas Bancarias" subtitle={`${cuentas.length} cuentas registradas`}
-          action={<div className="flex gap-2 no-print">
-            <button onClick={imprimirCuentas} className="flex items-center gap-2 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors"><Download size={12}/> Imprimir</button>
-            <Bg onClick={openNew} sm><Plus size={12}/> Nueva Cuenta</Bg>
-          </div>}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead><tr><Th>Clasificación</Th><Th>Banco</Th><Th>Nro. Cuenta</Th><Th>Titular</Th><Th>Moneda</Th><Th right>Saldo Actual</Th><Th right>Equiv. USD</Th><Th></Th></tr></thead>
-              <tbody>
-                {cuentas.length===0&&<tr><td colSpan={8}><EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas bancarias"/></td></tr>}
-                {cuentas.map(c=>{
-                  const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0]; const bs=c.moneda==='BS';
-                  return <tr key={c.id} className="hover:bg-slate-50">
-                    <Td><div className="flex items-center gap-1.5"><span>{tb.flag}</span><span className="text-[9px] font-black uppercase text-slate-500">{c.tipoBanco||'Nacional-Bs'}</span></div></Td>
-                    <Td className="font-semibold">{c.banco}</Td>
-                    <Td mono className="text-[11px] text-slate-600">{c.numeroCuenta}</Td>
-                    <Td className="uppercase text-[11px] text-slate-400 max-w-[100px] truncate">{c.titular||'—'}</Td>
-                    <Td><Pill usd={!bs}>{c.moneda}</Pill></Td>
-                    <Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td>
-                    <Td right mono className="text-emerald-600 font-black">${fmt(bs?Number(c.saldo)/tasaActiva:Number(c.saldo))}</Td>
-                    <Td>
-                      <div className="flex gap-1">
-                        <button onClick={()=>setCert(c)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Certificación"><FileText size={12}/></button>
-                        <button onClick={()=>openEdit(c)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
-                        {canDel(c)&&<button onClick={()=>deleteDoc(dref('banco_cuentas',c.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button>}
-                      </div>
-                    </Td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+
+        {/* ── CUENTAS NACIONALES Bs ── */}
+        {[
+          {label:'🇻🇪 Cuentas Nacionales — Bolívares',  tipos:['Nacional-Bs'],  colorHeader:'#1e3a5f', accent:'#3b82f6'},
+          {label:'💵 Cuentas Moneda Extranjera / Internacional', tipos:['Nacional-Ext','Internacional'], colorHeader:'#1a3a2a', accent:'#10b981'},
+        ].map(grupo=>{
+          const lista=cuentas.filter(c=>grupo.tipos.includes(c.tipoBanco||'Nacional-Bs'));
+          const totUSD=lista.reduce((a,c)=>{const bs=c.moneda==='BS';return a+(bs?Number(c.saldo)/tasaActiva:Number(c.saldo));},0);
+          const totBs =lista.reduce((a,c)=>{const bs=c.moneda==='BS';return a+(bs?Number(c.saldo):Number(c.saldo)*tasaActiva);},0);
+          return (
+            <div key={grupo.label} className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+              <div className="px-5 py-3 flex items-center justify-between" style={{background:grupo.colorHeader}}>
+                <p className="font-black text-white text-xs uppercase tracking-widest">{grupo.label}</p>
+                <div className="text-right">
+                  <p className="font-mono font-black text-sm" style={{color:grupo.accent==='#3b82f6'?'#93c5fd':'#6ee7b7'}}>Bs. {fmt(totBs)}</p>
+                  <p className="font-mono text-white text-[10px] opacity-70">≈ ${fmt(totUSD)} USD</p>
+                </div>
+              </div>
+              {lista.length===0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs">Sin cuentas en esta categoría</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead><tr className="bg-slate-50 border-b border-slate-100"><Th>Banco</Th><Th>Nro. Cuenta</Th><Th>Tipo</Th><Th>Titular</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>Equiv. USD</Th><Th right>Equiv. Bs.</Th><Th></Th></tr></thead>
+                    <tbody>
+                      {lista.map(c=>{
+                        const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];
+                        const bs=c.moneda==='BS'; const usd=c.moneda==='USD'; const eur=c.moneda==='EUR';
+                        const saldoUSD=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);
+                        const saldoBs =bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
+                        return <tr key={c.id} className="hover:bg-blue-50/30 border-b border-slate-50">
+                          <Td className="font-black text-slate-900">{c.banco}</Td>
+                          <Td mono className="text-[11px] text-slate-600">{c.numeroCuenta}</Td>
+                          <Td className="text-[10px] text-slate-500">{c.tipoCuenta||'—'}</Td>
+                          <Td className="uppercase text-[10px] text-slate-400 max-w-[100px] truncate">{c.titular||'—'}</Td>
+                          <Td><Pill usd={!bs}>{c.moneda}</Pill></Td>
+                          <Td right mono className="font-black text-slate-900">{bs?'Bs.':usd?'$':'€'} {fmt(c.saldo)}</Td>
+                          <Td right mono className="text-emerald-700 font-black">${fmt(saldoUSD)}</Td>
+                          <Td right mono className="text-blue-600">{bs?'—':`Bs. ${fmt(saldoBs)}`}</Td>
+                          <Td>
+                            <div className="flex gap-1">
+                              <button onClick={()=>setCert(c)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Certificación"><FileText size={12}/></button>
+                              <button onClick={()=>openEdit(c)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
+                              <button onClick={async()=>{
+                                if(!window.confirm(`¿Eliminar cuenta ${c.banco}? Se eliminarán también sus movimientos.`)) return;
+                                const batch=writeBatch(db);
+                                batch.delete(dref('banco_cuentas',c.id));
+                                movBanco.filter(m=>m.cuentaId===c.id).forEach(m=>batch.delete(dref('banco_movimientos',m.id)));
+                                await batch.commit();
+                              }} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button>
+                            </div>
+                          </Td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Botón Nueva Cuenta */}
+        <div className="flex gap-3">
+          <button onClick={imprimirCuentas} className="flex items-center gap-2 px-4 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
+          <Bg onClick={openNew}><Plus size={12}/> Nueva Cuenta</Bg>
+        </div>
 
         <Modal open={modal} onClose={()=>{setModal(false);setEdit(null);}} title={editando?'Editar Cuenta Bancaria':'Nueva Cuenta Bancaria'} wide
           footer={<><Bo onClick={()=>{setModal(false);setEdit(null);}}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':(editando?'Guardar Cambios':'Registrar Cuenta')}</Bg></>}>
@@ -1793,35 +1827,45 @@ function BancoApp({ fbUser, onBack }) {
       const cuenta = cuentas.find(c=>c.id===cuentaId);
       if(!cuenta) return null;
       const bs = cuenta.moneda==='BS';
+      const eur= cuenta.moneda==='EUR';
       const movCta = movBanco.filter(m=>m.cuentaId===cuentaId);
       const ultConcil = concils.filter(c=>c.cuentaId===cuentaId).sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0)[0];
-      const saldoLibros = Number(cuenta.moneda==='BS' ? cuenta.saldo/tasaActiva : cuenta.saldo);
-      const ultSaldoConcil = ultConcil?.saldoBanco||0;
+      // Saldo en USD siempre
+      const saldoUSD = bs?Number(cuenta.saldo)/tasaActiva:Number(cuenta.saldo);
+      const saldoBs  = bs?Number(cuenta.saldo):Number(cuenta.saldo)*tasaActiva;
+      const ultSaldoConcilUSD = ultConcil?.saldoBanco||0;
       const pendientesD = movCta.filter(m=>m.tipo==='Egreso' &&m.estatus!=='Conciliado').reduce((a,m)=>a+Number(m.montoUSD||0),0);
       const pendientesC = movCta.filter(m=>m.tipo==='Ingreso'&&m.estatus!=='Conciliado').reduce((a,m)=>a+Number(m.montoUSD||0),0);
-      const saldoDisp   = saldoLibros - pendientesD + pendientesC;
-      const difUltConc  = saldoLibros - ultSaldoConcil;
+      const saldoDispUSD = saldoUSD - pendientesD + pendientesC;
+      const difUltConc  = saldoUSD - ultSaldoConcilUSD;
       const rows = [
-        {l:'Fecha Actual',           v:dd(today()),                           mono:false},
-        {l:'Último saldo conciliado',v:`$${fmt(ultSaldoConcil)}`,             mono:true},
-        {l:'Saldo en Libros',        v:`$${fmt(saldoLibros)}`,                mono:true, bold:true},
-        {l:'Débitos diferidos (-)',  v:`$${fmt(pendientesD)}`,                mono:true, red:true},
-        {l:'Créditos diferidos (+)', v:`$${fmt(pendientesC)}`,                mono:true, green:true},
-        {l:'Saldo disponible',       v:`$${fmt(saldoDisp)}`,                  mono:true, bold:true, accent:true},
-        {l:'Dif. Ult. Conciliación', v:`$${fmt(difUltConc)}`,                 mono:true, red:difUltConc<0, green:difUltConc>=0},
+        {l:'Fecha Actual',           vbs:dd(today()),               vusd:null,          mono:false},
+        {l:'Último saldo conciliado',vbs:`Bs. ${fmt(ultSaldoConcilUSD*tasaActiva)}`, vusd:`$${fmt(ultSaldoConcilUSD)}`, mono:true},
+        {l:'Saldo en Libros',        vbs:`Bs. ${fmt(saldoBs)}`,     vusd:`$${fmt(saldoUSD)}`,     mono:true, bold:true},
+        {l:'Débitos diferidos (-)',  vbs:`Bs. ${fmt(pendientesD*tasaActiva)}`, vusd:`$${fmt(pendientesD)}`, mono:true, red:true},
+        {l:'Créditos diferidos (+)', vbs:`Bs. ${fmt(pendientesC*tasaActiva)}`, vusd:`$${fmt(pendientesC)}`, mono:true, green:true},
+        {l:'Saldo disponible',       vbs:`Bs. ${fmt(saldoDispUSD*tasaActiva)}`, vusd:`$${fmt(saldoDispUSD)}`, mono:true, bold:true, accent:true},
+        {l:'Dif. Ult. Conciliación', vbs:`Bs. ${fmt(difUltConc*tasaActiva)}`, vusd:`$${fmt(difUltConc)}`, mono:true, red:difUltConc<0, green:difUltConc>=0},
       ];
       return (
-        <div className="rounded-xl border border-slate-200 overflow-hidden mb-4" style={{background:'#f8fafc'}}>
+        <div className="rounded-xl border border-slate-200 overflow-hidden mb-4">
           <div className="px-4 py-2.5 flex items-center gap-2 border-b border-slate-200" style={{background:'#0f172a'}}>
             <Building2 size={13} className="text-blue-400"/>
-            <p className="font-black text-xs text-white uppercase tracking-widest">{cuenta.banco} · {cuenta.numeroCuenta}</p>
+            <p className="font-black text-xs text-white uppercase tracking-widest flex-1">{cuenta.banco} · {cuenta.numeroCuenta}</p>
             <Pill usd={!bs}>{cuenta.moneda}</Pill>
           </div>
-          <div className="px-4 py-2 space-y-0">
-            {rows.map(({l,v,mono,bold,red,green,accent})=>(
-              <div key={l} className={`flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0 ${accent?'bg-blue-50/60 -mx-4 px-4 rounded':''}`}>
+          {/* Cabecera columnas */}
+          <div className="grid grid-cols-3 bg-slate-50 border-b border-slate-100 px-4 py-1.5">
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Concepto</p>
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">Bs. (Bolívares)</p>
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">USD (Dólares)</p>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {rows.map(({l,vbs,vusd,mono,bold,red,green,accent})=>(
+              <div key={l} className={`grid grid-cols-3 items-center px-4 py-2 ${accent?'bg-blue-50':''}`}>
                 <p className="text-[10px] text-slate-500 font-medium">{l}</p>
-                <p className={`font-${mono?'mono':'medium'} text-[11px] ${bold?'font-black':'font-semibold'} ${red?'text-red-600':green?'text-emerald-600':'text-slate-900'}`}>{v}</p>
+                <p className={`text-right font-${mono?'mono':'medium'} text-[11px] ${bold?'font-black':'font-semibold'} ${red?'text-red-600':green?'text-emerald-600':'text-slate-700'}`}>{vbs||'—'}</p>
+                <p className={`text-right font-${mono?'mono':'medium'} text-[11px] ${bold?'font-black':'font-semibold'} ${red?'text-red-600':green?'text-emerald-600':'text-slate-900'}`}>{vusd||'—'}</p>
               </div>
             ))}
           </div>
@@ -2633,10 +2677,117 @@ function BancoApp({ fbUser, onBack }) {
     { group:'Caja',        color:'#10b981', items:[{id:'caja_op',       label:'Operaciones Caja',   icon:Banknote},
                                                     {id:'arqueo',        label:'Arqueo de Caja',     icon:Calculator}] },
     { group:'Terceros',    color:'#8b5cf6', items:[{id:'proveedores',  label:'Proveedores',        icon:Users}] },
-    { group:'Reportes',    color:'#f59e0b', items:[{id:'reportes',     label:'Reporte Bancario',   icon:BarChart3}] },
+    { group:'Reportes',    color:'#f59e0b', items:[{id:'reportes',     label:'Panel de Reportes',  icon:BarChart3},
+                                                    {id:'rpt_gral',    label:'General de Banco',    icon:FileSpreadsheet},
+                                                    {id:'rpt_conc',    label:'Conciliaciones',      icon:CheckCircle},
+                                                    {id:'rpt_concepto',label:'Por Concepto',        icon:BookMarked},
+                                                    {id:'rpt_comp',    label:'Comprobante Bancario',icon:BookOpen}] },
     { group:'Config.',     color:'#64748b', items:[{id:'tasas',        label:'Tasas de Cambio',    icon:Globe}] },
   ];
-  const views = {dashboard:<DashboardView/>,cuentas:<CuentasView/>,movimientos:<MovimientosView/>,conciliacion:<ConciliacionView/>,caja_op:<CajaOpView/>,arqueo:<ArqueoCajaView/>,proveedores:<ProveedoresView/>,reportes:<ReportesView/>,tasas:<TasasView/>};
+  const ReportesGeneralView = () => {
+    const totBs = cuentas.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo),0);
+    const totUSD= cuentas.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo),0);
+    const totBsEq= cuentas.reduce((a,c)=>a+(c.moneda==='BS'?Number(c.saldo):Number(c.saldo)*tasaActiva),0);
+    const imprimir=()=>{
+      let rows=cuentas.map(c=>{
+        const bs=c.moneda==='BS';
+        const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);
+        const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
+        return `<tr><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta||'—'}</td><td>${c.moneda}</td><td style="text-align:right;font-family:monospace;font-weight:bold">Bs.${fmt(bsEq)}</td><td style="text-align:right;font-family:monospace;font-weight:bold;color:#16a34a">$${fmt(usd)}</td></tr>`;
+      }).join('');
+      printWindow(letterheadOpen('Reporte General Bancario',`Tasa: ${tasaActiva} Bs/$ · ${dd(today())} · ${cuentas.length} cuentas`)+
+        `<table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Saldo Bs.</th><th>Equiv. USD</th></tr></thead><tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="4" style="font-weight:bold">TOTAL CONSOLIDADO</td><td style="text-align:right;font-weight:bold">Bs.${fmt(totBsEq)}</td><td style="text-align:right;font-weight:bold;color:#16a34a">$${fmt(totBsEq/tasaActiva)}</td></tr></tfoot></table>`+
+        letterheadClose(`${cuentas.length} cuenta(s) registrada(s)`));
+    };
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-3 gap-4">
+          <KPI label="Total Bs." value={`Bs. ${fmt(totBs)}`} accent="blue" Icon={Building2} sub={`$${fmt(totBs/tasaActiva)} USD equiv.`}/>
+          <KPI label="Total USD" value={`$${fmt(totUSD)}`} accent="green" Icon={DollarSign}/>
+          <KPI label="Consolidado USD" value={`$${fmt(totBsEq/tasaActiva)}`} accent="gold" Icon={TrendingUp} sub="Todas las cuentas"/>
+        </div>
+        <Card title="Resumen General Bancario" action={<button onClick={imprimir} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><Download size={12}/> PDF Membretado</button>}>
+          {[{titulo:'Cuentas Nacionales Bs.',tipos:['Nacional-Bs']},{titulo:'Cuentas Moneda Extranjera',tipos:['Nacional-Ext','Internacional']}].map(g=>(
+            <div key={g.titulo} className="mb-4">
+              <p className="text-xs font-black uppercase text-slate-500 mb-2">{g.titulo}</p>
+              <table className="w-full"><thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead>
+                <tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{
+                  const bs=c.moneda==='BS'; const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo); const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
+                  return <tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">${fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
+                })}</tbody>
+              </table>
+            </div>
+          ))}
+        </Card>
+      </div>
+    );
+  };
+
+  const ReporteConceptoView = () => {
+    const [search, setSearch] = useState('');
+    const grouped = movBanco.reduce((acc,m)=>{
+      const k=(m.concepto||'Sin concepto').toUpperCase();
+      if(!acc[k]) acc[k]={concepto:k,ingresos:0,egresos:0,count:0};
+      if(m.tipo==='Ingreso') acc[k].ingresos+=Number(m.montoUSD||0);
+      if(m.tipo==='Egreso')  acc[k].egresos +=Number(m.montoUSD||0);
+      acc[k].count++;
+      return acc;
+    },{});
+    const rows=Object.values(grouped).filter(r=>!search||r.concepto.includes(search.toUpperCase())).sort((a,b)=>b.ingresos+b.egresos-(a.ingresos+a.egresos));
+    return (
+      <Card title="Transacciones por Concepto" action={<div className="relative"><Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Filtrar..." className={`${inp} pl-8 w-40`}/></div>}>
+        <table className="w-full"><thead><tr><Th>Concepto</Th><Th right>Transacciones</Th><Th right>Ingresos USD</Th><Th right>Egresos USD</Th><Th right>Neto</Th></tr></thead>
+          <tbody>{rows.length===0&&<tr><td colSpan={5}><EmptyState icon={BookMarked} title="Sin datos" desc="Registre movimientos bancarios"/></td></tr>}
+            {rows.map((r,i)=><tr key={i} className="hover:bg-slate-50">
+              <Td className="font-semibold uppercase max-w-[200px] truncate">{r.concepto}</Td>
+              <Td right mono className="text-slate-500">{r.count}</Td>
+              <Td right mono className="text-emerald-600 font-black">${fmt(r.ingresos)}</Td>
+              <Td right mono className="text-red-500 font-black">${fmt(r.egresos)}</Td>
+              <Td right mono className={`font-black ${r.ingresos-r.egresos>=0?'text-emerald-700':'text-red-600'}`}>${fmt(r.ingresos-r.egresos)}</Td>
+            </tr>)}
+          </tbody>
+        </table>
+      </Card>
+    );
+  };
+
+  const ComprobantesBancariosView = () => {
+    const [mes, setMes] = useState(mesActual());
+    const asientos_mes = movBanco.filter(m=>m.fecha?.startsWith(mes)&&(m.asientoDebito||m.asientoCredito));
+    const imprimir = () => {
+      let rows=asientos_mes.map((m,i)=>`<tr>
+        <td style="font-family:monospace;font-weight:bold;color:#1e40af">${m.asientoContableId?.substring(0,8)||'—'}</td>
+        <td>${dd(m.fecha)}</td><td>${m.concepto}</td><td>${m.cuentaNombre}</td>
+        <td>${m.asientoDebito||'—'}</td><td>${m.asientoCredito||'—'}</td>
+        <td style="text-align:right;font-family:monospace;color:#16a34a">$${fmt(m.montoUSD)}</td>
+        <td style="text-align:right;font-family:monospace">Bs.${fmt(m.montoBs)}</td>
+        <td style="text-align:right;font-family:monospace">${m.tasa}</td>
+      </tr>`).join('');
+      printWindow(letterheadOpen(`Comprobante Contable Bancario — ${mes}`,`${asientos_mes.length} asientos · Tasa ref: ${tasaActiva} Bs/$`)+
+        `<table><thead><tr><th>Comprobante</th><th>Fecha</th><th>Concepto</th><th>Banco</th><th>Cta. Débito</th><th>Cta. Crédito</th><th>USD</th><th>Bs.</th><th>Tasa</th></tr></thead><tbody>${rows}</tbody></table>`+
+        letterheadClose(`Módulo: Tesorería & Bancos`));
+    };
+    return (
+      <Card title="Comprobante Contable Bancario" subtitle={`Asientos generados en ${mes}`}
+        action={<div className="flex gap-2"><input type="month" className={inp} style={{width:'140px'}} value={mes} onChange={e=>setMes(e.target.value)}/><button onClick={imprimir} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><Download size={12}/> PDF</button></div>}>
+        {asientos_mes.length===0?<EmptyState icon={BookOpen} title="Sin asientos" desc="Los asientos se generan automáticamente al registrar movimientos bancarios"/>:
+          <table className="w-full text-[11px]"><thead><tr><Th>Comprobante</Th><Th>Fecha</Th><Th>Banco</Th><Th>Concepto</Th><Th>Cta. Débito</Th><Th>Cta. Crédito</Th><Th right>USD</Th><Th right>Bs.</Th></tr></thead>
+            <tbody>{asientos_mes.map((m,i)=><tr key={m.id||i} className="hover:bg-slate-50">
+              <Td mono className="text-blue-600 font-black text-[10px]">{m.asientoContableId?.substring(0,10)||'—'}</Td>
+              <Td>{dd(m.fecha)}</Td><Td className="max-w-[80px] truncate">{m.cuentaNombre}</Td>
+              <Td className="max-w-[120px] truncate">{m.concepto}</Td>
+              <Td className="max-w-[120px] truncate text-emerald-700">{m.asientoDebito||'—'}</Td>
+              <Td className="max-w-[120px] truncate text-red-600 pl-4">{m.asientoCredito||'—'}</Td>
+              <Td right mono className="text-emerald-700 font-black">${fmt(m.montoUSD)}</Td>
+              <Td right mono className="text-slate-500">Bs.{fmt(m.montoBs)}</Td>
+            </tr>)}</tbody>
+          </table>}
+      </Card>
+    );
+  };
+
+  const views = {dashboard:<DashboardView/>,cuentas:<CuentasView/>,movimientos:<MovimientosView/>,conciliacion:<ConciliacionView/>,caja_op:<CajaOpView/>,arqueo:<ArqueoCajaView/>,proveedores:<ProveedoresView/>,reportes:<ReportesView/>,rpt_gral:<ReportesGeneralView/>,rpt_conc:<ConciliacionView/>,rpt_concepto:<ReporteConceptoView/>,rpt_comp:<ComprobantesBancariosView/>,tasas:<TasasView/>};
   const curNav = navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
 
   return (
@@ -4489,11 +4640,131 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
     );
   };
 
+  // ── Datos de Empresa ────────────────────────────────────────────────
+  const EmpresaConfig = () => {
+    const [form,setForm] = useState({
+      razonSocial: settings?.empresaRazonSocial || 'SERVICIOS JIRET G&B, C.A.',
+      rif:         settings?.empresaRif         || 'J-412309374',
+      telefono:    settings?.empresaTelefono    || '0414-693.03.42',
+      email:       settings?.empresaEmail       || '',
+      direccion:   settings?.empresaDireccion   || 'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB SECTOR EL TREBOL MARACAIBO-ZULIA',
+      actividad:   settings?.empresaActividad   || 'Líderes en material de empaque',
+    });
+    const [busy,setBusy]=useState(false);
+    const [saved,setSaved]=useState(false);
+    const save=async()=>{
+      setBusy(true);
+      try {
+        await setDoc(dref('settings','general'),{
+          empresaRazonSocial:form.razonSocial,empresaRif:form.rif,
+          empresaTelefono:form.telefono,empresaEmail:form.email,
+          empresaDireccion:form.direccion,empresaActividad:form.actividad,
+          ts:serverTimestamp()
+        },{merge:true});
+        setSaved(true); setTimeout(()=>setSaved(false),3000);
+      } finally { setBusy(false); }
+    };
+    return (
+      <div className="space-y-5">
+        <div className="flex items-start gap-4 p-5 bg-orange-50 border border-orange-200 rounded-2xl">
+          <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0"><Building2 size={18} className="text-white"/></div>
+          <div><p className="font-black text-orange-800 text-sm uppercase">Datos de la Empresa</p><p className="text-[11px] text-orange-600 mt-0.5">Estos datos aparecen en el encabezado de todos los reportes e impresiones.</p></div>
+        </div>
+        <Card title="Información Empresarial">
+          <div className="grid grid-cols-2 gap-5">
+            <FG label="RAZÓN SOCIAL *" full><input className={inp} value={form.razonSocial} onChange={e=>setForm({...form,razonSocial:e.target.value.toUpperCase()})} placeholder="SERVICIOS JIRET G&B, C.A."/></FG>
+            <FG label="RIF *"><input className={inp} value={form.rif} onChange={e=>setForm({...form,rif:e.target.value.toUpperCase()})} placeholder="J-412309374"/></FG>
+            <FG label="TELÉFONO"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})} placeholder="0414-000.00.00"/></FG>
+            <FG label="EMAIL"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="admin@empresa.com"/></FG>
+            <FG label="DIRECCIÓN FISCAL" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value.toUpperCase()})} placeholder="Av. Principal, Local 01..."/></FG>
+            <FG label="ACTIVIDAD ECONÓMICA" full><input className={inp} value={form.actividad} onChange={e=>setForm({...form,actividad:e.target.value})} placeholder="Suministros industriales..."/></FG>
+          </div>
+          <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+            {saved&&<p className="text-[11px] font-black text-emerald-600 flex items-center gap-2"><CheckCircle size={14}/> ¡Datos guardados!</p>}
+            <div className="ml-auto"><Bg onClick={save} disabled={busy}>{busy?<><RefreshCw size={13} className="animate-spin"/> Guardando...</>:<><Save size={13}/> Guardar Cambios</>}</Bg></div>
+          </div>
+        </Card>
+        {/* Preview membrete */}
+        <Card title="Vista Previa — Membrete">
+          <div className="rounded-xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between px-6 py-4 bg-black border-b-4 border-orange-500">
+              <div className="flex items-center gap-2"><span className="text-white text-lg font-light">Supply</span><span className="text-white font-black text-3xl">G</span><div className="bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">&amp;</div><span className="text-white font-black text-3xl">B</span></div>
+              <div className="text-right"><p className="text-orange-400 font-black text-sm">{form.razonSocial}</p><p className="text-gray-400 text-[10px]">RIF: {form.rif}</p><p className="text-gray-500 text-[9px]">{form.direccion}</p>{form.telefono&&<p className="text-gray-500 text-[9px]">Tel: {form.telefono}</p>}</div>
+            </div>
+            <div className="bg-white px-6 py-2 text-center border-b-2 border-orange-500"><p className="font-black uppercase text-sm">TÍTULO DEL REPORTE</p><p className="text-[9px] text-slate-400">Generado: {dd(today())}</p></div>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
+  // ── Respaldo y Formateo ──────────────────────────────────────────────
+  const RespaldoConfig = () => {
+    const [busy,setBusy]=useState('');
+    const COLS=[
+      {col:'banco_movimientos',label:'Movimientos Bancarios'},{col:'banco_cuentas',label:'Cuentas Bancarias'},
+      {col:'banco_tasas',label:'Tasas de Cambio'},{col:'banco_conciliaciones',label:'Conciliaciones'},
+      {col:'facturacion_clientes',label:'Clientes'},{col:'facturacion_facturas',label:'Facturas'},
+      {col:'compras_proveedores',label:'Proveedores'},{col:'cont_cuentas',label:'Plan de Cuentas'},
+      {col:'cont_asientos',label:'Libro Diario'},{col:'inv_productos',label:'Productos Inventario'},
+    ];
+    const limpiarSilente=(colName)=>new Promise(res=>{const u=onSnapshot(col(colName),async s=>{u();const batch=writeBatch(db);s.docs.forEach(d=>batch.delete(d.ref));await batch.commit();res();});});
+    const hacerBackup=async()=>{
+      setBusy('backup');
+      try {
+        const bk={version:'1.0',fecha:today(),ts:Date.now(),data:{}};
+        for(const c of COLS){ await new Promise(res=>{const u=onSnapshot(col(c.col),s=>{bk.data[c.col]=s.docs.map(d=>d.data());u();res();});}); }
+        const blob=new Blob([JSON.stringify(bk,null,2)],{type:'application/json'});
+        const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`backup_supply_erp_${today()}.json`;a.click();URL.revokeObjectURL(url);
+        alert('✅ Backup descargado.');
+      } finally { setBusy(''); }
+    };
+    const limpiar=async(colName,label)=>{
+      if(!window.confirm(`¿ELIMINAR TODOS los registros de "${label}"?\nEsta acción es IRREVERSIBLE.`)) return;
+      if(prompt('Confirme escribiendo: ELIMINAR')?.toUpperCase()!=='ELIMINAR') return alert('Cancelado.');
+      setBusy(colName); try { await limpiarSilente(colName); alert(`✅ "${label}" limpiado.`); } finally { setBusy(''); }
+    };
+    const formatear=async()=>{
+      if(!window.confirm('⚠️ FORMATEAR SISTEMA COMPLETO\n\nSe eliminarán TODOS los datos. ¿Seguro?')) return;
+      if(prompt('Escriba: FORMATEAR SISTEMA COMPLETO')!=='FORMATEAR SISTEMA COMPLETO') return alert('Texto incorrecto. Cancelado.');
+      setBusy('all');
+      try { for(const c of COLS) await limpiarSilente(c.col); alert('✅ Sistema formateado completamente.'); } finally { setBusy(''); }
+    };
+    return (
+      <div className="space-y-5">
+        <Card title="Respaldo de Datos">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3 mb-4">
+            <Save size={16} className="text-blue-600 flex-shrink-0 mt-0.5"/>
+            <div><p className="font-black text-blue-800 text-sm">Exportar Backup Completo</p><p className="text-[11px] text-blue-600 mt-0.5">Descarga un JSON con todos los datos del sistema: clientes, facturas, bancos, contabilidad, inventario.</p></div>
+          </div>
+          <Bg onClick={hacerBackup} disabled={busy==='backup'}>{busy==='backup'?<><RefreshCw size={13} className="animate-spin"/> Generando...</>:<><Save size={13}/> Descargar Backup JSON</>}</Bg>
+        </Card>
+        <Card title="Limpiar por Módulo" subtitle="Elimina registros de una colección específica">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2"><AlertTriangle size={14} className="text-amber-600"/><p className="text-[10px] font-black text-amber-700 uppercase">Irreversible. Haga backup primero.</p></div>
+          <div className="grid grid-cols-2 gap-3">
+            {COLS.map(c=>(
+              <button key={c.col} onClick={()=>limpiar(c.col,c.label)} disabled={!!busy}
+                className="flex items-center justify-between px-4 py-3 bg-white border-2 border-slate-200 rounded-xl hover:border-red-300 hover:bg-red-50 text-left transition-all group">
+                <span className="text-xs font-semibold text-slate-700 group-hover:text-red-700">{c.label}</span>
+                {busy===c.col?<RefreshCw size={12} className="animate-spin text-red-500"/>:<Trash2 size={12} className="text-slate-400 group-hover:text-red-500"/>}
+              </button>
+            ))}
+          </div>
+        </Card>
+        <div className="rounded-2xl overflow-hidden border-2 border-red-200">
+          <div className="px-5 py-3 bg-red-600 flex items-center gap-2"><AlertTriangle size={16} className="text-red-200"/><p className="font-black text-white text-sm uppercase">Zona de Peligro — Formateo Total</p></div>
+          <div className="p-5 bg-red-50 space-y-3">
+            <p className="text-[11px] text-red-700">Elimina TODOS los datos del sistema. El ERP quedará vacío como recién instalado.</p>
+            <button onClick={formatear} disabled={!!busy} className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl font-black text-xs uppercase hover:bg-red-700 transition-colors disabled:opacity-50">
+              {busy==='all'?<><RefreshCw size={13} className="animate-spin"/> Formateando...</>:<><Trash2 size={13}/> FORMATEAR SISTEMA COMPLETO</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const navGroups = [
-    { group: 'General',    color:'#f97316', items: [{ id: 'empresa',  label: 'Datos de Empresa',     icon: Building2 }] },
-    { group: 'Seguridad',  color:'#ef4444', items: [{ id: 'usuarios', label: 'Usuarios & Roles',      icon: Users }] },
-    { group: 'Financiero', color:'#3b82f6', items: [{ id: 'tasas',    label: 'Tasa de Cambio',        icon: Globe },
-                                                      { id: 'cuentas', label: 'Cuentas Bancarias',     icon: Building2 }] },
   ];
   const curNav = navGroups.flatMap(g => g.items).find(n => n.id === sec);
 
@@ -4503,19 +4774,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
         <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Configuración <ChevronRight size={8} className="inline" /> {navGroups.find(g => g.items.find(i => i.id === sec))?.group}</p></div>
         <button onClick={() => setAdminUnlocked(false)} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors"><Lock size={13} /> Bloquear</button>
       </>}>
-      {sec === 'empresa' && (
-        <Card title="Datos de la Empresa">
-          <div className="grid grid-cols-2 gap-5">
-            <FG label="Razón Social" full><input className={inp} defaultValue="Servicios Jiret G&B, C.A." /></FG>
-            <FG label="RIF / NIT"><input className={inp} defaultValue="J-412309374" /></FG>
-            <FG label="Teléfono"><input className={inp} defaultValue="+58 414-0000000" /></FG>
-            <FG label="Email"><input type="email" className={inp} defaultValue="admin@jiretgb.com" /></FG>
-            <FG label="Dirección Fiscal" full><input className={inp} defaultValue="Caracas, Venezuela" /></FG>
-            <FG label="Actividad Económica" full><input className={inp} defaultValue="Suministros y servicios industriales" /></FG>
-            <div className="col-span-2 flex justify-end mt-2"><Bg><Save size={14} /> Guardar Cambios</Bg></div>
-          </div>
-        </Card>
-      )}
+      {sec === 'empresa' && <EmpresaConfig />}
       {sec === 'tasas'    && <TasasConfig />}
       {sec === 'cuentas'  && <CuentasBancariasConfig />}
       {sec === 'usuarios' && (
@@ -4531,6 +4790,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
           </table>
         </Card>
       )}
+      {sec === 'respaldo' && <RespaldoConfig />}
     </SidebarLayout>
   );
 }
