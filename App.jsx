@@ -405,40 +405,50 @@ function MainSelector({ onSelect }) {
 // ============================================================================
 function AdminDash({ onSelectModule, onBack }) {
   const mods = [
-    { id: 'facturacion',  name: 'Ventas & Facturación', icon: Receipt,    color: '#f97316', desc: 'Clientes, facturas y cuentas por cobrar' },
-    { id: 'compras',      name: 'Compras & Proveedores', icon: ShoppingCart, color: '#10b981', desc: 'Proveedores, órdenes de compra e importación' },
-    { id: 'inventario',   name: 'Control de Inventario', icon: Package,    color: '#3b82f6', desc: 'Catálogo, stock y movimientos' },
-    { id: 'banco',        name: 'Bancos & Tesorería',    icon: Building2,  color: '#8b5cf6', desc: 'Cuentas, movimientos y conciliación' },
-    { id: 'configuracion',name: 'Configuración',         icon: Settings,   color: '#64748b', desc: 'Empresa, usuarios y tasas de cambio' },
+    { id: 'facturacion',   name: 'Ventas & Facturación',   icon: Receipt,      color: '#f97316', border:'border-orange-500',  dark:true,  desc: 'Clientes, facturas y cuentas por cobrar' },
+    { id: 'compras',       name: 'Compras & Proveedores',  icon: ShoppingCart, color: '#10b981', border:'border-green-500',   dark:true,  desc: 'Proveedores, órdenes de compra e importación' },
+    { id: 'inventario',    name: 'Control de Inventario',  icon: Package,      color: '#3b82f6', border:'border-blue-500',    dark:true,  desc: 'Catálogo, stock y movimientos' },
+    { id: 'banco',         name: 'Bancos & Tesorería',     icon: Building2,    color: '#8b5cf6', border:'border-purple-500',  dark:true,  desc: 'Cuentas, movimientos y conciliación' },
+    { id: 'configuracion', name: 'Configuración',          icon: Settings,     color: '#64748b', border:'border-slate-400',   dark:false, desc: 'Empresa, usuarios y tasas de cambio' },
   ];
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: BG }}>
-      <header className="px-8 py-4 flex items-center justify-between border-b border-white/10 shadow-lg" style={{ background: `linear-gradient(135deg,${DARK},#1e293b)` }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: ORANGE }}><Blocks size={18} className="text-white" /></div>
-          <span className="text-white font-black text-lg tracking-wide">Supply <span style={{ color: ORANGE }}>G&B</span></span>
+    <div className="min-h-screen flex flex-col" style={{background:'#111'}}>
+      {/* Header */}
+      <header className="px-8 py-4 flex items-center justify-between shadow-xl border-b-4 border-orange-500" style={{background:'#000'}}>
+        <div className="flex items-center gap-4">
+          <span className="text-xl font-light tracking-widest text-gray-300">Supply</span>
+          <span className="text-white font-black text-2xl leading-none">G</span>
+          <div className="bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">&amp;</div>
+          <span className="text-white font-black text-2xl leading-none">B</span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => onSelectModule('configuracion')} className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/10 text-white hover:bg-white/20 transition-colors border border-white/10"><Settings size={16} /></button>
-          <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"><LogOut size={13} /> Salir</button>
+          <button onClick={()=>onSelectModule('configuracion')} className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/10 text-white hover:bg-orange-500 transition-colors border border-white/10"><Settings size={16}/></button>
+          <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase"><LogOut size={13}/> Salir</button>
         </div>
       </header>
-      <div className="flex-1 max-w-5xl mx-auto w-full p-10">
-        <div className="mb-10">
-          <p className="text-[10px] text-slate-400 font-black uppercase tracking-[3px] mb-1">Panel Principal</p>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Área Administrativa</h2>
+      {/* Body */}
+      <div className="flex-1 max-w-6xl mx-auto w-full px-8 py-12">
+        <div className="text-center mb-12">
+          <div className="inline-block mb-4">
+            <div className="w-1 h-12 bg-orange-500 mx-auto mb-3"/>
+          </div>
+          <h1 className="text-4xl font-black text-white uppercase tracking-widest mb-2">Panel Principal ERP</h1>
+          <div className="w-16 h-1 bg-orange-500 mx-auto"/>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {mods.map(mod => (
-            <button key={mod.id} onClick={() => onSelectModule(mod.id)} className="group bg-white rounded-2xl p-7 text-left border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-5">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform" style={{ background: mod.color + '15' }}>
-                <mod.icon size={26} style={{ color: mod.color }} />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {mods.map(mod=>(
+            <button key={mod.id} onClick={()=>onSelectModule(mod.id)}
+              className={`group text-left rounded-2xl p-8 transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl border-b-4 ${mod.border} ${mod.dark?'bg-black text-white':'bg-white text-slate-900'}`}
+              style={{boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
+              <div className="mb-5">
+                <mod.icon size={34} style={{color:mod.color}} className="group-hover:scale-110 transition-transform duration-200"/>
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-black text-slate-900 text-sm uppercase tracking-wide mb-1">{mod.name}</h3>
-                <p className="text-[11px] text-slate-400 font-medium">{mod.desc}</p>
+              <h3 className={`font-black text-sm uppercase tracking-widest mb-2 ${mod.dark?'text-white':'text-slate-900'}`}>{mod.name}</h3>
+              <p className={`text-[11px] font-medium leading-relaxed ${mod.dark?'text-gray-400':'text-slate-500'}`}>{mod.desc}</p>
+              <div className="mt-5 flex items-center gap-1.5" style={{color:mod.color}}>
+                <span className="text-[9px] font-black uppercase tracking-widest">Ingresar</span>
+                <ChevronRight size={12}/>
               </div>
-              <ChevronRight size={16} className="text-slate-300 group-hover:text-slate-500 transition-colors flex-shrink-0" />
             </button>
           ))}
         </div>
@@ -451,48 +461,57 @@ function ContDash({ onSelectModule, onBack }) {
   const grupos = [
     {
       titulo: 'Contabilidad General',
+      color: '#3b82f6',
       mods: [
-        { id: 'contabilidad', name: 'Plan de Cuentas', icon: BookOpen,       color: '#3b82f6', desc: 'PUC jerárquico, importar/exportar, edición' },
-        { id: 'asientos',    name: 'Libro Diario',     icon: FileText,        color: '#f97316', desc: 'Comprobantes automáticos y manuales Bs/USD' },
-        { id: 'balances',    name: 'Estados Financieros', icon: BarChart3,    color: '#10b981', desc: 'Balance Gral., E. Resultados, Comprobación, Mayor' },
+        { id: 'contabilidad', name: 'Plan de Cuentas',       icon: BookOpen,   color: '#3b82f6', desc: 'PUC jerárquico, importar/exportar, edición' },
+        { id: 'asientos',     name: 'Libro Diario',           icon: FileText,   color: '#f97316', desc: 'Comprobantes automáticos y manuales Bs/USD' },
+        { id: 'balances',     name: 'Estados Financieros',    icon: BarChart3,  color: '#10b981', desc: 'Balance Gral., E. Resultados, Comprobación' },
       ]
     },
     {
       titulo: 'Fiscal & Tributario',
+      color: '#ef4444',
       mods: [
-        { id: 'activos_fijos', name: 'Activos Fijos',   icon: Layers,         color: '#8b5cf6', desc: 'Registro, depreciación y bajas de activos' },
-        { id: 'fiscal',        name: 'IVA · IGTF · Retenciones', icon: Receipt, color: '#ef4444', desc: 'Libros de compras/ventas, retenciones, archivos TXT' },
+        { id: 'activos_fijos', name: 'Activos Fijos',         icon: Layers,     color: '#8b5cf6', desc: 'Registro, depreciación y bajas de activos' },
+        { id: 'fiscal',        name: 'IVA · IGTF · Retenciones', icon: Receipt, color: '#ef4444', desc: 'Libros de compras/ventas, retenciones, TXT' },
       ]
     },
   ];
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: BG }}>
-      <header className="px-8 py-4 flex items-center justify-between border-b border-white/10 shadow-lg" style={{ background: `linear-gradient(135deg,${DARK},#1e293b)` }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-blue-500"><Blocks size={18} className="text-white" /></div>
-          <span className="text-white font-black text-lg tracking-wide">Supply <span className="text-blue-400">G&B</span></span>
+    <div className="min-h-screen flex flex-col" style={{background:'#111'}}>
+      <header className="px-8 py-4 flex items-center justify-between shadow-xl border-b-4 border-blue-500" style={{background:'#000'}}>
+        <div className="flex items-center gap-4">
+          <span className="text-xl font-light tracking-widest text-gray-300">Supply</span>
+          <span className="text-white font-black text-2xl leading-none">G</span>
+          <div className="bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">&amp;</div>
+          <span className="text-white font-black text-2xl leading-none">B</span>
         </div>
-        <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"><LogOut size={13} /> Salir</button>
+        <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase"><LogOut size={13}/> Salir</button>
       </header>
-      <div className="flex-1 max-w-5xl mx-auto w-full p-10">
-        <div className="mb-10">
-          <p className="text-[10px] text-slate-400 font-black uppercase tracking-[3px] mb-1">Panel Principal</p>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Área Contable & Fiscal</h2>
+      <div className="flex-1 max-w-6xl mx-auto w-full px-8 py-12">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-black text-white uppercase tracking-widest mb-2">Área Contable &amp; Fiscal</h1>
+          <div className="w-16 h-1 bg-blue-500 mx-auto"/>
         </div>
         {grupos.map(g=>(
           <div key={g.titulo} className="mb-8">
-            <p className="text-[10px] font-black uppercase tracking-[2px] text-slate-400 mb-3 flex items-center gap-2"><span className="w-6 h-px bg-slate-300"/>{g.titulo}</p>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-px flex-1 bg-white/10"/>
+              <p className="text-[10px] font-black uppercase tracking-[3px] px-3 py-1 rounded-full border" style={{color:g.color,borderColor:g.color+'40',background:g.color+'10'}}>{g.titulo}</p>
+              <div className="h-px flex-1 bg-white/10"/>
+            </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {g.mods.map(mod=>(
-                <button key={mod.id} onClick={()=>onSelectModule(mod.id)} className="group bg-white rounded-2xl p-6 text-left border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform" style={{background:mod.color+'15'}}>
-                    <mod.icon size={22} style={{color:mod.color}}/>
+                <button key={mod.id} onClick={()=>onSelectModule(mod.id)}
+                  className="group text-left bg-black rounded-2xl p-7 transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl border-b-4"
+                  style={{borderBottomColor:mod.color,boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
+                  <mod.icon size={30} style={{color:mod.color}} className="mb-4 group-hover:scale-110 transition-transform"/>
+                  <h3 className="font-black text-xs uppercase tracking-widest mb-1.5 text-white">{mod.name}</h3>
+                  <p className="text-[10px] text-gray-400 font-medium leading-tight">{mod.desc}</p>
+                  <div className="mt-4 flex items-center gap-1" style={{color:mod.color}}>
+                    <span className="text-[9px] font-black uppercase tracking-widest">Ingresar</span>
+                    <ChevronRight size={11}/>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-black text-slate-900 text-xs uppercase tracking-wide mb-1">{mod.name}</h3>
-                    <p className="text-[10px] text-slate-400 font-medium leading-tight">{mod.desc}</p>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 flex-shrink-0"/>
                 </button>
               ))}
             </div>
@@ -502,10 +521,6 @@ function ContDash({ onSelectModule, onBack }) {
     </div>
   );
 }
-
-// ============================================================================
-// MÓDULO FACTURACIÓN & CxC
-// ============================================================================
 function FacturacionApp({ fbUser, tasasList, onBack }) {
   const [sec, setSec] = useState('dashboard');
   const [clientes, setClientes] = useState([]);
@@ -1513,6 +1528,9 @@ function BancoApp({ fbUser, onBack }) {
     const [filtC,    setFiltC]    = useState('');
     const [filtDesde,setFiltD]    = useState('');
     const [filtHasta,setFiltH]    = useState('');
+    // Búsqueda instantánea en selectores del formulario
+    const [searchPUC,     setSearchPUC]     = useState('');
+    const [searchTercero, setSearchTercero] = useState('');
     const initF = ()=>({fecha:today(),tipo:'Ingreso',cuentaId:'',cuentaDestinoId:'',
       origenIngreso:'Venta',motivoEgreso:'Pago Proveedor',
       concepto:'',referencia:'',tasa:String(tasaActiva),montoNativo:'',
@@ -1720,38 +1738,44 @@ function BancoApp({ fbUser, onBack }) {
       } finally { setBusy(false); }
     };
 
-    // ── Exportar movimientos a PDF/Excel ─────────────────────────────
-    const exportarMovimientos = () => {
+    // ── PDF / Excel movimientos bancarios con membrete ─────────────────
+    const exportarMovimientos = (formato='excel') => {
       const mList = filtC ? movBanco.filter(m=>m.cuentaId===filtC) : movBanco;
       const cuentaNom = filtC ? cuentas.find(c=>c.id===filtC)?.banco||'Todas' : 'Todas las cuentas';
-      let html=`<html><head><meta charset="utf-8"><style>
-        body{font-family:Arial;margin:1.5cm;font-size:10px;color:#1e293b}
-        h1{font-size:14px;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:2px}
-        .sub{text-align:center;font-size:9px;color:#64748b;margin-bottom:20px}
-        table{width:100%;border-collapse:collapse}
-        th{background:#0f172a;color:#94a3b8;border:1px solid #1e293b;padding:5px 8px;font-size:8px;text-transform:uppercase;letter-spacing:1px}
-        td{border:1px solid #e2e8f0;padding:4px 8px;vertical-align:middle}
-        tr:nth-child(even) td{background:#f8fafc}
-        .I td:first-child{border-left:3px solid #10b981}
-        .E td:first-child{border-left:3px solid #ef4444}
-        .T td:first-child{border-left:3px solid #3b82f6}
-        tfoot td{background:#0f172a;color:#fff;font-weight:bold}
-        footer{margin-top:16px;font-size:8px;color:#cbd5e1;text-align:center;border-top:1px solid #e2e8f0;padding-top:8px}
-      </style></head><body>
-      <h1>Servicios Jiret G&B, C.A. — Movimientos Bancarios</h1>
-      <p class="sub">Cuenta: ${cuentaNom} · Generado: ${dd(today())} · Tasa: ${tasaActiva} Bs/$</p>
-      <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Banco</th><th>Concepto</th><th>Tercero</th><th>Referencia</th><th>USD</th><th>Bs.</th><th>Tasa</th><th>Estado</th></tr></thead>
-      <tbody>`;
-      mList.forEach(m=>{
-        const cls = m.tipo==='Ingreso'?'I':m.tipo==='Egreso'?'E':'T';
-        html+=`<tr class="${cls}"><td>${dd(m.fecha)}</td><td>${m.tipo}</td><td>${m.cuentaNombre||''}</td><td>${m.concepto||''}</td><td>${m.terceroNombre||'—'}</td><td>${m.referencia||'—'}</td><td style="text-align:right;${m.tipo==='Ingreso'?'color:#16a34a':'color:#dc2626'}">$${fmt(m.montoUSD)}</td><td style="text-align:right">Bs.${fmt(m.montoBs)}</td><td style="text-align:right">${m.tasa}</td><td>${m.estatus||'Pendiente'}</td></tr>`;
-      });
       const totI=mList.filter(m=>m.tipo==='Ingreso').reduce((a,m)=>a+Number(m.montoUSD||0),0);
       const totE=mList.filter(m=>m.tipo==='Egreso' ).reduce((a,m)=>a+Number(m.montoUSD||0),0);
-      html+=`</tbody><tfoot><tr><td colspan="6">TOTALES — ${mList.length} movimientos</td><td style="text-align:right">Ing: $${fmt(totI)} / Egr: $${fmt(totE)}</td><td colspan="3"></td></tr></tfoot>`;
-      html+=`</table><footer>Supply ERP · Servicios Jiret G&amp;B, C.A.</footer></body></html>`;
-      const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
-      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`movimientos_banco_${today()}.xls`;a.click();URL.revokeObjectURL(url);
+      const rows=mList.map((m,i)=>`<tr>
+        <td>${i+1}</td>
+        <td>${dd(m.fecha)}</td>
+        <td style="font-weight:bold;color:${m.tipo==='Ingreso'?'#16a34a':m.tipo==='Egreso'?'#dc2626':'#2563eb'}">${m.tipo}</td>
+        <td>${m.cuentaNombre||''}</td>
+        <td>${m.concepto||''}</td>
+        <td>${m.terceroNombre||'—'}</td>
+        <td style="font-family:monospace">${m.referencia||'—'}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:bold;color:${m.tipo==='Ingreso'?'#16a34a':'#dc2626'}">$${fmt(m.montoUSD)}</td>
+        <td style="text-align:right;font-family:monospace">Bs.${fmt(m.montoBs)}</td>
+        <td style="text-align:right;font-family:monospace">${m.tasa||''}</td>
+        <td><span style="background:${m.estatus==='Conciliado'?'#d1fae5':'#f1f5f9'};color:${m.estatus==='Conciliado'?'#065f46':'#64748b'};padding:2px 8px;border-radius:12px;font-size:9px;font-weight:900">${m.estatus||'Pendiente'}</span></td>
+      </tr>`).join('');
+      const html=letterheadOpen(
+        'Reporte de Movimientos Bancarios',
+        `Cuenta: ${cuentaNom} · ${filtDesde||'Inicio'} al ${filtHasta||dd(today())} · ${mList.length} movimientos`
+      )+
+      `<table><thead><tr><th>#</th><th>Fecha</th><th>Tipo</th><th>Banco</th><th>Concepto</th><th>Tercero</th><th>Referencia</th><th>USD</th><th>Bs.</th><th>Tasa</th><th>Estado</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="background:#000">
+        <td colspan="7" style="color:#94a3b8;font-weight:bold;font-size:9px;text-transform:uppercase">TOTALES — ${mList.length} movimientos</td>
+        <td style="text-align:right;font-family:monospace;font-weight:bold;color:#4ade80">Ing: $${fmt(totI)}<br>Egr: $${fmt(totE)}</td>
+        <td colspan="3"></td>
+      </tr></tfoot></table>`+
+      letterheadClose(`Módulo: Tesorería & Bancos · Tasa ref: ${tasaActiva} Bs/$`);
+      if(formato==='pdf'){
+        printWindow(html);
+      } else {
+        const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
+        const url=URL.createObjectURL(blob);const a=document.createElement('a');
+        a.href=url;a.download=`movimientos_banco_${today()}.xls`;a.click();URL.revokeObjectURL(url);
+      }
     };
 
     const abrirEdicion = (m)=>{
@@ -1996,7 +2020,8 @@ function BancoApp({ fbUser, onBack }) {
             </div>
             {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
             <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
-            <button onClick={exportarMovimientos} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
+            <button onClick={()=>exportarMovimientos('pdf')} className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><FileText size={12}/> PDF</button>
+            <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
             <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
           </div>}>
           <div className="overflow-x-auto">
@@ -2132,14 +2157,28 @@ function BancoApp({ fbUser, onBack }) {
                       </div>}
                     </div>
                   </div>
-                  {/* Selector de cuenta contrapartida */}
-                  <FG label="Cuenta Contable Contrapartida (PUC)">
-                    <select className={sel} value={form.ctaContraId}
-                      onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);setForm({...form,ctaContraId:e.target.value,ctaContraNombre:c?`${c.codigo} · ${c.nombre}`:''})}}>
-                      <option value="">— Seleccionar del Plan de Cuentas —</option>
-                      {sugs.length>0&&<optgroup label="✨ Sugeridas">{sugs.slice(0,8).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>}
-                      <optgroup label="Todas las cuentas">{[...contCuentas].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>
-                    </select>
+                  {/* Selector de cuenta contrapartida CON BUSCADOR */}
+                  <FG label="Buscar Cuenta Contable Contrapartida (PUC)">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                        <input value={searchPUC} onChange={e=>setSearchPUC(e.target.value)}
+                          placeholder="Escriba código o nombre de cuenta..." className={`${inp} pl-8`}/>
+                      </div>
+                      <select className={sel} value={form.ctaContraId}
+                        onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);setForm({...form,ctaContraId:e.target.value,ctaContraNombre:c?`${c.codigo} · ${c.nombre}`:''});setSearchPUC('');}}>
+                        <option value="">— Seleccionar del Plan de Cuentas —</option>
+                        {sugs.length>0&&!searchPUC&&<optgroup label="✨ Sugeridas">{sugs.slice(0,8).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>}
+                        <optgroup label={searchPUC?`Resultados: "${searchPUC}"`:'Todas las cuentas'}>
+                          {[...contCuentas]
+                            .filter(c=>!searchPUC||(c.codigo+'·'+c.nombre).toUpperCase().includes(searchPUC.toUpperCase()))
+                            .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
+                            .slice(0,60)
+                            .map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                        </optgroup>
+                      </select>
+                      {form.ctaContraNombre&&<p className="text-[10px] text-blue-600 font-black">✓ {form.ctaContraNombre}</p>}
+                    </div>
                   </FG>
                 </div>
               </div>
@@ -2163,12 +2202,20 @@ function BancoApp({ fbUser, onBack }) {
                     ))}</div>
                   </FG>
                   <FG label={form.tipoTercero==='Cliente'?`Clientes (${clientes.length})`:`Proveedores (${provs.length})`}>
-                    <select className={sel} value={form.terceroId} onChange={e=>setForm({...form,terceroId:e.target.value,facturaId:''})}>
-                      <option value="">— Seleccione —</option>
-                      {form.tipoTercero==='Cliente'
-                        ?clientes.map(c=><option key={c.id} value={c.id}>{c.rif} · {c.nombre}</option>)
-                        :provs.map(p=><option key={p.id} value={p.id}>{p.rif||''} · {p.nombre}</option>)}
-                    </select>
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                        <input value={searchTercero} onChange={e=>setSearchTercero(e.target.value)}
+                          placeholder={`Buscar ${form.tipoTercero.toLowerCase()} por RIF o nombre...`} className={`${inp} pl-8`}/>
+                      </div>
+                      <select className={sel} value={form.terceroId} onChange={e=>{setForm({...form,terceroId:e.target.value,facturaId:''});setSearchTercero('');}}>
+                        <option value="">— Seleccione —</option>
+                        {(form.tipoTercero==='Cliente'
+                          ? clientes.filter(c=>!searchTercero||(c.rif+' '+c.nombre).toUpperCase().includes(searchTercero.toUpperCase()))
+                          : provs.filter(p=>!searchTercero||((p.rif||'')+' '+(p.nombre||'')).toUpperCase().includes(searchTercero.toUpperCase()))
+                        ).map(x=><option key={x.id} value={x.id}>{x.rif} · {x.nombre}</option>)}
+                      </select>
+                    </div>
                   </FG>
                 </div>
                 {form.tipoTercero==='Cliente'&&form.terceroId&&(
@@ -4356,8 +4403,27 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
             cnt++;
           }
         });
+        // También agregar cuentas PUC bancarias si no existen
+        const PUC_BANCOS = [
+          {codigo:'1.1.01.02.001',nombre:'BANCO PROVINCIAL',grupo:'1',tipo:'Analítica',naturaleza:'Deudora'},
+          {codigo:'1.1.01.02.002',nombre:'BANCO MERCANTIL',grupo:'1',tipo:'Analítica',naturaleza:'Deudora'},
+          {codigo:'1.1.01.02.003',nombre:'BANCARIBE',grupo:'1',tipo:'Analítica',naturaleza:'Deudora'},
+          {codigo:'1.1.01.02.011',nombre:'BANESCO',grupo:'1',tipo:'Analítica',naturaleza:'Deudora'},
+          {codigo:'1.1.01.03.002',nombre:'BANCO MERCANTIL MONEDA EXTRANJERA',grupo:'1',tipo:'Analítica',naturaleza:'Deudora'},
+        ];
+        // Read existing PUC to avoid duplicates
+        const pucSnap = await import('firebase/firestore').then(()=>new Promise(res=>{
+          const unsub=onSnapshot(col('cont_cuentas'),s=>{res(s.docs.map(d=>d.data()));unsub();});
+        }));
+        const pucExist = new Set(pucSnap.map(c=>c.codigo));
+        PUC_BANCOS.forEach(p=>{
+          if(!pucExist.has(p.codigo)){
+            const id=gid();
+            batch.set(dref('cont_cuentas',id),{id,...p,descripcion:'',ts:serverTimestamp()});
+          }
+        });
         await batch.commit();
-        alert(`✅ ${cnt} cuenta(s) precargada(s).${cnt===0?' (Ya existían todas)':''}`);
+        alert(`✅ ${cnt} cuenta(s) bancaria(s) precargada(s). PUC bancario actualizado.${cnt===0?' (Cuentas bancarias ya existían)':''}`);
       } finally { setBusy(false); }
     };
 
