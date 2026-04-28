@@ -11,7 +11,7 @@ import {
   Settings, Home, Factory, Lock, User, ArrowRight,
   Mail, CreditCard, CalendarDays, MapPin, Key, PieChart,
   Tag, Layers, ArrowUpCircle, ArrowDownCircle, RefreshCw,
-  BookMarked, Coins, BadgeDollarSign, Inbox, Send
+  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -1731,7 +1731,10 @@ function BancoApp({ fbUser, onBack }) {
       concepto:'',referencia:'',tasa:String(tasaActiva),montoNativo:'',
       aplicaTercero:false,tipoTercero:'Cliente',terceroId:'',
       cerrarCxC:false,facturaId:'',
-      ctaContraId:'',ctaContraNombre:''});
+      ctaContraId:'',ctaContraNombre:'',
+      lineasContra:[{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}],
+      tasaCaja:'',montoCaja:''   // para traslado banco→caja
+    });
     const [form, setForm] = useState(initF());
 
     const cuentaSel  = cuentas.find(c=>c.id===form.cuentaId);
@@ -1778,48 +1781,44 @@ function BancoApp({ fbUser, onBack }) {
         const asientoCredito = form.tipo==='Ingreso' ? ctaContraNom : ctaBancoNom;
 
         // ── AUTO-GENERAR ASIENTO EN LIBRO DIARIO ──────────────────────────
-        // Determinar número comprobante mensual (CB-YYYYMM-NNN)
         const yyyymm = form.fecha.substring(0,7).replace('-','');
-        const comptRef  = dref('cont_contadores', `banco_${yyyymm}`);
-        // Calcular montos según moneda de la cuenta
-        const esMonedaLocal = cuenta.moneda === 'BS';
-        // Líneas del asiento (Debe y Haber)
-        const debitLinea = {
-          codigo: form.tipo==='Ingreso'?ctaBancoCod:ctaContraCod,
-          cuenta: form.tipo==='Ingreso'?ctaBancoNom:ctaContraNom,
-          tipoLinea:'D',
-          nroDoc: form.referencia||id.substring(0,8).toUpperCase(),
-          concepto: form.concepto,
-          tasa, montoBs, montoUSD,
-          debeBs: esMonedaLocal?montoBs:montoUSD*tasa,
-          haberBs: 0,
-          debeUSD: montoUSD,
-          haberUSD: 0,
-        };
-        const haberLinea = {
-          codigo: form.tipo==='Ingreso'?ctaContraCod:ctaBancoCod,
-          cuenta: form.tipo==='Ingreso'?ctaContraNom:ctaBancoNom,
-          tipoLinea:'H',
-          nroDoc: form.referencia||id.substring(0,8).toUpperCase(),
-          concepto: form.concepto,
-          tasa, montoBs, montoUSD,
-          debeBs: 0,
-          haberBs: esMonedaLocal?montoBs:montoUSD*tasa,
-          debeUSD: 0,
-          haberUSD: montoUSD,
-        };
-        const asientoId = gid();
-        // El numero real se asignará con contador incremental
         const numComp = `CB-${yyyymm}-${String(movBanco.filter(m=>m.fecha?.startsWith(form.fecha.substring(0,7))).length+1).padStart(4,'0')}`;
         const mesLabel = form.fecha.substring(5,7)+'/'+form.fecha.substring(0,4);
+        const esMonedaLocal = cuenta.moneda === 'BS';
+        // Línea del banco
+        const bancoBs=esMonedaLocal?montoBs:montoUSD*tasa;
+        const bancoUSD=esMonedaLocal?montoBs/tasa:montoUSD;
+        const esIngreso=form.tipo==='Ingreso';
+        const debitLinea = {
+          codigo:cuentaSel?.cuentaContableCod||'',
+          cuenta:cuentaSel?.cuentaContableNom||`Banco ${cuenta.banco}`,
+          tipoLinea:esIngreso?'D':'H',
+          nroDoc:form.referencia||'',
+          concepto:form.concepto,tasa,
+          debeBs:esIngreso?bancoBs:0,haberBs:esIngreso?0:bancoBs,
+          debeUSD:esIngreso?bancoUSD:0,haberUSD:esIngreso?0:bancoUSD,
+        };
+        // Líneas contrapartidas (compuestas)
+        const lineasContraFinal=(form.lineasContra||[]).filter(l=>l.ctaId&&(Number(l.debeBs||0)>0||Number(l.haberBs||0)>0)).map(l=>{
+          const ctaInfo=contCuentas.find(c=>c.id===l.ctaId)||{};
+          return {
+            codigo:ctaInfo.codigo||'',cuenta:ctaInfo.nombre||l.ctaNom||'',
+            tipoLinea:Number(l.debeBs||0)>0?'D':'H',
+            nroDoc:form.referencia||'',concepto:form.concepto,tasa,
+            debeBs:Number(l.debeBs||0),haberBs:Number(l.haberBs||0),
+            debeUSD:Number(l.debeUSD||0),haberUSD:Number(l.haberUSD||0),
+          };
+        });
+        const todasLineas=[debitLinea,...lineasContraFinal];
+        const asientoId=gid();
         batch.set(dref('cont_asientos',asientoId),{
           id:asientoId,
           comprobante: numComp,
           numero: numComp,
           mes: mesLabel,
           fecha: form.fecha,
-          tipo: 'Bancario',
-          subTipo: form.tipo,  // Ingreso/Egreso/Transferencia
+          tipo: form.tipo==='Traslado Banco→Caja'?'Traslado':form.tipo==='Ingreso'?'Ingreso':'Egreso',
+          subTipo: form.tipo,
           nroDocumento: form.referencia||'',
           descripcion: form.concepto.toUpperCase(),
           tasa,
@@ -1828,11 +1827,11 @@ function BancoApp({ fbUser, onBack }) {
           modulo: 'Bancos',
           movimientoBancoId: id,
           terceroNombre: tercero?.nombre||'',
-          lineas: [debitLinea, haberLinea],
-          totalDebeBs: esMonedaLocal?montoBs:montoUSD*tasa,
-          totalHaberBs: esMonedaLocal?montoBs:montoUSD*tasa,
-          totalDebeUSD: montoUSD,
-          totalHaberUSD: montoUSD,
+          lineas: todasLineas,
+          totalDebeBs: todasLineas.reduce((a,l)=>a+l.debeBs,0),
+          totalHaberBs: todasLineas.reduce((a,l)=>a+l.haberBs,0),
+          totalDebeUSD: todasLineas.reduce((a,l)=>a+l.debeUSD,0),
+          totalHaberUSD: todasLineas.reduce((a,l)=>a+l.haberUSD,0),
           ts: serverTimestamp()
         });
 
@@ -2266,10 +2265,10 @@ function BancoApp({ fbUser, onBack }) {
             <div className="grid grid-cols-3 gap-4">
               <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
               <FG label="Tipo de Movimiento">
-                <div className="flex gap-1">
-                  {['Ingreso','Egreso','Transferencia'].map(t=>(
+                <div className="flex gap-1 flex-wrap">
+                  {['Ingreso','Egreso','Transferencia','Traslado Banco→Caja'].map(t=>(
                     <button key={t} onClick={()=>setForm({...form,tipo:t})}
-                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':'bg-blue-500 text-white border-blue-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all min-w-[70px] ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':t==='Transferencia'?'bg-blue-500 text-white border-blue-500':'bg-amber-500 text-white border-amber-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
                   ))}
                 </div>
               </FG>
@@ -2334,57 +2333,120 @@ function BancoApp({ fbUser, onBack }) {
             {/* Concepto */}
             <FG label="Concepto / Descripción" full><input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} placeholder="Descripción del movimiento..."/></FG>
 
-            {/* ── ASIENTO CONTABLE ── */}
+            {/* ── ASIENTO CONTABLE COMPUESTO ── */}
             {form.tipo!=='Transferencia' && cuentaSel && (
               <div className="rounded-2xl overflow-hidden border border-blue-100">
                 <div className="px-5 py-3 bg-blue-600 flex items-center gap-2">
                   <BookOpen size={14} className="text-blue-200"/>
-                  <p className="text-[10px] font-black uppercase text-white tracking-widest">Asiento Contable — {bs?'Bs. (moneda funcional) + equiv. USD':'USD (moneda funcional) + equiv. Bs.'}</p>
+                  <p className="text-[10px] font-black uppercase text-white tracking-widest">
+                    Asiento Contable — {bs?'Bs. (moneda funcional) + equiv. USD':'USD (moneda funcional) + equiv. Bs.'}
+                  </p>
                 </div>
                 <div className="p-4 bg-blue-50 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* DÉBITO */}
-                    <div className="bg-white rounded-xl p-3 border-l-4 border-emerald-500 border border-slate-100">
-                      <p className="text-[8px] font-black uppercase text-emerald-600 tracking-widest mb-1.5">DÉBITO +</p>
-                      <p className="text-[11px] font-black text-slate-800">{form.tipo==='Ingreso'?(cuentaSel.cuentaContable||`Banco ${cuentaSel.banco}`):(form.ctaContraNombre||'[Cuenta de Gasto/Proveedor]')}</p>
-                      {mNat>0&&<div className="mt-1.5 space-y-0.5">
-                        <p className="font-mono font-black text-emerald-600 text-sm">{bs?`Bs. ${fmt(montoBs)}`:`$${fmt(montoUSD)}`}</p>
-                        <p className="font-mono text-slate-400 text-[10px]">{bs?`≈ $${fmt(montoUSD)} USD`:`≈ Bs. ${fmt(montoBs)}`}</p>
-                      </div>}
-                    </div>
-                    {/* CRÉDITO */}
-                    <div className="bg-white rounded-xl p-3 border-l-4 border-red-500 border border-slate-100">
-                      <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-1.5">CRÉDITO −</p>
-                      <p className="text-[11px] font-black text-slate-800">{form.tipo==='Egreso'?(cuentaSel.cuentaContable||`Banco ${cuentaSel.banco}`):(form.ctaContraNombre||'[CxC / Ingreso]')}</p>
-                      {mNat>0&&<div className="mt-1.5 space-y-0.5">
-                        <p className="font-mono font-black text-red-600 text-sm">{bs?`Bs. ${fmt(montoBs)}`:`$${fmt(montoUSD)}`}</p>
-                        <p className="font-mono text-slate-400 text-[10px]">{bs?`≈ $${fmt(montoUSD)} USD`:`≈ Bs. ${fmt(montoBs)}`}</p>
-                      </div>}
-                    </div>
+                  {/* Cabecera de columnas */}
+                  <div className="grid gap-1 text-[8px] font-black uppercase text-slate-500 tracking-widest px-1"
+                    style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                    <div>Cuenta Contable</div>
+                    <div className="text-right text-emerald-600">Debe Bs.</div>
+                    <div className="text-right text-red-500">Haber Bs.</div>
+                    <div className="text-right text-emerald-700">Debe USD</div>
+                    <div className="text-right text-red-600">Haber USD</div>
+                    <div></div>
                   </div>
-                  {/* Selector de cuenta contrapartida CON BUSCADOR */}
-                  <FG label="Buscar Cuenta Contable Contrapartida (PUC)">
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                        <input value={searchPUC} onChange={e=>setSearchPUC(e.target.value)}
-                          placeholder="Escriba código o nombre de cuenta..." className={`${inp} pl-8`}/>
+
+                  {/* Línea del banco (pre-fija, no editable cuenta) */}
+                  {(() => {
+                    const bancoLbl = cuentaSel?.cuentaContableCod
+                      ? `${cuentaSel.cuentaContableCod} · ${cuentaSel.banco}`
+                      : `Banco ${cuentaSel.banco}`;
+                    const esDebito = form.tipo==='Ingreso'||form.tipo==='Traslado Banco→Caja';
+                    const montoFuncional = bs?montoBs:montoUSD;
+                    const montoEquiv    = bs?montoUSD:montoBs;
+                    return (
+                      <div className="grid gap-2 px-1 py-2 bg-white rounded-xl border border-slate-200 items-center"
+                        style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
+                          <p className="text-[10px] font-black text-slate-800 truncate">{bancoLbl}</p>
+                          <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-black uppercase flex-shrink-0">Banco</span>
+                        </div>
+                        <p className={`text-right font-mono font-black text-xs ${esDebito?'text-emerald-700':'text-slate-300'}`}>{esDebito?(bs?`Bs.${fmt(montoBs)}`:`$${fmt(montoUSD)}`):''}</p>
+                        <p className={`text-right font-mono font-black text-xs ${!esDebito?'text-red-600':'text-slate-300'}`}>{!esDebito?(bs?`Bs.${fmt(montoBs)}`:`$${fmt(montoUSD)}`):''}</p>
+                        <p className={`text-right font-mono text-[10px] ${esDebito?'text-emerald-600':'text-slate-300'}`}>{esDebito?`$${fmt(montoUSD)}`:''}</p>
+                        <p className={`text-right font-mono text-[10px] ${!esDebito?'text-red-500':'text-slate-300'}`}>{!esDebito?`$${fmt(montoUSD)}`:''}</p>
+                        <div/>
                       </div>
-                      <select className={sel} value={form.ctaContraId}
-                        onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);setForm({...form,ctaContraId:e.target.value,ctaContraNombre:c?`${c.codigo} · ${c.nombre}`:''});setSearchPUC('');}}>
-                        <option value="">— Seleccionar del Plan de Cuentas —</option>
-                        {sugs.length>0&&!searchPUC&&<optgroup label="✨ Sugeridas">{sugs.slice(0,8).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</optgroup>}
-                        <optgroup label={searchPUC?`Resultados: "${searchPUC}"`:'Todas las cuentas'}>
-                          {[...contCuentas]
-                            .filter(c=>!searchPUC||(c.codigo+'·'+c.nombre).toUpperCase().includes(searchPUC.toUpperCase()))
-                            .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
-                            .slice(0,60)
-                            .map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
-                        </optgroup>
-                      </select>
-                      {form.ctaContraNombre&&<p className="text-[10px] text-blue-600 font-black">✓ {form.ctaContraNombre}</p>}
+                    );
+                  })()}
+
+                  {/* Líneas de contrapartida (editables, múltiples) */}
+                  <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mt-1 mb-1">Contrapartidas</p>
+                  {form.lineasContra.map((l,i)=>{
+                    const cta=contCuentas.find(c=>c.id===l.ctaId);
+                    return (
+                      <div key={i} className="grid gap-2 px-1 py-2 bg-white rounded-xl border border-slate-100 items-center"
+                        style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                        <select className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-blue-400 bg-white font-medium"
+                          value={l.ctaId} onChange={e=>{
+                            const c=contCuentas.find(x=>x.id===e.target.value);
+                            const nl=[...form.lineasContra];nl[i]={...nl[i],ctaId:e.target.value,ctaNom:c?`${c.codigo} · ${c.nombre}`:''};
+                            setForm({...form,lineasContra:nl});
+                          }}>
+                          <option value="">— Cuenta —</option>
+                          {[...contCuentas].sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                        </select>
+                        <input type="number" step="0.01" className="text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 font-mono"
+                          value={l.debeBs||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],debeBs:e.target.value,debeUSD:e.target.value&&tasa?String(Number(e.target.value)/tasa):nl[i].debeUSD};setForm({...form,lineasContra:nl});}} placeholder="0.00"/>
+                        <input type="number" step="0.01" className="text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-red-400 font-mono"
+                          value={l.haberBs||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],haberBs:e.target.value,haberUSD:e.target.value&&tasa?String(Number(e.target.value)/tasa):nl[i].haberUSD};setForm({...form,lineasContra:nl});}} placeholder="0.00"/>
+                        <input type="number" step="0.01" className="text-right text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 font-mono"
+                          value={l.debeUSD||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],debeUSD:e.target.value,debeBs:e.target.value&&tasa?String(Number(e.target.value)*tasa):nl[i].debeBs};setForm({...form,lineasContra:nl});}} placeholder="0.00"/>
+                        <input type="number" step="0.01" className="text-right text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-red-400 font-mono"
+                          value={l.haberUSD||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],haberUSD:e.target.value,haberBs:e.target.value&&tasa?String(Number(e.target.value)*tasa):nl[i].haberBs};setForm({...form,lineasContra:nl});}} placeholder="0.00"/>
+                        <button onClick={()=>{if(form.lineasContra.length<=1)return;const nl=[...form.lineasContra];nl.splice(i,1);setForm({...form,lineasContra:nl});}}
+                          className="text-red-400 hover:text-red-600 flex justify-center"><X size={12}/></button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Totales y cuadre */}
+                  {(() => {
+                    const totDebeBs=form.lineasContra.reduce((a,l)=>a+Number(l.debeBs||0),0);
+                    const totHaberBs=form.lineasContra.reduce((a,l)=>a+Number(l.haberBs||0),0);
+                    const totDebeUSD=form.lineasContra.reduce((a,l)=>a+Number(l.debeUSD||0),0);
+                    const totHaberUSD=form.lineasContra.reduce((a,l)=>a+Number(l.haberUSD||0),0);
+                    const bancoBs=bs?montoBs:montoUSD*tasa; const bancoUSD=bs?montoBs/tasa:montoUSD;
+                    const diff=Math.abs((form.tipo==='Ingreso'?totHaberBs:totDebeBs)-bancoBs);
+                    const cuadrado=diff<0.05;
+                    return (
+                      <div className="mt-1 space-y-2">
+                        <div className="grid gap-2 px-1 py-2 bg-slate-900 rounded-xl items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                          <p className="text-[9px] font-black uppercase text-slate-400">TOTALES CONTRAPARTIDA</p>
+                          <p className="text-right font-mono font-black text-[10px] text-emerald-400">Bs.{fmt(totDebeBs)}</p>
+                          <p className="text-right font-mono font-black text-[10px] text-red-400">Bs.{fmt(totHaberBs)}</p>
+                          <p className="text-right font-mono text-[10px] text-emerald-400">${fmt(totDebeUSD)}</p>
+                          <p className="text-right font-mono text-[10px] text-red-400">${fmt(totHaberUSD)}</p>
+                          <div className="flex justify-center">{cuadrado?<CheckCircle size={13} className="text-emerald-400"/>:<X size={13} className="text-amber-400"/>}</div>
+                        </div>
+                        {!cuadrado&&mNat>0&&<p className="text-[9px] text-amber-600 font-black">⚠ Diferencia Bs.: {fmt(diff)} — el asiento puede ser parcial</p>}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Botón agregar línea */}
+                  <button onClick={()=>setForm({...form,lineasContra:[...form.lineasContra,{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]})}
+                    className="flex items-center gap-1.5 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+                    <Plus size={12}/> Agregar Cuenta Contrapartida
+                  </button>
+
+                  {/* Info traslado banco→caja */}
+                  {form.tipo==='Traslado Banco→Caja'&&(
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-700 space-y-0.5">
+                      <p className="font-black">💡 Traslado Banco → Caja con Rebancarización:</p>
+                      <p>• Línea 1: <span className="font-mono">Traslados de Fondos</span> — Debe Bs. × (monto que entra a caja)</p>
+                      <p>• Línea 2: <span className="font-mono">Diferencias en Compensación (Rebancarización)</span> — Debe Bs. × diferencial cambiario</p>
                     </div>
-                  </FG>
+                  )}
                 </div>
               </div>
             )}
@@ -4984,6 +5046,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
 
   const UsuariosConfig = () => {
     const [usuarios, setUsuarios] = useState([]);
+    const [showPwd, setShowPwd] = useState(false);
     const [modal,setModal]=useState(false);
     const [editId,setEditId]=useState(null);
     const [busy,setBusy]=useState(false);
@@ -5060,8 +5123,13 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
             <div className="grid grid-cols-2 gap-4">
               <FG label="Nombre Completo" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="JUAN PÉREZ"/></FG>
               <FG label="Usuario (ID)"><input className={inp} value={form.username} onChange={e=>setForm({...form,username:e.target.value.toLowerCase().replace(/\s/g,'')})} placeholder="jperez"/></FG>
-              <FG label={editId?'Nueva Contraseña (dejar vacío = no cambiar)':'Contraseña *'}>
-                <input type="password" className={inp} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="••••••••"/>
+              <FG label={editId?'Nueva Contraseña (vacío = sin cambio)':'Contraseña *'}>
+                <div className="relative">
+                  <input type={showPwd?'text':'password'} className={inp} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="••••••••"/>
+                  <button type="button" onClick={()=>setShowPwd(!showPwd)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors">
+                    {showPwd ? <EyeOff size={14}/> : <Eye size={14}/>}
+                  </button>
+                </div>
               </FG>
               <FG label="Rol / Cargo"><select className={sel} value={form.rol} onChange={e=>setForm({...form,rol:e.target.value})}>
                 <option value="Master">Master — Acceso Total</option>
@@ -5094,6 +5162,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
   const RespaldoConfig = () => {
     const [busy,setBusy]=useState('');
     const [frecuencia,setFrecuencia]=useState('manual');
+    const [horaEjecucion,setHoraEjecucion]=useState('08:00');
     const [lastBackup,setLastBackup]=useState(settings?.lastBackup||null);
     const [carpeta,setCarpeta]=useState('C:\\Respaldos\\GYB_ERP');
     const COLS_ADMIN=[
@@ -5165,6 +5234,22 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
               <div className="flex gap-2">{['manual','diario','semanal','mensual'].map(f=>(
                 <button key={f} onClick={()=>setFrecuencia(f)} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${frecuencia===f?'bg-emerald-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>{f}</button>
               ))}</div>
+
+              {/* Hora de ejecución automática - solo cuando no es manual */}
+              {frecuencia!=='manual'&&(
+                <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                  <p className="text-[9px] font-black uppercase text-emerald-700 tracking-widest mb-2">⏰ HORA DE EJECUCIÓN AUTOMÁTICA</p>
+                  <div className="flex items-start gap-4">
+                    <div className="relative">
+                      <input type="time" value={horaEjecucion} onChange={e=>setHoraEjecucion(e.target.value)}
+                        className="border-2 border-emerald-300 rounded-xl px-4 py-3 text-sm font-black text-slate-900 outline-none focus:border-emerald-500 bg-white w-36"/>
+                    </div>
+                    <p className="text-[10px] text-emerald-700 leading-relaxed mt-1">
+                      El sistema ejecutará el respaldo automáticamente a esta hora cada {frecuencia==='diario'?'día':frecuencia==='semanal'?'semana':'mes'} mientras el sistema esté abierto.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
             {lastBackup&&<p className="text-[10px] text-emerald-600 font-black">✓ Último respaldo: {lastBackup}</p>}
             <div className="grid grid-cols-2 gap-3">
