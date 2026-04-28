@@ -1290,62 +1290,151 @@ function BancoApp({ fbUser, onBack }) {
   // 1. DASHBOARD
   // ══════════════════════════════════════════════════════════════════════
   const DashboardView = () => {
-    const totUSD = cuentas.filter(c=>c.moneda!=='BS').reduce((a,c)=>a+Number(c.saldo||0),0);
-    const totBs  = cuentas.filter(c=>c.moneda==='BS' ).reduce((a,c)=>a+Number(c.saldo||0),0);
-    const cajaBs = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0)
-                 - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0);
-    const cajaUSD= movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0)
-                 - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0);
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPI label="Bancos — Total USD" value={`$${fmt(totUSD)}`} accent="green" Icon={Building2} sub={`≈ Bs.${fmt(totUSD*tasaActiva)}`}/>
-          <KPI label="Bancos — Total Bs." value={`Bs.${fmt(totBs)}`} accent="blue" Icon={Landmark} sub={`≈ $${fmt(totBs/tasaActiva)}`}/>
-          <KPI label="Caja — Efectivo Bs." value={`Bs.${fmt(cajaBs)}`} accent="gold" Icon={Banknote}/>
-          <KPI label="Caja — Efectivo USD" value={`$${fmt(cajaUSD)}`} accent="purple" Icon={DollarSign}/>
-        </div>
-        <div className="grid lg:grid-cols-3 gap-4">
-          {cuentas.map(c=>{
-            const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0]; const bs=c.moneda==='BS';
-            return (
-              <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg transition-all cursor-pointer" onClick={()=>setSec('movimientos')}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2"><span className="text-xl">{tb.flag}</span><div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center"><Landmark size={14} className="text-blue-500"/></div></div>
-                  <Pill usd={!bs}>{c.moneda}</Pill>
-                </div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{c.tipoBanco||'Nacional-Bs'}</p>
-                <p className="text-[10px] font-black text-slate-700 uppercase mb-2">{c.banco}</p>
-                <p className="font-mono font-black text-2xl text-slate-900">{bs?'Bs.':'$'} {fmt(c.saldo)}</p>
-                {!bs&&<p className="text-[10px] text-slate-400 mt-0.5">≈ Bs.{fmt(Number(c.saldo)*tasaActiva)}</p>}
-                {bs &&<p className="text-[10px] text-slate-400 mt-0.5">≈ ${fmt(Number(c.saldo)/tasaActiva)}</p>}
-                <p className="text-[10px] text-slate-400 mt-2 font-mono">{c.numeroCuenta}</p>
+    const cuentasNacBs = cuentas.filter(c=>c.tipoBanco==='Nacional-Bs');
+    const cuentasExt   = cuentas.filter(c=>c.tipoBanco==='Nacional-Ext'||c.tipoBanco==='Internacional');
+    const totBs   = cuentasNacBs.reduce((a,c)=>a+Number(c.saldo||0),0);
+    const totUSD  = cuentasExt.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo||0),0);
+    const totEUR  = cuentasExt.filter(c=>c.moneda==='EUR').reduce((a,c)=>a+Number(c.saldo||0),0);
+    const totConsolUSD = totBs/tasaActiva + totUSD;
+    const cajaBs  = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0)
+                  - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0);
+    const cajaUSD = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0)
+                  - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0);
+
+    // Card individual de cuenta
+    const CuentaCard = ({c}) => {
+      const bs=c.moneda==='BS'; const eur=c.moneda==='EUR';
+      const usdEq=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);
+      const bsEq =bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
+      const movsCta=movBanco.filter(m=>m.cuentaId===c.id);
+      const ultMov=movsCta[0];
+      const colorBorde=bs?'#3b82f6':eur?'#f59e0b':'#10b981';
+      return (
+        <div onClick={()=>{setSec('movimientos');}} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden"
+          style={{borderTop:`3px solid ${colorBorde}`}}>
+          {/* Header */}
+          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{background:colorBorde+'18'}}><Landmark size={14} style={{color:colorBorde}}/></div>
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">{c.tipoBanco}</p>
+                <p className="text-[11px] font-black text-slate-800 uppercase">{c.banco}</p>
               </div>
-            );
-          })}
-          {cuentas.length===0&&<div className="lg:col-span-3"><EmptyState icon={Building2} title="Sin cuentas bancarias" desc="Registre cuentas en la sección Bancos"/></div>}
+            </div>
+            <Pill usd={!bs}>{c.moneda}</Pill>
+          </div>
+          {/* Saldo principal */}
+          <div className="px-5 py-3">
+            <p className="font-mono font-black text-3xl text-slate-900 leading-none">{bs?'Bs.':c.moneda==='USD'?'$':'€'} {fmt(c.saldo)}</p>
+            <p className="text-[10px] text-slate-400 mt-1 font-medium">
+              {bs?`≈ $${fmt(usdEq)} USD`:c.moneda==='EUR'?`≈ $${fmt(usdEq)} · Bs.${fmt(bsEq)}`:`≈ Bs.${fmt(bsEq)}`}
+            </p>
+          </div>
+          {/* Footer */}
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <p className="font-mono text-[10px] text-slate-400">{c.numeroCuenta}</p>
+            <div className="flex items-center gap-1">
+              {movsCta.length>0&&<span className="text-[9px] text-slate-400">{movsCta.length} mov.</span>}
+              <div className={`w-2 h-2 rounded-full ${movsCta.filter(m=>m.estatus!=='Conciliado').length>0?'bg-amber-400':'bg-emerald-400'}`}/>
+            </div>
+          </div>
         </div>
+      );
+    };
+
+    return (
+      <div className="space-y-7">
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl p-5 border border-emerald-100 shadow-sm" style={{borderTop:'3px solid #10b981'}}>
+            <p className="text-[9px] font-black uppercase text-emerald-600 tracking-widest mb-1">Bancos — Total USD</p>
+            <p className="font-mono font-black text-2xl text-slate-900">${fmt(totUSD)}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">≈ Bs.{fmt(totUSD*tasaActiva)}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-blue-100 shadow-sm" style={{borderTop:'3px solid #3b82f6'}}>
+            <p className="text-[9px] font-black uppercase text-blue-600 tracking-widest mb-1">Bancos — Total Bs.</p>
+            <p className="font-mono font-black text-2xl text-slate-900">Bs.{fmt(totBs)}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">≈ ${fmt(totBs/tasaActiva)}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm" style={{borderTop:'3px solid #f59e0b'}}>
+            <p className="text-[9px] font-black uppercase text-amber-600 tracking-widest mb-1">Caja — Efectivo Bs.</p>
+            <p className="font-mono font-black text-2xl text-slate-900">Bs.{fmt(cajaBs)}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-purple-100 shadow-sm" style={{borderTop:'3px solid #8b5cf6'}}>
+            <p className="text-[9px] font-black uppercase text-purple-600 tracking-widest mb-1">Caja — Efectivo USD</p>
+            <p className="font-mono font-black text-2xl text-slate-900">${fmt(cajaUSD)}</p>
+          </div>
+        </div>
+
+        {/* Sección Cuentas Nacionales Bs. */}
+        {cuentasNacBs.length>0&&(
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-2 h-6 rounded-full bg-blue-500"/>
+              <p className="font-black text-xs uppercase tracking-widest text-slate-700">🇻🇪 Cuentas Nacionales — Bolívares</p>
+              <div className="flex-1 h-px bg-slate-100"/>
+              <div className="bg-blue-50 rounded-xl px-3 py-1.5">
+                <p className="text-[9px] font-black text-blue-700 uppercase">Total Bs.: <span className="font-mono">{fmt(totBs)}</span></p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cuentasNacBs.map(c=><CuentaCard key={c.id} c={c}/>)}
+            </div>
+          </div>
+        )}
+
+        {/* Sección Cuentas Moneda Extranjera */}
+        {cuentasExt.length>0&&(
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-2 h-6 rounded-full bg-emerald-500"/>
+              <p className="font-black text-xs uppercase tracking-widest text-slate-700">💵 Cuentas Moneda Extranjera</p>
+              <div className="flex-1 h-px bg-slate-100"/>
+              <div className="bg-emerald-50 rounded-xl px-3 py-1.5">
+                <p className="text-[9px] font-black text-emerald-700 uppercase">USD: <span className="font-mono">${fmt(totUSD)}</span> · EUR: <span className="font-mono">€{fmt(totEUR)}</span></p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cuentasExt.map(c=><CuentaCard key={c.id} c={c}/>)}
+            </div>
+          </div>
+        )}
+
+        {cuentas.length===0&&<div className="py-16"><EmptyState icon={Building2} title="Sin cuentas bancarias" desc="Registre cuentas en la sección Bancos"/></div>}
+
+        {/* Últimas transacciones */}
         <div className="grid lg:grid-cols-2 gap-5">
-          <Card title="Últimos Mov. Bancarios">
+          <Card title="Últimos Movimientos Bancarios">
             {movBanco.length===0?<EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc=""/>:
-              <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th right>USD</Th><Th right>Bs.</Th></tr></thead>
-                <tbody>{movBanco.slice(0,6).map(m=><tr key={m.id} className="hover:bg-slate-50">
-                  <Td>{dd(m.fecha)}</Td><Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge></Td>
-                  <Td className="text-[11px] max-w-[80px] truncate font-semibold">{m.cuentaNombre}</Td>
-                  <Td right mono className={`font-black text-xs ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
-                  <Td right mono className="text-slate-400 text-xs">Bs.{fmt(m.montoBs)}</Td>
+              <table className="w-full text-[11px]"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th right>USD</Th></tr></thead>
+                <tbody>{movBanco.slice(0,8).map(m=><tr key={m.id} className="hover:bg-slate-50">
+                  <Td className="text-[10px]">{dd(m.fecha)}</Td>
+                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge></Td>
+                  <Td className="font-semibold max-w-[70px] truncate">{m.cuentaNombre}</Td>
+                  <Td className="max-w-[110px] truncate text-slate-500">{m.concepto}</Td>
+                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
                 </tr>)}</tbody>
               </table>}
           </Card>
-          <Card title="Últimos Mov. Caja">
-            {movCaja.length===0?<EmptyState icon={Banknote} title="Sin movimientos de caja" desc=""/>:
-              <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Moneda</Th><Th>Concepto</Th><Th right>Monto</Th></tr></thead>
-                <tbody>{movCaja.slice(0,6).map(m=><tr key={m.id} className="hover:bg-slate-50">
-                  <Td>{dd(m.fecha)}</Td><Td><Badge v={m.tipo==='Ingreso'?'green':'red'}>{m.tipo}</Badge></Td>
-                  <Td><Pill usd={m.moneda==='USD'}>{m.moneda}</Pill></Td>
-                  <Td className="max-w-[130px] truncate">{m.concepto}</Td>
-                  <Td right mono className={`font-black text-xs ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{m.moneda==='BS'?'Bs.':'$'}{fmt(m.moneda==='BS'?m.montoBs:m.montoUSD)}</Td>
-                </tr>)}</tbody>
-              </table>}
+          <Card title="Consolidado por Banco">
+            <div className="space-y-2">
+              {cuentas.map(c=>{
+                const usd=c.moneda==='BS'?Number(c.saldo)/tasaActiva:Number(c.saldo);
+                const pct=totConsolUSD>0?usd/totConsolUSD*100:0;
+                return (
+                  <div key={c.id}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs font-semibold text-slate-700">{c.banco}</span>
+                      <span className="text-xs font-mono font-black text-slate-900">${fmt(usd)}</span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                      <div className="h-1.5 rounded-full" style={{width:`${Math.min(pct,100)}%`,background:c.moneda==='BS'?'#3b82f6':'#10b981'}}/>
+                    </div>
+                  </div>
+                );
+              })}
+              {cuentas.length>0&&<div className="pt-3 border-t border-slate-100 flex justify-between"><span className="font-black text-xs text-slate-600 uppercase">TOTAL CONSOLIDADO</span><span className="font-mono font-black text-slate-900">${fmt(totConsolUSD)}</span></div>}
+            </div>
           </Card>
         </div>
       </div>
@@ -1447,11 +1536,47 @@ function BancoApp({ fbUser, onBack }) {
       w.document.close(); w.print();
     };
 
+    const exportarCuentas = (formato) => {
+      const [nacBs, ext] = [
+        cuentas.filter(c=>c.tipoBanco==='Nacional-Bs'),
+        cuentas.filter(c=>c.tipoBanco==='Nacional-Ext'||c.tipoBanco==='Internacional'),
+      ];
+      const mkRows = (lista) => lista.map(c=>{
+        const bs=c.moneda==='BS';
+        return `<tr>
+          <td style="font-weight:bold">${c.banco}</td>
+          <td style="font-family:monospace">${c.numeroCuenta}</td>
+          <td>${c.tipoCuenta||'—'}</td>
+          <td>${c.moneda}</td>
+          <td>${c.titular||'—'}</td>
+          <td style="font-family:monospace;color:#1e40af">${c.cuentaContableCod||'—'}</td>
+          <td style="text-align:right;font-weight:bold;font-family:monospace">${bs?'Bs.':'$'} ${fmt(c.saldo)}</td>
+          <td style="text-align:right;font-family:monospace;color:#16a34a">$${fmt(bs?Number(c.saldo)/tasaActiva:Number(c.saldo))}</td>
+          <td style="text-align:right;font-family:monospace;color:#2563eb">Bs.${fmt(bs?Number(c.saldo):Number(c.saldo)*tasaActiva)}</td>
+        </tr>`;
+      }).join('');
+      const thead=`<thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Titular</th><th>PUC</th><th>Saldo</th><th>Equiv. USD</th><th>Equiv. Bs.</th></tr></thead>`;
+      const content=letterheadOpen('Reporte de Cuentas Bancarias',`Titular: Servicios Jiret G&B, C.A. · RIF: J-412309374 · ${dd(today())} · Tasa: ${tasaActiva} Bs/$`)+
+        `<h3 style="color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:16px 0 8px">🇻🇪 Cuentas Nacionales — Bolívares</h3>
+        <table>${thead}<tbody>${mkRows(nacBs)}</tbody></table>
+        <h3 style="color:#065f46;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:20px 0 8px">💵 Cuentas Moneda Extranjera</h3>
+        <table>${thead}<tbody>${mkRows(ext)}</tbody></table>`+
+        letterheadClose(`${cuentas.length} cuenta(s) registrada(s)`);
+      if(formato==='pdf'){ printWindow(content); return; }
+      const blob=new Blob([content],{type:'application/vnd.ms-excel;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`cuentas_bancarias_${today()}.xls`;a.click();URL.revokeObjectURL(url);
+    };
+
     return (
       <div className="space-y-5">
         <style>{PRINT_STYLE}</style>
-
-        {/* ── CUENTAS NACIONALES Bs ── */}
+        {/* Botones de acción */}
+        <div className="flex gap-3 justify-end">
+          <button onClick={imprimirCuentas} className="flex items-center gap-2 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
+          <button onClick={()=>exportarCuentas('pdf')} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><FileText size={12}/> PDF</button>
+          <button onClick={()=>exportarCuentas('excel')} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
+          <Bg onClick={openNew}><Plus size={12}/> Nueva Cuenta</Bg>
+        </div>
         {[
           {label:'🇻🇪 Cuentas Nacionales — Bolívares',  tipos:['Nacional-Bs'],  colorHeader:'#1e3a5f', accent:'#3b82f6'},
           {label:'💵 Cuentas Moneda Extranjera / Internacional', tipos:['Nacional-Ext','Internacional'], colorHeader:'#1a3a2a', accent:'#10b981'},
@@ -1473,22 +1598,18 @@ function BancoApp({ fbUser, onBack }) {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead><tr className="bg-slate-50 border-b border-slate-100"><Th>Banco</Th><Th>Nro. Cuenta</Th><Th>Tipo</Th><Th>Titular</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>Equiv. USD</Th><Th right>Equiv. Bs.</Th><Th></Th></tr></thead>
+                    <thead><tr className="bg-slate-50 border-b border-slate-100"><Th>Banco</Th><Th>Nro. Cuenta</Th><Th>Tipo de Cta.</Th><Th>PUC</Th><Th>Titular</Th><Th>Moneda</Th><Th right>Saldo Actual</Th><Th></Th></tr></thead>
                     <tbody>
                       {lista.map(c=>{
-                        const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];
                         const bs=c.moneda==='BS'; const usd=c.moneda==='USD'; const eur=c.moneda==='EUR';
-                        const saldoUSD=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);
-                        const saldoBs =bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
                         return <tr key={c.id} className="hover:bg-blue-50/30 border-b border-slate-50">
                           <Td className="font-black text-slate-900">{c.banco}</Td>
                           <Td mono className="text-[11px] text-slate-600">{c.numeroCuenta}</Td>
                           <Td className="text-[10px] text-slate-500">{c.tipoCuenta||'—'}</Td>
+                          <Td mono className="text-[10px] text-blue-600 font-black">{c.cuentaContableCod||'—'}</Td>
                           <Td className="uppercase text-[10px] text-slate-400 max-w-[100px] truncate">{c.titular||'—'}</Td>
                           <Td><Pill usd={!bs}>{c.moneda}</Pill></Td>
-                          <Td right mono className="font-black text-slate-900">{bs?'Bs.':usd?'$':'€'} {fmt(c.saldo)}</Td>
-                          <Td right mono className="text-emerald-700 font-black">${fmt(saldoUSD)}</Td>
-                          <Td right mono className="text-blue-600">{bs?'—':`Bs. ${fmt(saldoBs)}`}</Td>
+                          <Td right mono className="font-black text-slate-900 text-sm">{bs?'Bs.':usd?'$':'€'} {fmt(c.saldo)}</Td>
                           <Td>
                             <div className="flex gap-1">
                               <button onClick={()=>setCert(c)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Certificación"><FileText size={12}/></button>
@@ -1512,11 +1633,7 @@ function BancoApp({ fbUser, onBack }) {
           );
         })}
 
-        {/* Botón Nueva Cuenta */}
-        <div className="flex gap-3">
-          <button onClick={imprimirCuentas} className="flex items-center gap-2 px-4 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
-          <Bg onClick={openNew}><Plus size={12}/> Nueva Cuenta</Bg>
-        </div>
+        {/* ── CUENTAS NACIONALES Bs ── */}
 
         <Modal open={modal} onClose={()=>{setModal(false);setEdit(null);}} title={editando?'Editar Cuenta Bancaria':'Nueva Cuenta Bancaria'} wide
           footer={<><Bo onClick={()=>{setModal(false);setEdit(null);}}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':(editando?'Guardar Cambios':'Registrar Cuenta')}</Bg></>}>
@@ -4684,7 +4801,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
             <div className="ml-auto"><Bg onClick={save} disabled={busy}>{busy?<><RefreshCw size={13} className="animate-spin"/> Guardando...</>:<><Save size={13}/> Guardar Cambios</>}</Bg></div>
           </div>
         </Card>
-        {/* Preview membrete */}
+        {/* Vista previa membrete */}
         <Card title="Vista Previa — Membrete">
           <div className="rounded-xl overflow-hidden border border-slate-200">
             <div className="flex items-center justify-between px-6 py-4 bg-black border-b-4 border-orange-500">
@@ -4694,7 +4811,132 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
             <div className="bg-white px-6 py-2 text-center border-b-2 border-orange-500"><p className="font-black uppercase text-sm">TÍTULO DEL REPORTE</p><p className="text-[9px] text-slate-400">Generado: {dd(today())}</p></div>
           </div>
         </Card>
+
+        {/* Reclasificación masiva */}
+        <Card title="Reclasificación Masiva" subtitle="Asignar Cuenta Contable y corregir formato RIF a clientes y proveedores">
+          <ReclasificacionPanel/>
+        </Card>
       </div>
+    );
+  };
+
+  // ── Reclasificación masiva de clientes y proveedores ─────────────────
+  const ReclasificacionPanel = () => {
+    const [busy,setBusy]=useState('');
+    const [clientes,setClientes]=useState([]);
+    const [proveedores,setProveedores]=useState([]);
+    useEffect(()=>{
+      const s1=onSnapshot(col('facturacion_clientes'),s=>setClientes(s.docs.map(d=>d.data())));
+      const s2=onSnapshot(col('compras_proveedores'), s=>setProveedores(s.docs.map(d=>d.data())));
+      return()=>{s1();s2();};
+    },[]);
+
+    // RIF: mantener letra inicial + números sin guiones (J123456789)
+    const normalizarRif=(rif)=>{
+      if(!rif) return '';
+      const r=rif.toUpperCase().trim();
+      // Extraer letra y números
+      const match=r.match(/^([VEJGC])/);
+      const letra=match?match[1]:'';
+      const nums=r.replace(/[^0-9]/g,'');
+      return letra+nums;
+    };
+
+    const asignarCuentasClientes = async () => {
+      if(!window.confirm(`¿Asignar 1.1.02.01.001 · CUENTAS POR COBRAR a ${clientes.length} clientes?`)) return;
+      setBusy('clientes');
+      try {
+        const batch=writeBatch(db);
+        clientes.forEach(c=>{
+          const rifNorm=normalizarRif(c.rif||c.codigo||'');
+          batch.update(dref('facturacion_clientes',c.id),{
+            cuentaContableCod:'1.1.02.01.001',
+            cuentaContableNom:'CUENTAS POR COBRAR CLIENTES',
+            ...(rifNorm&&{rif:rifNorm,codigo:rifNorm}),
+          });
+        });
+        await batch.commit();
+        alert(`✅ ${clientes.length} clientes actualizados con Cta. Contable y RIF normalizado.`);
+      } finally { setBusy(''); }
+    };
+
+    const asignarCuentasProveedores = async () => {
+      if(!window.confirm(`¿Asignar 2.1.01.01.001 · CUENTAS POR PAGAR a ${proveedores.length} proveedores?`)) return;
+      setBusy('proveedores');
+      try {
+        const batch=writeBatch(db);
+        proveedores.forEach(p=>{
+          const rifNorm=normalizarRif(p.rif||p['r.i.f.']||'');
+          batch.update(dref('compras_proveedores',p.id),{
+            cuentaContableCod:'2.1.01.01.001',
+            cuentaContableNom:'CUENTAS POR PAGAR PROVEEDORES',
+            ...(rifNorm&&{rif:rifNorm,codigo:rifNorm}),
+          });
+        });
+        await batch.commit();
+        alert(`✅ ${proveedores.length} proveedores actualizados con Cta. Contable y RIF normalizado.`);
+      } finally { setBusy(''); }
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-[11px] text-blue-700">
+          <p className="font-black mb-1">¿Qué hace esta reclasificación?</p>
+          <p>• Asigna la cuenta contable asociada a todos los registros existentes</p>
+          <p>• Normaliza el RIF: <span className="font-mono bg-blue-100 px-1 rounded">J-41230937-4</span> → <span className="font-mono bg-blue-100 px-1 rounded">J412309374</span></p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="border border-orange-200 rounded-xl p-4 bg-orange-50">
+            <p className="font-black text-orange-800 text-sm mb-1">Clientes ({clientes.length})</p>
+            <p className="text-[10px] text-orange-600 mb-3 font-mono">1.1.02.01.001 · CUENTAS POR COBRAR</p>
+            <button onClick={asignarCuentasClientes} disabled={!!busy}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-500 text-white rounded-xl font-black text-[10px] uppercase hover:bg-orange-600 disabled:opacity-50">
+              {busy==='clientes'?<><RefreshCw size={12} className="animate-spin"/> Procesando...</>:<><Users size={12}/> Reclasificar Clientes</>}
+            </button>
+          </div>
+          <div className="border border-emerald-200 rounded-xl p-4 bg-emerald-50">
+            <p className="font-black text-emerald-800 text-sm mb-1">Proveedores ({proveedores.length})</p>
+            <p className="text-[10px] text-emerald-600 mb-3 font-mono">2.1.01.01.001 · CUENTAS POR PAGAR</p>
+            <button onClick={asignarCuentasProveedores} disabled={!!busy}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase hover:bg-emerald-700 disabled:opacity-50">
+              {busy==='proveedores'?<><RefreshCw size={12} className="animate-spin"/> Procesando...</>:<><Briefcase size={12}/> Reclasificar Proveedores</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Fondo de Pantalla y Sistema ──────────────────────────────────────────
+  const SistemaConfig = () => {
+    const [busy,setBusy]=useState(false);
+    const [preview,setPreview]=useState(null);
+    const handleImg=async(e)=>{
+      const file=e.target.files[0]; if(!file) return;
+      setBusy(true);
+      try {
+        const reader=new FileReader();
+        reader.onload=async ev=>{
+          const base64=ev.target.result;
+          setPreview(base64);
+          await setDoc(dref('settings','general'),{loginBg:base64,ts:serverTimestamp()},{merge:true});
+          alert('✅ Fondo actualizado. Se aplicará en el próximo inicio de sesión.');
+          setBusy(false);
+        };
+        reader.readAsDataURL(file);
+      } catch { setBusy(false); }
+    };
+    return (
+      <Card title="Fondo de Pantalla de Inicio">
+        <p className="text-[11px] text-slate-500 mb-4">Sube una imagen para personalizar el fondo de la pantalla de inicio de sesión.</p>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase hover:bg-slate-700 transition-colors">{busy?'Subiendo...':'Seleccionar archivo'}</div>
+          <span className="text-[10px] text-slate-400">Formatos: JPG, PNG, WEBP (máx. 2MB)</span>
+          <input type="file" accept="image/*" className="sr-only" onChange={handleImg}/>
+        </label>
+        {preview&&<img src={preview} alt="Preview" className="mt-4 rounded-xl max-h-48 object-cover border border-slate-200 shadow-sm"/>}
+        {settings?.loginBg&&!preview&&<img src={settings.loginBg} alt="Fondo actual" className="mt-4 rounded-xl max-h-48 object-cover border border-slate-200 shadow-sm"/>}
+      </Card>
     );
   };
 
@@ -4765,6 +5007,12 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
   };
 
   const navGroups = [
+    { group: 'General',    color:'#f97316', items: [{ id: 'empresa',  label: 'Datos de Empresa',      icon: Building2 },
+                                                      { id: 'sistema',  label: 'Config. del Sistema',   icon: Settings }] },
+    { group: 'Seguridad',  color:'#ef4444', items: [{ id: 'usuarios', label: 'Usuarios & Roles',       icon: Users }] },
+    { group: 'Financiero', color:'#3b82f6', items: [{ id: 'tasas',    label: 'Tasa de Cambio',         icon: Globe },
+                                                      { id: 'cuentas', label: 'Cuentas Bancarias',      icon: Building2 }] },
+    { group: 'Sistema',    color:'#dc2626', items: [{ id: 'respaldo', label: 'Respaldo & Formateo',    icon: Save }] },
   ];
   const curNav = navGroups.flatMap(g => g.items).find(n => n.id === sec);
 
@@ -4775,6 +5023,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
         <button onClick={() => setAdminUnlocked(false)} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors"><Lock size={13} /> Bloquear</button>
       </>}>
       {sec === 'empresa' && <EmpresaConfig />}
+      {sec === 'sistema' && <SistemaConfig />}
       {sec === 'tasas'    && <TasasConfig />}
       {sec === 'cuentas'  && <CuentasBancariasConfig />}
       {sec === 'usuarios' && (
