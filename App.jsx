@@ -66,10 +66,67 @@ const mesActual = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 // ============================================================================
 // DESIGN TOKENS & SHARED COMPONENTS
 // ============================================================================
-const DARK = '#0f172a';
+const DARK = '#000000';
 const ORANGE = '#f97316';
 const BLUE = '#3b82f6';
 const BG = '#f1f5f9';
+
+// ── Letterhead PDF generator ────────────────────────────────────────────────
+const LETTERHEAD_CSS = `
+  body{font-family:Arial,sans-serif;margin:0;padding:0;color:#1e293b;font-size:11px}
+  .lh-header{background:#000;color:#fff;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #f97316}
+  .lh-logo{display:flex;align-items:center;gap:4px}
+  .lh-logo .g{font-size:26px;font-weight:900;color:#fff;line-height:1}
+  .lh-logo .amp{background:#f97316;color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;margin:0 2px}
+  .lh-logo .b{font-size:26px;font-weight:900;color:#fff;line-height:1}
+  .lh-logo .supply{font-size:14px;font-weight:300;letter-spacing:4px;color:#d1d5db;margin-right:4px}
+  .lh-company{text-align:right;font-size:9px;color:#9ca3af}
+  .lh-company strong{color:#f97316;font-size:11px;display:block;margin-bottom:2px}
+  .lh-title{text-align:center;padding:14px 24px;border-bottom:2px solid #f97316}
+  .lh-title h2{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:2px;margin:0;color:#000}
+  .lh-title p{font-size:9px;color:#64748b;margin:3px 0 0;letter-spacing:1px;text-transform:uppercase}
+  .lh-body{padding:20px 24px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th{background:#000;color:#f97316;border:1px solid #333;padding:7px 10px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:1px}
+  td{border:1px solid #e2e8f0;padding:5px 10px;font-size:10px}
+  tr:nth-child(even) td{background:#f8fafc}
+  .lh-footer{margin-top:30px;border-top:2px solid #f97316;padding:12px 24px;display:flex;justify-content:space-between;font-size:8px;color:#94a3b8}
+  .badge-green{background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:9px;font-weight:900}
+  .badge-red{background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:9px;font-weight:900}
+  .badge-blue{background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:12px;font-size:9px;font-weight:900}
+  @media print{@page{margin:1cm}}
+`;
+
+const letterheadOpen = (titulo, subtitulo='') => `
+  <html><head><meta charset="utf-8"><title>${titulo}</title><style>${LETTERHEAD_CSS}</style></head><body>
+  <div class="lh-header">
+    <div class="lh-logo">
+      <span class="supply">Supply</span><span class="g">G</span><span class="amp">&amp;</span><span class="b">B</span>
+    </div>
+    <div class="lh-company">
+      <strong>Servicios Jiret G&amp;B, C.A.</strong>
+      RIF: J-412309374 · Caracas, Venezuela<br>
+      ERP — Sistema de Gestión Empresarial
+    </div>
+  </div>
+  <div class="lh-title">
+    <h2>${titulo}</h2>
+    <p>${subtitulo||'Generado: '+new Date().toLocaleDateString('es-VE')+' '+new Date().toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'})}</p>
+  </div>
+  <div class="lh-body">
+`;
+const letterheadClose = (extra='') => `
+  </div>
+  <div class="lh-footer">
+    <span>Servicios Jiret G&amp;B, C.A. — RIF: J-412309374</span>
+    <span>${extra}</span>
+    <span>Supply ERP · ${new Date().toLocaleDateString('es-VE')}</span>
+  </div>
+  <script>window.onload=()=>{window.print();}</script>
+  </body></html>
+`;
+
+const printWindow = (html) => { const w=window.open('','_blank'); w.document.write(html); w.document.close(); };
 
 const Badge = ({ children, v = 'green' }) => {
   const s = { green: 'bg-emerald-50 text-emerald-700 border border-emerald-200', red: 'bg-red-50 text-red-600 border border-red-200', gold: 'bg-amber-50 text-amber-700 border border-amber-200', blue: 'bg-blue-50 text-blue-700 border border-blue-200', gray: 'bg-slate-100 text-slate-500 border border-slate-200', purple: 'bg-purple-50 text-purple-700 border border-purple-200' };
@@ -256,63 +313,45 @@ function LoginScreen({ onLogin, settings, systemUsers }) {
   };
 
   return (
-    <div className="min-h-screen flex items-stretch">
-      {/* Left panel */}
-      <div className="hidden lg:flex flex-1 flex-col items-center justify-center p-16 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f172a 100%)' }}>
-        <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'radial-gradient(circle at 25% 25%, #f97316 1px, transparent 1px), radial-gradient(circle at 75% 75%, #3b82f6 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
-        <div className="relative z-10 text-center max-w-sm">
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl" style={{ background: ORANGE }}>
-              <Blocks size={32} className="text-white" />
-            </div>
+    <div className="min-h-screen bg-black flex items-center justify-center p-4 relative"
+      style={{ backgroundImage: settings?.loginBg ? `url(${settings.loginBg})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      {settings?.loginBg && <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>}
+      <div className="bg-white p-10 rounded-[2rem] shadow-2xl w-full max-w-md relative z-10 border-t-8 border-orange-500">
+        {/* G&B Logo */}
+        <div className="text-center mb-10">
+          <span className="text-3xl font-light tracking-widest text-gray-800">Supply</span>
+          <div className="flex items-center justify-center -mt-2">
+            <span className="text-black font-black text-[52px] leading-none">G</span>
+            <div className="bg-orange-500 text-white rounded-full w-9 h-9 flex items-center justify-center text-2xl font-black mx-1 shadow-inner">&amp;</div>
+            <span className="text-black font-black text-[52px] leading-none">B</span>
           </div>
-          <h1 className="text-4xl font-black text-white tracking-tight mb-3">Supply <span style={{ color: ORANGE }}>G&B</span></h1>
-          <p className="text-slate-400 text-sm font-medium leading-relaxed mb-10">Sistema ERP Profesional · Gestión Empresarial Integral</p>
-          <div className="grid grid-cols-2 gap-4 text-left">
-            {[{ icon: Receipt, t: 'Facturación', s: 'CxC multimoneda' }, { icon: Package, t: 'Inventario', s: 'Control de stock' }, { icon: Building2, t: 'Tesorería', s: 'Bancos y caja' }, { icon: BookOpen, t: 'Contabilidad', s: 'Plan de cuentas' }].map(({ icon: Icon, t, s }) => (
-              <div key={t} className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <Icon size={20} className="mb-2" style={{ color: ORANGE }} />
-                <p className="font-black text-white text-xs uppercase tracking-wide">{t}</p>
-                <p className="text-slate-500 text-[10px] mt-0.5">{s}</p>
-              </div>
-            ))}
-          </div>
+          <p className="text-[9px] font-black tracking-[3px] text-gray-400 mt-1 uppercase">Servicios Jiret G&B, C.A. · Enterprise Resource Planning</p>
         </div>
-      </div>
 
-      {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-sm">
-          <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: ORANGE }}><Blocks size={20} className="text-white" /></div>
-            <div><p className="font-black text-slate-900 text-lg">Supply <span style={{ color: ORANGE }}>G&B</span></p><p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">ERP</p></div>
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Usuario de Acceso</label>
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
+              <input type="text" required value={loginData.username} onChange={e=>setLoginData({...loginData,username:e.target.value})}
+                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-black outline-none focus:border-orange-500 focus:bg-white transition-all text-black" placeholder="admin"/>
+            </div>
           </div>
-
-          <h2 className="font-black text-slate-900 text-2xl mb-1">Bienvenido de vuelta</h2>
-          <p className="text-slate-500 text-sm mb-8">Ingrese sus credenciales para continuar</p>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest">Usuario</label>
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <input type="text" required value={loginData.username} onChange={e => setLoginData({ ...loginData, username: e.target.value })} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl py-3 pl-11 pr-4 text-sm font-semibold outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900" placeholder="admin" />
-              </div>
+          <div>
+            <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Clave de Seguridad</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
+              <input type="password" required value={loginData.password} onChange={e=>setLoginData({...loginData,password:e.target.value})}
+                className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-sm font-black outline-none focus:border-orange-500 focus:bg-white transition-all text-black" placeholder="••••••••"/>
             </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest">Contraseña</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                <input type="password" required value={loginData.password} onChange={e => setLoginData({ ...loginData, password: e.target.value })} className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl py-3 pl-11 pr-4 text-sm font-semibold outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900" placeholder="••••••••" />
-              </div>
-            </div>
-            {loginError && <div className="bg-red-50 text-red-500 text-[10px] font-black uppercase p-3 rounded-xl text-center border border-red-200">{loginError}</div>}
-            <button type="submit" disabled={loading} className="w-full text-white font-black py-4 rounded-xl uppercase tracking-widest text-xs transition-all shadow-lg flex justify-center items-center gap-2 mt-2 disabled:opacity-70" style={{ background: loading ? '#94a3b8' : ORANGE }}>
-              {loading ? <><RefreshCw size={14} className="animate-spin" /> Verificando...</> : <>Ingresar al Sistema <ArrowRight size={14} /></>}
-            </button>
-          </form>
-          <p className="text-center text-[10px] text-slate-300 mt-8 font-medium uppercase tracking-widest">© {new Date().getFullYear()} Jiret G&B C.A.</p>
-        </div>
+          </div>
+          {loginError && <div className="bg-red-50 text-red-500 text-[10px] font-black uppercase p-3 rounded-xl text-center border border-red-100">{loginError}</div>}
+          <button type="submit" disabled={loading}
+            className="w-full bg-black text-white font-black py-5 rounded-2xl uppercase tracking-widest text-xs hover:bg-gray-900 transition-all shadow-xl flex justify-center items-center gap-2 mt-2 disabled:opacity-70">
+            {loading ? <><RefreshCw size={14} className="animate-spin"/> Verificando...</> : <>INGRESAR AL SISTEMA <ArrowRight size={16}/></>}
+          </button>
+        </form>
+        <p className="text-center text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-8">© {new Date().getFullYear()} Jiret G&B C.A. Todos los derechos reservados.</p>
       </div>
     </div>
   );
@@ -536,11 +575,228 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
   };
 
   const ClientesView = () => {
-    const [modal, setModal] = useState(false);
-    const [form, setForm] = useState({ nombre: '', rif: '', direccion: '', telefono: '', email: '', diasCredito: '0', codigo:'' });
-    const [busy, setBusy] = useState(false);
-    const [search, setSearch] = useState('');
-    const filtered = clientes.filter(c => c.nombre?.includes(search.toUpperCase()) || c.rif?.includes(search.toUpperCase()) || c.codigo?.includes(search.toUpperCase()));
+    const [modal, setModal]       = useState(false);
+    const [detalle, setDetalle]   = useState(null);  // cliente en detalle/edición
+    const [editando, setEditando] = useState(false);
+    const [form, setForm]         = useState({ nombre:'',rif:'',codigo:'',direccion:'',telefono:'',email:'',diasCredito:'0',cuentaContableCod:'',cuentaContableNom:'',activo:true });
+    const [busy, setBusy]         = useState(false);
+    const [search, setSearch]     = useState('');
+    const [contCuentas, setContCuentas] = useState([]);
+    useEffect(()=>{ const u=onSnapshot(col('cont_cuentas'),s=>setContCuentas(s.docs.map(d=>d.data()))); return()=>u(); },[]);
+
+    const rifToCodigo = (rif) => (rif||'').toUpperCase().replace(/[-\s]/g,'');
+    const filtered = clientes.filter(c=>
+      c.nombre?.toUpperCase().includes(search.toUpperCase())||
+      c.rif?.toUpperCase().includes(search.toUpperCase())||
+      (c.codigo||'').toUpperCase().includes(search.toUpperCase())
+    );
+
+    const initForm = ()=>({ nombre:'',rif:'',codigo:'',direccion:'',telefono:'',email:'',diasCredito:'0',cuentaContableCod:'',cuentaContableNom:'',activo:true });
+
+    const openNew  = ()=>{ setEditando(false); setForm(initForm()); setModal(true); };
+    const openEdit = (c)=>{ setEditando(true); setDetalle(null); setForm({nombre:c.nombre,rif:c.rif,codigo:c.codigo||rifToCodigo(c.rif),direccion:c.direccion||'',telefono:c.telefono||'',email:c.email||'',diasCredito:c.diasCredito||'0',cuentaContableCod:c.cuentaContableCod||'',cuentaContableNom:c.cuentaContableNom||'',activo:c.activo!==false}); setModal(true); };
+
+    const save = async () => {
+      if (!form.nombre || !form.rif) return alert('Nombre y RIF requeridos');
+      const codigo = form.codigo || rifToCodigo(form.rif);
+      setBusy(true);
+      try {
+        if(editando && detalle) {
+          await updateDoc(dref('facturacion_clientes',detalle.id),{...form,codigo});
+        } else {
+          const id=gid(); await setDoc(dref('facturacion_clientes',id),{...form,codigo,id,ts:serverTimestamp()});
+        }
+        setModal(false); setForm(initForm()); setDetalle(null); setEditando(false);
+      } finally { setBusy(false); }
+    };
+
+    const eliminar = async(c)=>{
+      if(!window.confirm(`¿Eliminar cliente "${c.nombre}"?`)) return;
+      await deleteDoc(dref('facturacion_clientes',c.id));
+      setDetalle(null);
+    };
+
+    // ── Imprimir cliente individual (membretado) ──────────────────────
+    const printCliente = (c) => {
+      printWindow(
+        letterheadOpen('Ficha de Cliente', `Código: ${c.codigo||rifToCodigo(c.rif)}`)+
+        `<table style="width:100%;margin:0"><tbody>
+          <tr><td style="width:30%;font-weight:bold;color:#64748b;padding:8px 0">Código / RIF</td><td style="font-weight:900;font-size:13px">${c.codigo||''} · ${c.rif}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Razón Social</td><td style="font-weight:900;font-size:14px">${c.nombre}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Teléfono</td><td>${c.telefono||'—'}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Email</td><td>${c.email||'—'}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Dirección</td><td>${c.direccion||'—'}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Días de Crédito</td><td>${c.diasCredito||'0'} días</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Cuenta Contable</td><td><span style="font-family:monospace;color:#1e40af;font-weight:bold">${c.cuentaContableCod||'—'}</span> ${c.cuentaContableNom?'· '+c.cuentaContableNom:''}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Estado</td><td><span style="background:${c.activo!==false?'#d1fae5':'#fee2e2'};color:${c.activo!==false?'#065f46':'#991b1b'};padding:2px 8px;border-radius:12px;font-size:9px;font-weight:900">${c.activo!==false?'ACTIVO':'INACTIVO'}</span></td></tr>
+        </tbody></table>`+
+        letterheadClose('Directorio de Clientes')
+      );
+    };
+
+    // ── Imprimir directorio completo ─────────────────────────────────
+    const printDirectorio = () => {
+      let rows = filtered.map((c,i)=>`<tr>
+        <td>${i+1}</td>
+        <td style="font-family:monospace;font-weight:bold;color:#1e40af">${c.codigo||rifToCodigo(c.rif)}</td>
+        <td style="font-family:monospace">${c.rif}</td>
+        <td style="font-weight:700">${c.nombre}</td>
+        <td>${c.telefono||'—'}</td>
+        <td>${c.email||'—'}</td>
+        <td>${c.diasCredito||'0'}d</td>
+        <td style="font-family:monospace;color:#1e40af;font-size:9px">${c.cuentaContableCod||'—'}</td>
+        <td><span class="badge-${c.activo!==false?'green':'red'}">${c.activo!==false?'Activo':'Inactivo'}</span></td>
+      </tr>`).join('');
+      printWindow(
+        letterheadOpen('Directorio de Clientes',`${filtered.length} cliente(s) registrado(s)`)+
+        `<table><thead><tr><th>#</th><th>Código</th><th>RIF</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>Créd.</th><th>PUC</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`+
+        letterheadClose(`Módulo: Ventas & Facturación`)
+      );
+    };
+
+    // ── Exportar TXT ─────────────────────────────────────────────────
+    const exportarTxt = () => {
+      const HDRS=['Código','Descripción','Activo','Dirección','Telefono','RIF','E-Mail'];
+      const rows=clientes.map(c=>[c.codigo||rifToCodigo(c.rif),c.nombre,c.activo!==false?'Si':'No',c.direccion||'',c.telefono||'',c.rif||'',c.email||'']);
+      const content=[HDRS,...rows].map(r=>r.join('\t')).join('\r\n');
+      const blob=new Blob(['\uFEFF'+content],{type:'text/plain;charset=utf-8'});
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='GENERALDECLIENTES.TXT';a.click();URL.revokeObjectURL(url);
+    };
+
+    const importarTxt = async(event)=>{
+      const file=event.target.files[0];if(!file)return;
+      const text=await file.text();
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      if(lines.length<2){alert('Archivo vacío');event.target.value='';return;}
+      const firstCell=lines[0].split('\t')[0].trim();
+      const hasHeader=/[a-zA-ZáéíóúÁÉÍÓÚ]/.test(firstCell)&&!firstCell.startsWith('C');
+      const dataLines=hasHeader?lines.slice(1):lines;
+      const existentes=new Set(clientes.map(c=>c.rif?.toUpperCase().replace(/[-\s]/g,'')));
+      const batch=writeBatch(db);let importados=0,omitidos=0;
+      for(const line of dataLines){
+        const p=line.split('\t').map(v=>v.trim().replace(/^["']/,'').replace(/["']$/,''));
+        if(p.length<2) continue;
+        const cod=p[0],nombre=p[1],activo=p[2],dir=p[3]||'',tel=p[4]||'',rif=p[5]||'',email=p[6]||'';
+        if(!nombre) continue;
+        const rifKey=(rif||cod).toUpperCase().replace(/[-\s]/g,'');
+        if(rifKey&&existentes.has(rifKey)){omitidos++;continue;}
+        const id=gid();const codigo=rifToCodigo(rif||cod);
+        batch.set(dref('facturacion_clientes',id),{id,codigo,nombre:nombre.toUpperCase(),activo:activo!=='No',direccion:dir,telefono:tel,rif:(rif||'').toUpperCase(),email,diasCredito:'0',ts:serverTimestamp()});
+        importados++;
+      }
+      if(importados===0){alert(`Sin nuevos clientes. ${omitidos} ya existían.`);event.target.value='';return;}
+      await batch.commit();
+      alert(`✅ ${importados} cliente(s) importado(s).${omitidos>0?` (${omitidos} omitidos)`:''}`);
+      event.target.value='';
+    };
+
+    return (
+      <div>
+        {/* ── MODAL DETALLE ── */}
+        {detalle && !editando && (
+          <Modal open onClose={()=>setDetalle(null)} title={`Cliente — ${detalle.nombre}`} wide
+            footer={<>
+              <Bd onClick={()=>eliminar(detalle)}>🗑 Eliminar</Bd>
+              <div className="flex-1"/>
+              <button onClick={()=>printCliente(detalle)} className="flex items-center gap-2 px-4 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
+              <Bg onClick={()=>openEdit(detalle)}>✏ Editar</Bg>
+            </>}>
+            <div className="grid grid-cols-2 gap-4">
+              {/* Header con código */}
+              <div className="col-span-2 p-5 rounded-2xl flex items-center gap-5" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+                <div className="w-14 h-14 rounded-2xl bg-orange-500 flex items-center justify-center flex-shrink-0">
+                  <Users size={24} className="text-white"/>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase mb-0.5">{detalle.codigo||rifToCodigo(detalle.rif)}</p>
+                  <p className="font-black text-white text-lg leading-tight">{detalle.nombre}</p>
+                  <p className="text-slate-400 text-xs mt-0.5">{detalle.rif}</p>
+                </div>
+                <div className="ml-auto"><Badge v={detalle.activo!==false?'green':'gray'}>{detalle.activo!==false?'Activo':'Inactivo'}</Badge></div>
+              </div>
+              {[['Código',detalle.codigo||rifToCodigo(detalle.rif)],['RIF/NIT',detalle.rif],['Teléfono',detalle.telefono||'—'],['Email',detalle.email||'—'],['Días de Crédito',(detalle.diasCredito||'0')+' días'],['Dirección',detalle.direccion||'—']].map(([k,v])=>(
+                <div key={k} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-0.5">{k}</p>
+                  <p className="font-semibold text-slate-800 text-sm truncate">{v}</p>
+                </div>
+              ))}
+              {(detalle.cuentaContableCod) && (
+                <div className="col-span-2 bg-blue-50 border border-blue-100 rounded-xl p-3">
+                  <p className="text-[9px] font-black uppercase text-blue-700 tracking-widest mb-0.5">Cuenta Contable (PUC)</p>
+                  <p className="font-mono font-black text-blue-700">{detalle.cuentaContableCod} <span className="font-medium text-slate-600">· {detalle.cuentaContableNom}</span></p>
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
+
+        {/* ── MODAL CREAR / EDITAR ── */}
+        <Modal open={modal} onClose={()=>{setModal(false);setForm(initForm());setEditando(false);setDetalle(null);}} title={editando?`Editar: ${detalle?.nombre}`:'Registrar Nuevo Cliente'}
+          footer={<><Bo onClick={()=>{setModal(false);setForm(initForm());setEditando(false);setDetalle(null);}}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':(editando?'Guardar Cambios':'Guardar Cliente')}</Bg></>}>
+          <div className="grid grid-cols-2 gap-4">
+            <FG label="RIF / NIT *"><input className={inp} value={form.rif} onChange={e=>{const rif=e.target.value.toUpperCase();setForm({...form,rif,codigo:form.codigo||rifToCodigo(rif)});}} placeholder="J-12345678-9"/></FG>
+            <FG label="Código (auto: RIF sin guiones)"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder={rifToCodigo(form.rif)||'J412345789'}/></FG>
+            <FG label="Razón Social *" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="EMPRESA EJEMPLO C.A."/></FG>
+            <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})} placeholder="0414-0000000"/></FG>
+            <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="contacto@empresa.com"/></FG>
+            <FG label="Días de Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e=>setForm({...form,diasCredito:e.target.value})} placeholder="15"/></FG>
+            <FG label="Dirección Fiscal" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value})}/></FG>
+            <FG label="Cuenta Contable Asociada (PUC)" full>
+              <select className={sel} value={form.cuentaContableCod} onChange={e=>{const c=contCuentas.find(x=>x.codigo===e.target.value);setForm({...form,cuentaContableCod:e.target.value,cuentaContableNom:c?.nombre||''});}}>
+                <option value="">— Sin cuenta asociada —</option>
+                {contCuentas.filter(c=>String(c.codigo).startsWith('1')).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.codigo}>{c.codigo} · {c.nombre}</option>)}
+              </select>
+              {form.cuentaContableCod&&<p className="text-[10px] text-blue-600 font-black mt-1">✓ {form.cuentaContableCod} · {form.cuentaContableNom}</p>}
+            </FG>
+            <FG label="Estado">
+              <div className="flex gap-2">
+                {['Activo','Inactivo'].map(s=><button key={s} onClick={()=>setForm({...form,activo:s==='Activo'})} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${(form.activo&&s==='Activo')||(!form.activo&&s==='Inactivo')?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{s}</button>)}
+              </div>
+            </FG>
+          </div>
+        </Modal>
+
+        {/* ── TABLA ── */}
+        <Card title="Directorio de Clientes" subtitle={`${clientes.length} clientes registrados`}
+          action={<div className="flex gap-2 flex-wrap items-center">
+            <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs outline-none focus:border-orange-500 w-36"/></div>
+            <button onClick={printDirectorio} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> PDF</button>
+            <button onClick={exportarTxt} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> TXT</button>
+            <label className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-emerald-400 hover:text-emerald-600 cursor-pointer">
+              <Upload size={12}/> Importar<input type="file" accept=".txt,.csv" className="sr-only" onChange={importarTxt}/>
+            </label>
+            <Bg onClick={openNew} sm><Plus size={12}/> Nuevo</Bg>
+          </div>}>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr><Th>Código</Th><Th>RIF / NIT</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>PUC</Th><Th>Días</Th><Th>Estado</Th><Th></Th></tr></thead>
+              <tbody>
+                {filtered.length===0&&<tr><td colSpan={9}><EmptyState icon={Users} title="Sin clientes" desc="Registre o importe clientes"/></td></tr>}
+                {filtered.map(c=><tr key={c.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(c)}>
+                  <Td mono className="font-black text-orange-600">{c.codigo||rifToCodigo(c.rif)}</Td>
+                  <Td mono className="font-semibold text-slate-700">{c.rif}</Td>
+                  <Td className="uppercase font-semibold max-w-[160px] truncate">{c.nombre}</Td>
+                  <Td>{c.telefono||'—'}</Td>
+                  <Td className="text-slate-400 max-w-[120px] truncate">{c.email||'—'}</Td>
+                  <Td mono className="text-blue-600 text-[10px]">{c.cuentaContableCod||'—'}</Td>
+                  <Td mono className="text-slate-500">{c.diasCredito||'0'}d</Td>
+                  <Td><Badge v={c.activo!==false?'green':'gray'}>{c.activo!==false?'Activo':'Inactivo'}</Badge></Td>
+                  <Td>
+                    <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>setDetalle(c)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Detalle"><Search size={12}/></button>
+                      <button onClick={()=>openEdit(c)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
+                      <button onClick={()=>printCliente(c)} className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg" title="Imprimir"><Download size={12}/></button>
+                      <button onClick={()=>eliminar(c)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg" title="Eliminar"><Trash2 size={12}/></button>
+                    </div>
+                  </Td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    );
+  };
 
     const save = async () => {
       if (!form.nombre || !form.rif) return alert('Nombre y RIF requeridos');
@@ -620,20 +876,6 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
             </table>
           </div>
         </Card>
-        <Modal open={modal} onClose={() => setModal(false)} title="Registrar Nuevo Cliente" footer={<><Bo onClick={() => setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy ? 'Guardando...' : 'Guardar Cliente'}</Bg></>}>
-          <div className="grid grid-cols-2 gap-4">
-            <FG label="Código (opcional)"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder="C0001"/></FG>
-            <FG label="RIF / NIT"><input className={inp} value={form.rif} onChange={e => setForm({ ...form, rif: e.target.value.toUpperCase() })} placeholder="J-12345678-9" /></FG>
-            <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value.toUpperCase() })} placeholder="INVERSIONES EJEMPLO C.A." /></FG>
-            <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} placeholder="0414-0000000" /></FG>
-            <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="contacto@empresa.com" /></FG>
-            <FG label="Días de Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e => setForm({ ...form, diasCredito: e.target.value })} placeholder="15" /></FG>
-            <FG label="Dirección Fiscal" full><input className={inp} value={form.direccion} onChange={e => setForm({ ...form, direccion: e.target.value })} placeholder="Dirección completa..." /></FG>
-          </div>
-        </Modal>
-      </div>
-    );
-  };
 
   const FacturasView = () => {
     const [modal, setModal] = useState(false);
@@ -3866,26 +4108,90 @@ function ComprasApp({ fbUser, onBack }) {
   );
 
   const ProveedoresView = () => {
-    const [modal,setModal]=useState(false);const [busy,setBusy]=useState(false);
-    const [search,setSearch]=useState('');
-    const [form,setForm]=useState({codigo:'',nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0',activo:true});
-    const filtered=proveedores.filter(p=>(p.nombre||p.descripcion||'').toUpperCase().includes(search.toUpperCase())||(p.rif||'').toUpperCase().includes(search.toUpperCase())||(p.codigo||'').includes(search));
+    const [modal,setModal]       = useState(false);
+    const [detalle,setDetalle]   = useState(null);
+    const [editando,setEditando] = useState(false);
+    const [busy,setBusy]         = useState(false);
+    const [search,setSearch]     = useState('');
+    const [contCuentas, setContCuentas] = useState([]);
+    useEffect(()=>{ const u=onSnapshot(col('cont_cuentas'),s=>setContCuentas(s.docs.map(d=>d.data()))); return()=>u(); },[]);
 
-    const save=async()=>{
-      if(!form.nombre||(!form.rif&&!form['r.i.f.']))return alert('Nombre y RIF requeridos');
-      setBusy(true);try{const id=gid();await setDoc(dref('compras_proveedores',id),{...form,id,ts:serverTimestamp()});setModal(false);setForm({codigo:'',nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0',activo:true});}finally{setBusy(false);}
+    const rifToCodigo = (rif) => (rif||'').toUpperCase().replace(/[-\s]/g,'');
+    const initF = ()=>({codigo:'',nombre:'',rif:'',telefono:'',email:'',direccion:'',diasCredito:'0',cuentaContableCod:'',cuentaContableNom:'',activo:true});
+    const [form,setForm] = useState(initF());
+    const filtered = proveedores.filter(p=>
+      (p.nombre||p.descripcion||'').toUpperCase().includes(search.toUpperCase())||
+      (p.rif||'').toUpperCase().includes(search.toUpperCase())||
+      (p.codigo||'').includes(search)
+    );
+
+    const openNew  = ()=>{ setEditando(false); setForm(initF()); setModal(true); };
+    const openEdit = (p)=>{ setEditando(true); setDetalle(null); setForm({codigo:p.codigo||rifToCodigo(p.rif),nombre:p.nombre||p.descripcion,rif:p.rif||p['r.i.f.']||'',telefono:p.telefono||'',email:p.email||'',direccion:p.direccion||'',diasCredito:p.diasCredito||'0',cuentaContableCod:p.cuentaContableCod||'',cuentaContableNom:p.cuentaContableNom||'',activo:p.activo!==false}); setModal(true); };
+
+    const save = async()=>{
+      if(!form.nombre||!form.rif) return alert('Nombre y RIF requeridos');
+      const codigo = form.codigo||rifToCodigo(form.rif);
+      setBusy(true);
+      try{
+        if(editando&&detalle){
+          await updateDoc(dref('compras_proveedores',detalle.id),{...form,codigo});
+        } else {
+          const id=gid(); await setDoc(dref('compras_proveedores',id),{...form,codigo,id,ts:serverTimestamp()});
+        }
+        setModal(false); setForm(initF()); setDetalle(null); setEditando(false);
+      }finally{setBusy(false);}
     };
 
-    // ── Exportar TXT mismo formato ──
+    const eliminar = async(p)=>{
+      if(!window.confirm(`¿Eliminar proveedor "${p.nombre||p.descripcion}"?`)) return;
+      await deleteDoc(dref('compras_proveedores',p.id));
+      setDetalle(null);
+    };
+
+    const printProveedor = (p) => {
+      const nombre=p.nombre||p.descripcion||'';
+      printWindow(
+        letterheadOpen('Ficha de Proveedor',`Código: ${p.codigo||rifToCodigo(p.rif)}`)+
+        `<table style="width:100%;margin:0"><tbody>
+          <tr><td style="width:30%;font-weight:bold;color:#64748b;padding:8px 0">Código / RIF</td><td style="font-weight:900;font-size:13px">${p.codigo||''} · ${p.rif||p['r.i.f.']||''}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Razón Social</td><td style="font-weight:900;font-size:14px">${nombre}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Teléfono</td><td>${p.telefono||'—'}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Email</td><td>${p.email||'—'}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Dirección</td><td>${p.direccion||'—'}</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Días Crédito</td><td>${p.diasCredito||'0'} días</td></tr>
+          <tr><td style="font-weight:bold;color:#64748b;padding:8px 0">Cuenta Contable</td><td><span style="font-family:monospace;color:#1e40af;font-weight:bold">${p.cuentaContableCod||'—'}</span> ${p.cuentaContableNom?'· '+p.cuentaContableNom:''}</td></tr>
+        </tbody></table>`+
+        letterheadClose('Módulo: Compras & Proveedores')
+      );
+    };
+
+    const printDirectorio = () => {
+      const rows=filtered.map((p,i)=>`<tr>
+        <td>${i+1}</td>
+        <td style="font-family:monospace;font-weight:bold;color:#1e40af">${p.codigo||rifToCodigo(p.rif)}</td>
+        <td style="font-family:monospace">${p.rif||p['r.i.f.']||'—'}</td>
+        <td style="font-weight:700">${p.nombre||p.descripcion}</td>
+        <td>${p.telefono||'—'}</td>
+        <td>${p.email||'—'}</td>
+        <td>${p.diasCredito||'0'}d</td>
+        <td style="font-family:monospace;color:#1e40af;font-size:9px">${p.cuentaContableCod||'—'}</td>
+        <td><span class="badge-${p.activo!==false?'green':'red'}">${p.activo!==false?'Activo':'Inactivo'}</span></td>
+      </tr>`).join('');
+      printWindow(
+        letterheadOpen('Directorio de Proveedores',`${filtered.length} proveedor(es)`)+
+        `<table><thead><tr><th>#</th><th>Código</th><th>R.I.F.</th><th>Razón Social</th><th>Teléfono</th><th>Email</th><th>Créd.</th><th>PUC</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`+
+        letterheadClose('Módulo: Compras & Proveedores')
+      );
+    };
+
     const exportarTxt=()=>{
       const HDRS=['Código','Descripción','Activo','Dirección','Teléfonos','R.I.F.','E-Mail'];
-      const rows=proveedores.map(p=>[p.codigo||'',p.nombre||p.descripcion||'',p.activo!==false?'Si':'No',p.direccion||'',p.telefono||p.teléfonos||'',p.rif||p['r.i.f.']||'',p.email||'']);
+      const rows=proveedores.map(p=>[p.codigo||rifToCodigo(p.rif),p.nombre||p.descripcion||'',p.activo!==false?'Si':'No',p.direccion||'',p.telefono||'',p.rif||'',p.email||'']);
       const content=[HDRS,...rows].map(r=>r.join('\t')).join('\r\n');
       const blob=new Blob(['\uFEFF'+content],{type:'text/plain;charset=utf-8'});
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='GENERALDEPROVEEDORES.TXT';a.click();URL.revokeObjectURL(url);
     };
 
-    // ── Importar TXT ──
     const importarTxt=async(event)=>{
       const file=event.target.files[0];if(!file)return;
       const text=await file.text();
@@ -3894,16 +4200,17 @@ function ComprasApp({ fbUser, onBack }) {
       const firstCell=lines[0].split('\t')[0].trim();
       const hasHeader=/[a-zA-ZáéíóúÁÉÍÓÚ]/.test(firstCell)&&!firstCell.startsWith('P');
       const dataLines=hasHeader?lines.slice(1):lines;
-      const existentes=new Set(proveedores.map(p=>(p.rif||p['r.i.f.']||'').toUpperCase()));
+      const existentes=new Set(proveedores.map(p=>(p.rif||'').toUpperCase().replace(/[-\s]/g,'')));
       const batch=writeBatch(db);let importados=0,omitidos=0;
       for(const line of dataLines){
         const p=line.split('\t').map(v=>v.trim().replace(/^["']/,'').replace(/["']$/,''));
         if(p.length<2) continue;
         const cod=p[0],nombre=p[1],activo=p[2],dir=p[3]||'',tel=p[4]||'',rif=p[5]||'',email=p[6]||'';
         if(!nombre) continue;
-        if(rif&&existentes.has(rif.toUpperCase())){omitidos++;continue;}
-        const id=gid();
-        batch.set(dref('compras_proveedores',id),{id,codigo:cod,nombre:nombre.toUpperCase(),activo:activo!=='No',direccion:dir,telefono:tel,rif:rif.toUpperCase(),email,diasCredito:'0',ts:serverTimestamp()});
+        const rifKey=(rif||cod).toUpperCase().replace(/[-\s]/g,'');
+        if(rifKey&&existentes.has(rifKey)){omitidos++;continue;}
+        const id=gid();const codigo=rifToCodigo(rif||cod);
+        batch.set(dref('compras_proveedores',id),{id,codigo,nombre:nombre.toUpperCase(),activo:activo!=='No',direccion:dir,telefono:tel,rif:(rif||'').toUpperCase(),email,diasCredito:'0',ts:serverTimestamp()});
         importados++;
       }
       if(importados===0){alert(`Sin nuevos proveedores. ${omitidos} ya existían.`);event.target.value='';return;}
@@ -3914,49 +4221,106 @@ function ComprasApp({ fbUser, onBack }) {
 
     return(
       <div>
+        {/* ── MODAL DETALLE ── */}
+        {detalle && !editando && (
+          <Modal open onClose={()=>setDetalle(null)} title={`Proveedor — ${detalle.nombre||detalle.descripcion}`} wide
+            footer={<>
+              <Bd onClick={()=>eliminar(detalle)}>🗑 Eliminar</Bd>
+              <div className="flex-1"/>
+              <button onClick={()=>printProveedor(detalle)} className="flex items-center gap-2 px-4 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
+              <Bg onClick={()=>openEdit(detalle)}>✏ Editar</Bg>
+            </>}>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 p-5 rounded-2xl flex items-center gap-5" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+                <div className="w-14 h-14 rounded-2xl bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                  <Briefcase size={24} className="text-white"/>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase mb-0.5">{detalle.codigo||rifToCodigo(detalle.rif)}</p>
+                  <p className="font-black text-white text-lg">{detalle.nombre||detalle.descripcion}</p>
+                  <p className="text-slate-400 text-xs">{detalle.rif||detalle['r.i.f.']}</p>
+                </div>
+                <div className="ml-auto"><Badge v={detalle.activo!==false?'green':'gray'}>{detalle.activo!==false?'Activo':'Inactivo'}</Badge></div>
+              </div>
+              {[['Código',detalle.codigo||rifToCodigo(detalle.rif)],['RIF',detalle.rif||detalle['r.i.f.']||'—'],['Teléfono',detalle.telefono||'—'],['Email',detalle.email||'—'],['Días Crédito',(detalle.diasCredito||'0')+'d'],['Dirección',detalle.direccion||'—']].map(([k,v])=>(
+                <div key={k} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[9px] font-black uppercase text-slate-400 mb-0.5">{k}</p>
+                  <p className="font-semibold text-slate-800 text-sm truncate">{v}</p>
+                </div>
+              ))}
+              {detalle.cuentaContableCod&&(
+                <div className="col-span-2 bg-blue-50 border border-blue-100 rounded-xl p-3">
+                  <p className="text-[9px] font-black uppercase text-blue-700 mb-0.5">Cuenta Contable (PUC)</p>
+                  <p className="font-mono font-black text-blue-700">{detalle.cuentaContableCod} <span className="font-medium text-slate-600">· {detalle.cuentaContableNom}</span></p>
+                </div>
+              )}
+            </div>
+          </Modal>
+        )}
+
+        {/* ── MODAL CREAR / EDITAR ── */}
+        <Modal open={modal} onClose={()=>{setModal(false);setForm(initF());setEditando(false);setDetalle(null);}} title={editando?`Editar: ${detalle?.nombre||detalle?.descripcion}`:'Registrar Proveedor'}
+          footer={<><Bo onClick={()=>{setModal(false);setForm(initF());setEditando(false);setDetalle(null);}}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':(editando?'Guardar Cambios':'Guardar')}</Bg></>}>
+          <div className="grid grid-cols-2 gap-4">
+            <FG label="R.I.F. / N.I.T. *"><input className={inp} value={form.rif} onChange={e=>{const rif=e.target.value.toUpperCase();setForm({...form,rif,codigo:form.codigo||rifToCodigo(rif)});}} placeholder="J-12345678-9"/></FG>
+            <FG label="Código (auto: RIF sin guiones)"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder={rifToCodigo(form.rif)||'J412345789'}/></FG>
+            <FG label="Razón Social *" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="PROVEEDOR S.A."/></FG>
+            <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})}/></FG>
+            <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></FG>
+            <FG label="Días Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e=>setForm({...form,diasCredito:e.target.value})}/></FG>
+            <FG label="Dirección" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value})}/></FG>
+            <FG label="Cuenta Contable Asociada (PUC)" full>
+              <select className={sel} value={form.cuentaContableCod} onChange={e=>{const c=contCuentas.find(x=>x.codigo===e.target.value);setForm({...form,cuentaContableCod:e.target.value,cuentaContableNom:c?.nombre||''});}}>
+                <option value="">— Sin cuenta asociada —</option>
+                {contCuentas.filter(c=>String(c.codigo).startsWith('2')).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.codigo}>{c.codigo} · {c.nombre}</option>)}
+              </select>
+              {form.cuentaContableCod&&<p className="text-[10px] text-blue-600 font-black mt-1">✓ {form.cuentaContableCod} · {form.cuentaContableNom}</p>}
+            </FG>
+          </div>
+        </Modal>
+
+        {/* ── TABLA ── */}
         <Card title="Directorio de Proveedores" subtitle={`${proveedores.length} proveedores registrados`}
           action={<div className="flex gap-2 flex-wrap items-center">
-            <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:border-emerald-500 w-36"/></div>
-            <button onClick={exportarTxt} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Exportar TXT</button>
+            <div className="relative"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="border-2 border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs outline-none focus:border-emerald-500 w-36"/></div>
+            <button onClick={printDirectorio} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> PDF</button>
+            <button onClick={exportarTxt} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> TXT</button>
             <label className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:border-emerald-400 hover:text-emerald-600 cursor-pointer">
-              <Upload size={12}/> Importar TXT
-              <input type="file" accept=".txt,.csv,.xls,.xlsx" className="sr-only" onChange={importarTxt}/>
+              <Upload size={12}/> Importar<input type="file" accept=".txt,.csv" className="sr-only" onChange={importarTxt}/>
             </label>
-            <Bg onClick={()=>setModal(true)} sm><Plus size={12}/> Nuevo</Bg>
+            <Bg onClick={openNew} sm><Plus size={12}/> Nuevo</Bg>
           </div>}>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
-              <thead><tr><Th>Código</Th><Th>R.I.F.</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>Dirección</Th><Th>Días Créd.</Th><Th></Th></tr></thead>
+              <thead><tr><Th>Código</Th><Th>R.I.F.</Th><Th>Razón Social</Th><Th>Teléfono</Th><Th>Email</Th><Th>PUC</Th><Th>Días</Th><Th>Estado</Th><Th></Th></tr></thead>
               <tbody>
-                {filtered.length===0&&<tr><td colSpan={8}><EmptyState icon={Users} title="Sin proveedores" desc="Registre o importe proveedores"/></td></tr>}
-                {filtered.map(p=><tr key={p.id} className="hover:bg-slate-50">
-                  <Td mono className="text-slate-500">{p.codigo||'—'}</Td>
-                  <Td mono className="font-black text-slate-900">{p.rif||p['r.i.f.']||'—'}</Td>
-                  <Td className="uppercase font-semibold max-w-[170px] truncate">{p.nombre||p.descripcion}</Td>
-                  <Td>{p.telefono||p.teléfonos||'—'}</Td>
+                {filtered.length===0&&<tr><td colSpan={9}><EmptyState icon={Users} title="Sin proveedores" desc="Registre o importe proveedores"/></td></tr>}
+                {filtered.map(p=><tr key={p.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(p)}>
+                  <Td mono className="font-black text-emerald-600">{p.codigo||rifToCodigo(p.rif)}</Td>
+                  <Td mono className="font-semibold text-slate-700">{p.rif||p['r.i.f.']||'—'}</Td>
+                  <Td className="uppercase font-semibold max-w-[160px] truncate">{p.nombre||p.descripcion}</Td>
+                  <Td>{p.telefono||'—'}</Td>
                   <Td className="text-slate-400 max-w-[120px] truncate">{p.email||'—'}</Td>
-                  <Td className="text-slate-400 max-w-[140px] truncate">{p.direccion||'—'}</Td>
-                  <Td mono>{p.diasCredito||'0'} días</Td>
-                  <Td><button onClick={()=>deleteDoc(dref('compras_proveedores',p.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></Td>
+                  <Td mono className="text-blue-600 text-[10px]">{p.cuentaContableCod||'—'}</Td>
+                  <Td mono className="text-slate-500">{p.diasCredito||'0'}d</Td>
+                  <Td><Badge v={p.activo!==false?'green':'gray'}>{p.activo!==false?'Activo':'Inactivo'}</Badge></Td>
+                  <Td>
+                    <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>setDetalle(p)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Detalle"><Search size={12}/></button>
+                      <button onClick={()=>openEdit(p)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
+                      <button onClick={()=>printProveedor(p)} className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg" title="Imprimir"><Download size={12}/></button>
+                      <button onClick={()=>eliminar(p)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg" title="Eliminar"><Trash2 size={12}/></button>
+                    </div>
+                  </Td>
                 </tr>)}
               </tbody>
             </table>
           </div>
         </Card>
-        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Proveedor" footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar'}</Bg></>}>
-          <div className="grid grid-cols-2 gap-4">
-            <FG label="Código (opc.)"><input className={inp} value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value.toUpperCase()})} placeholder="P0001"/></FG>
-            <FG label="R.I.F. / N.I.T."><input className={inp} value={form.rif} onChange={e=>setForm({...form,rif:e.target.value.toUpperCase()})} placeholder="J-12345678-9"/></FG>
-            <FG label="Razón Social" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="PROVEEDOR S.A."/></FG>
-            <FG label="Teléfono"><input className={inp} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})}/></FG>
-            <FG label="Email"><input type="email" className={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></FG>
-            <FG label="Días Crédito"><input type="number" className={inp} value={form.diasCredito} onChange={e=>setForm({...form,diasCredito:e.target.value})}/></FG>
-            <FG label="Dirección" full><input className={inp} value={form.direccion} onChange={e=>setForm({...form,direccion:e.target.value})}/></FG>
-          </div>
-        </Modal>
       </div>
     );
   };
+
 
   const navGroups=[
     {group:'Panel',color:'#10b981',items:[{id:'dashboard',label:'Panel General',icon:LayoutDashboard}]},
@@ -4040,10 +4404,109 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
     );
   };
 
+  // Pre-carga de cuentas bancarias de la empresa
+  const CUENTAS_PRELOAD = [
+    {banco:'BBVA Provincial',nro:'0108-0086-27-0100348585',tipo:'Nacional-Bs', tipoCuenta:'Corriente',moneda:'BS', puc:'1.1.01.02.001',pucNom:'BANCO PROVINCIAL'},
+    {banco:'BBVA Provincial',nro:'0108-0086-24-0100367938',tipo:'Nacional-Bs', tipoCuenta:'Custodia',  moneda:'BS', puc:'1.1.01.02.001',pucNom:'BANCO PROVINCIAL'},
+    {banco:'Banco Mercantil', nro:'0105-0699-95-1699220018',tipo:'Nacional-Bs', tipoCuenta:'Corriente',moneda:'BS', puc:'1.1.01.02.002',pucNom:'BANCO MERCANTIL'},
+    {banco:'Banco Mercantil', nro:'0105-0699-94-5699080384',tipo:'Nacional-Ext',tipoCuenta:'Custodia',  moneda:'USD',puc:'1.1.01.03.002',pucNom:'BANCO MERCANTIL (ME)'},
+    {banco:'Banco Mercantil', nro:'0105-0699-99-5699080406',tipo:'Nacional-Ext',tipoCuenta:'Custodia',  moneda:'EUR',puc:'1.1.01.03.002',pucNom:'BANCO MERCANTIL (ME)'},
+    {banco:'Bancaribe',       nro:'0114-0560-68-5600068743',tipo:'Nacional-Bs', tipoCuenta:'Corriente',moneda:'BS', puc:'1.1.01.02.003',pucNom:'BANCARIBE'},
+    {banco:'Bancaribe',       nro:'0114-0560-69-5604017230',tipo:'Nacional-Bs', tipoCuenta:'Custodia',  moneda:'BS', puc:'1.1.01.02.003',pucNom:'BANCARIBE'},
+    {banco:'Banesco',         nro:'0134-0086-50-0861268884',tipo:'Nacional-Bs', tipoCuenta:'Corriente',moneda:'BS', puc:'1.1.01.02.011',pucNom:'BANESCO'},
+    {banco:'Banesco',         nro:'J-41230937-4 · TLF:0424-6020171',tipo:'Nacional-Bs',tipoCuenta:'Pago Móvil',moneda:'BS',puc:'1.1.01.02.011',pucNom:'BANESCO'},
+  ];
+
+  const CuentasBancariasConfig = () => {
+    const [cuentas, setCuentas] = useState([]);
+    const [busy, setBusy] = useState(false);
+    useEffect(()=>{ const unsub=onSnapshot(col('banco_cuentas'),s=>setCuentas(s.docs.map(d=>d.data()))); return()=>unsub(); },[]);
+
+    const precargar = async () => {
+      setBusy(true);
+      try {
+        const existentes = new Set(cuentas.map(c=>c.numeroCuenta));
+        const batch = writeBatch(db);
+        let cnt=0;
+        CUENTAS_PRELOAD.forEach(c=>{
+          if(!existentes.has(c.nro)){
+            const id=gid();
+            batch.set(dref('banco_cuentas',id),{id,banco:c.banco,numeroCuenta:c.nro,tipoBanco:c.tipo,tipoCuenta:c.tipoCuenta,moneda:c.moneda,titular:'Servicios Jiret G&B, C.A.',saldo:0,cuentaContableCod:c.puc,cuentaContableNom:c.pucNom,ts:serverTimestamp()});
+            cnt++;
+          }
+        });
+        await batch.commit();
+        alert(`✅ ${cnt} cuenta(s) precargada(s).${cnt===0?' (Ya existían todas)':''}`);
+      } finally { setBusy(false); }
+    };
+
+    const printCuentas = () => {
+      let rows='';
+      cuentas.forEach(c=>{ rows+=`<tr><td>${c.banco}</td><td>${c.tipoCuenta||'—'}</td><td style="font-family:monospace;font-weight:bold">${c.numeroCuenta}</td><td>${c.moneda}</td><td style="font-family:monospace;color:#1e40af">${c.cuentaContableCod||'—'}</td><td>${c.cuentaContableNom||'—'}</td></tr>`; });
+      printWindow(
+        letterheadOpen('Registro de Cuentas Bancarias','Titular: Servicios Jiret G&B, C.A. · RIF: J-412309374')+
+        `<table><thead><tr><th>Banco</th><th>Tipo</th><th>Número de Cuenta</th><th>Moneda</th><th>Código PUC</th><th>Cuenta Contable</th></tr></thead><tbody>${rows}</tbody></table>`+
+        letterheadClose(`${cuentas.length} cuenta(s) registrada(s)`)
+      );
+    };
+
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-3 gap-4">
+          <KPI label="Cuentas Registradas" value={cuentas.length} accent="blue" Icon={Building2}/>
+          <KPI label="Cuentas Bs." value={cuentas.filter(c=>c.moneda==='BS').length} accent="green" Icon={Banknote}/>
+          <KPI label="Cuentas Divisas" value={cuentas.filter(c=>c.moneda!=='BS').length} accent="gold" Icon={Globe}/>
+        </div>
+
+        {/* Card de pre-carga */}
+        <div className="rounded-2xl p-5 border-2 border-dashed border-orange-300 bg-orange-50">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-black text-orange-800 uppercase tracking-wide mb-1">Cuentas Pre-configuradas G&B</p>
+              <p className="text-[11px] text-orange-700">{CUENTAS_PRELOAD.length} cuentas listas: BBVA Provincial · Mercantil · Bancaribe · Banesco (incl. Pago Móvil)</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {['BBVA Provincial','Banco Mercantil','Bancaribe','Banesco'].map(b=>(
+                  <span key={b} className="px-3 py-1 bg-orange-600 text-white rounded-full text-[9px] font-black uppercase">{b}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={printCuentas} className="flex items-center gap-2 px-4 py-2 border-2 border-orange-400 text-orange-700 rounded-xl text-[10px] font-black uppercase hover:bg-orange-100"><Download size={12}/> Imprimir</button>
+              <Bg onClick={precargar} disabled={busy}>{busy?'Cargando...':'⚡ Pre-cargar Cuentas'}</Bg>
+            </div>
+          </div>
+        </div>
+
+        <Card title="Cuentas Bancarias de la Empresa" subtitle="Titular: Servicios Jiret G&B, C.A.">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead><tr><Th>Banco</Th><Th>Tipo Cuenta</Th><Th>Número</Th><Th>Moneda</Th><Th>Código PUC</Th><Th>Cuenta Contable</Th><Th right>Saldo</Th></tr></thead>
+              <tbody>
+                {cuentas.length===0&&<tr><td colSpan={7}><EmptyState icon={Building2} title="Sin cuentas" desc="Use el botón ⚡ Pre-cargar para cargar las cuentas de la empresa"/></td></tr>}
+                {cuentas.map(c=>(
+                  <tr key={c.id} className="hover:bg-slate-50">
+                    <Td className="font-semibold">{c.banco}</Td>
+                    <Td><Badge v={c.tipoCuenta==='Corriente'?'blue':c.tipoCuenta==='Pago Móvil'?'green':'gray'}>{c.tipoCuenta}</Badge></Td>
+                    <Td mono className="text-[10px] text-slate-600 max-w-[180px]">{c.numeroCuenta}</Td>
+                    <Td><Pill usd={c.moneda!=='BS'}>{c.moneda}</Pill></Td>
+                    <Td mono className="font-black text-blue-600">{c.cuentaContableCod||'—'}</Td>
+                    <Td className="text-slate-500 text-[10px] max-w-[160px] truncate">{c.cuentaContableNom||'—'}</Td>
+                    <Td right mono className="font-black">{c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
   const navGroups = [
-    { group: 'General', items: [{ id: 'empresa', label: 'Datos de Empresa', icon: Building2 }] },
-    { group: 'Seguridad', items: [{ id: 'usuarios', label: 'Usuarios & Roles', icon: Users }] },
-    { group: 'Financiero', items: [{ id: 'tasas', label: 'Tasa de Cambio', icon: Globe }] },
+    { group: 'General',    color:'#f97316', items: [{ id: 'empresa',  label: 'Datos de Empresa',     icon: Building2 }] },
+    { group: 'Seguridad',  color:'#ef4444', items: [{ id: 'usuarios', label: 'Usuarios & Roles',      icon: Users }] },
+    { group: 'Financiero', color:'#3b82f6', items: [{ id: 'tasas',    label: 'Tasa de Cambio',        icon: Globe },
+                                                      { id: 'cuentas', label: 'Cuentas Bancarias',     icon: Building2 }] },
   ];
   const curNav = navGroups.flatMap(g => g.items).find(n => n.id === sec);
 
@@ -4066,7 +4529,8 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
           </div>
         </Card>
       )}
-      {sec === 'tasas' && <TasasConfig />}
+      {sec === 'tasas'    && <TasasConfig />}
+      {sec === 'cuentas'  && <CuentasBancariasConfig />}
       {sec === 'usuarios' && (
         <Card title="Directorio de Usuarios" subtitle="Gestión de accesos al sistema" action={<Bg sm><UserPlus size={13} /> Nuevo Usuario</Bg>}>
           <table className="w-full"><thead><tr><Th>Nombre</Th><Th>Usuario</Th><Th>Rol</Th><Th>Estado</Th><Th></Th></tr></thead>
