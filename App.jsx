@@ -405,49 +405,49 @@ function MainSelector({ onSelect }) {
 // ============================================================================
 function AdminDash({ onSelectModule, onBack }) {
   const mods = [
-    { id: 'facturacion',   name: 'Ventas & Facturación',   icon: Receipt,      color: '#f97316', border:'border-orange-500',  dark:true,  desc: 'Clientes, facturas y cuentas por cobrar' },
-    { id: 'compras',       name: 'Compras & Proveedores',  icon: ShoppingCart, color: '#10b981', border:'border-green-500',   dark:true,  desc: 'Proveedores, órdenes de compra e importación' },
-    { id: 'inventario',    name: 'Control de Inventario',  icon: Package,      color: '#3b82f6', border:'border-blue-500',    dark:true,  desc: 'Catálogo, stock y movimientos' },
-    { id: 'banco',         name: 'Bancos & Tesorería',     icon: Building2,    color: '#8b5cf6', border:'border-purple-500',  dark:true,  desc: 'Cuentas, movimientos y conciliación' },
-    { id: 'configuracion', name: 'Configuración',          icon: Settings,     color: '#64748b', border:'border-slate-400',   dark:false, desc: 'Empresa, usuarios y tasas de cambio' },
+    { id: 'facturacion',   name: 'Ventas & Facturación',   icon: Receipt,      color: '#f97316', border:'#f97316', desc: 'Clientes, facturas y cuentas por cobrar' },
+    { id: 'compras',       name: 'Compras & Proveedores',  icon: ShoppingCart, color: '#10b981', border:'#10b981', desc: 'Proveedores, órdenes de compra e importación' },
+    { id: 'inventario',    name: 'Control de Inventario',  icon: Package,      color: '#3b82f6', border:'#3b82f6', desc: 'Catálogo, stock y movimientos' },
+    { id: 'banco',         name: 'Bancos & Tesorería',     icon: Building2,    color: '#8b5cf6', border:'#8b5cf6', desc: 'Cuentas, movimientos y conciliación' },
+    { id: 'configuracion', name: 'Configuración',          icon: Settings,     color: '#64748b', border:'#64748b', desc: 'Empresa, usuarios y tasas de cambio' },
   ];
   return (
-    <div className="min-h-screen flex flex-col" style={{background:'#111'}}>
-      {/* Header */}
-      <header className="px-8 py-4 flex items-center justify-between shadow-xl border-b-4 border-orange-500" style={{background:'#000'}}>
-        <div className="flex items-center gap-4">
-          <span className="text-xl font-light tracking-widest text-gray-300">Supply</span>
-          <span className="text-white font-black text-2xl leading-none">G</span>
-          <div className="bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">&amp;</div>
-          <span className="text-white font-black text-2xl leading-none">B</span>
-        </div>
+    <div className="min-h-screen flex flex-col" style={{background:'#ffffff'}}>
+      {/* Header negro con acento naranja */}
+      <header className="px-6 py-3 flex items-center justify-between shadow-lg border-b-4 border-orange-500" style={{background:'#000'}}>
         <div className="flex items-center gap-3">
-          <button onClick={()=>onSelectModule('configuracion')} className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/10 text-white hover:bg-orange-500 transition-colors border border-white/10"><Settings size={16}/></button>
-          <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase"><LogOut size={13}/> Salir</button>
+          <span className="text-lg font-light tracking-widest text-gray-300">Supply</span>
+          <span className="text-white font-black text-xl leading-none">G</span>
+          <div className="bg-orange-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-black">&amp;</div>
+          <span className="text-white font-black text-xl leading-none">B</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>onSelectModule('configuracion')} className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 text-white hover:bg-orange-500 transition-colors"><Settings size={14}/></button>
+          <button onClick={onBack} className="px-3 py-1.5 rounded-lg border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-black uppercase"><LogOut size={12}/> Salir</button>
         </div>
       </header>
       {/* Body */}
-      <div className="flex-1 max-w-6xl mx-auto w-full px-8 py-12">
-        <div className="text-center mb-12">
-          <div className="inline-block mb-4">
-            <div className="w-1 h-12 bg-orange-500 mx-auto mb-3"/>
-          </div>
-          <h1 className="text-4xl font-black text-white uppercase tracking-widest mb-2">Panel Principal ERP</h1>
-          <div className="w-16 h-1 bg-orange-500 mx-auto"/>
+      <div className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
+        <div className="text-center mb-8">
+          <div className="w-0.5 h-8 bg-orange-500 mx-auto mb-3"/>
+          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-[0.15em] mb-1.5" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif"}}>Panel Principal ERP</h1>
+          <div className="w-12 h-0.5 bg-orange-500 mx-auto"/>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {mods.map(mod=>(
             <button key={mod.id} onClick={()=>onSelectModule(mod.id)}
-              className={`group text-left rounded-2xl p-8 transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl border-b-4 ${mod.border} ${mod.dark?'bg-black text-white':'bg-white text-slate-900'}`}
-              style={{boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
-              <div className="mb-5">
-                <mod.icon size={34} style={{color:mod.color}} className="group-hover:scale-110 transition-transform duration-200"/>
+              className="group text-left rounded-xl p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg bg-white border border-slate-100"
+              style={{borderBottom:`3px solid ${mod.border}`,boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
+              <div className="mb-4">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{background:mod.color+'12'}}>
+                  <mod.icon size={18} style={{color:mod.color}}/>
+                </div>
               </div>
-              <h3 className={`font-black text-sm uppercase tracking-widest mb-2 ${mod.dark?'text-white':'text-slate-900'}`}>{mod.name}</h3>
-              <p className={`text-[11px] font-medium leading-relaxed ${mod.dark?'text-gray-400':'text-slate-500'}`}>{mod.desc}</p>
-              <div className="mt-5 flex items-center gap-1.5" style={{color:mod.color}}>
+              <h3 className="font-black text-[11px] uppercase tracking-wider text-slate-900 mb-1" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif"}}>{mod.name}</h3>
+              <p className="text-[10px] text-slate-400 leading-relaxed mb-3">{mod.desc}</p>
+              <div className="flex items-center gap-1" style={{color:mod.color}}>
                 <span className="text-[9px] font-black uppercase tracking-widest">Ingresar</span>
-                <ChevronRight size={12}/>
+                <ChevronRight size={10}/>
               </div>
             </button>
           ))}
@@ -478,39 +478,42 @@ function ContDash({ onSelectModule, onBack }) {
     },
   ];
   return (
-    <div className="min-h-screen flex flex-col" style={{background:'#111'}}>
-      <header className="px-8 py-4 flex items-center justify-between shadow-xl border-b-4 border-blue-500" style={{background:'#000'}}>
-        <div className="flex items-center gap-4">
-          <span className="text-xl font-light tracking-widest text-gray-300">Supply</span>
-          <span className="text-white font-black text-2xl leading-none">G</span>
-          <div className="bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">&amp;</div>
-          <span className="text-white font-black text-2xl leading-none">B</span>
+    <div className="min-h-screen flex flex-col" style={{background:'#ffffff'}}>
+      <header className="px-6 py-3 flex items-center justify-between shadow-lg border-b-4 border-blue-500" style={{background:'#000'}}>
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-light tracking-widest text-gray-300">Supply</span>
+          <span className="text-white font-black text-xl leading-none">G</span>
+          <div className="bg-orange-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-black">&amp;</div>
+          <span className="text-white font-black text-xl leading-none">B</span>
         </div>
-        <button onClick={onBack} className="px-4 py-2 rounded-xl border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-2 text-[10px] font-black uppercase"><LogOut size={13}/> Salir</button>
+        <button onClick={onBack} className="px-3 py-1.5 rounded-lg border border-red-800/50 text-red-400 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-1.5 text-[10px] font-black uppercase"><LogOut size={12}/> Salir</button>
       </header>
-      <div className="flex-1 max-w-6xl mx-auto w-full px-8 py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-black text-white uppercase tracking-widest mb-2">Área Contable &amp; Fiscal</h1>
-          <div className="w-16 h-1 bg-blue-500 mx-auto"/>
+      <div className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
+        <div className="text-center mb-8">
+          <div className="w-0.5 h-8 bg-blue-500 mx-auto mb-3"/>
+          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-[0.15em] mb-1.5" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif"}}>Área Contable &amp; Fiscal</h1>
+          <div className="w-12 h-0.5 bg-blue-500 mx-auto"/>
         </div>
         {grupos.map(g=>(
-          <div key={g.titulo} className="mb-8">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-px flex-1 bg-white/10"/>
-              <p className="text-[10px] font-black uppercase tracking-[3px] px-3 py-1 rounded-full border" style={{color:g.color,borderColor:g.color+'40',background:g.color+'10'}}>{g.titulo}</p>
-              <div className="h-px flex-1 bg-white/10"/>
+          <div key={g.titulo} className="mb-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="h-px flex-1 bg-slate-100"/>
+              <p className="text-[9px] font-black uppercase tracking-[3px] px-3 py-1 rounded-full border" style={{color:g.color,borderColor:g.color+'40',background:g.color+'08'}}>{g.titulo}</p>
+              <div className="h-px flex-1 bg-slate-100"/>
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {g.mods.map(mod=>(
                 <button key={mod.id} onClick={()=>onSelectModule(mod.id)}
-                  className="group text-left bg-black rounded-2xl p-7 transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl border-b-4"
-                  style={{borderBottomColor:mod.color,boxShadow:'0 4px 20px rgba(0,0,0,0.4)'}}>
-                  <mod.icon size={30} style={{color:mod.color}} className="mb-4 group-hover:scale-110 transition-transform"/>
-                  <h3 className="font-black text-xs uppercase tracking-widest mb-1.5 text-white">{mod.name}</h3>
-                  <p className="text-[10px] text-gray-400 font-medium leading-tight">{mod.desc}</p>
-                  <div className="mt-4 flex items-center gap-1" style={{color:mod.color}}>
+                  className="group text-left bg-white rounded-xl p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg border border-slate-100"
+                  style={{borderBottom:`3px solid ${mod.color}`,boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-4" style={{background:mod.color+'12'}}>
+                    <mod.icon size={18} style={{color:mod.color}}/>
+                  </div>
+                  <h3 className="font-black text-[11px] uppercase tracking-wider text-slate-900 mb-1">{mod.name}</h3>
+                  <p className="text-[10px] text-slate-400 leading-tight">{mod.desc}</p>
+                  <div className="mt-3 flex items-center gap-1" style={{color:mod.color}}>
                     <span className="text-[9px] font-black uppercase tracking-widest">Ingresar</span>
-                    <ChevronRight size={11}/>
+                    <ChevronRight size={10}/>
                   </div>
                 </button>
               ))}
@@ -1417,23 +1420,64 @@ function BancoApp({ fbUser, onBack }) {
               </table>}
           </Card>
           <Card title="Consolidado por Banco">
-            <div className="space-y-2">
-              {cuentas.map(c=>{
-                const usd=c.moneda==='BS'?Number(c.saldo)/tasaActiva:Number(c.saldo);
-                const pct=totConsolUSD>0?usd/totConsolUSD*100:0;
-                return (
-                  <div key={c.id}>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-xs font-semibold text-slate-700">{c.banco}</span>
-                      <span className="text-xs font-mono font-black text-slate-900">${fmt(usd)}</span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5">
-                      <div className="h-1.5 rounded-full" style={{width:`${Math.min(pct,100)}%`,background:c.moneda==='BS'?'#3b82f6':'#10b981'}}/>
-                    </div>
+            <div className="space-y-4">
+              {/* Bs section */}
+              {cuentasNacBs.length>0&&(
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-blue-600 mb-2">🇻🇪 Bolívares</p>
+                  {cuentasNacBs.map(c=>{
+                    const pct=totBs>0?Number(c.saldo)/totBs*100:0;
+                    return (
+                      <div key={c.id} className="mb-2">
+                        <div className="flex justify-between mb-1">
+                          <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[140px]">{c.banco}</span>
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <span className="text-[10px] font-mono font-black text-slate-900">Bs.{fmt(c.saldo)}</span>
+                            <span className="text-[9px] text-slate-400 ml-1.5">{pct.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-blue-50 rounded-full h-1.5">
+                          <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{width:`${Math.min(pct,100)}%`}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between pt-2 border-t border-blue-50 mt-2">
+                    <span className="text-[9px] font-black uppercase text-blue-600">Total Bs.</span>
+                    <span className="font-mono font-black text-blue-700 text-[10px]">Bs.{fmt(totBs)}</span>
                   </div>
-                );
-              })}
-              {cuentas.length>0&&<div className="pt-3 border-t border-slate-100 flex justify-between"><span className="font-black text-xs text-slate-600 uppercase">TOTAL CONSOLIDADO</span><span className="font-mono font-black text-slate-900">${fmt(totConsolUSD)}</span></div>}
+                </div>
+              )}
+              {/* USD/EUR section */}
+              {cuentasExt.length>0&&(
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-2">💵 Divisas (USD/EUR)</p>
+                  {cuentasExt.map(c=>{
+                    const usdEq=c.moneda==='USD'?Number(c.saldo):Number(c.saldo);
+                    const totalDiv=cuentasExt.reduce((a,x)=>a+Number(x.saldo),0);
+                    const pct=totalDiv>0?usdEq/totalDiv*100:0;
+                    return (
+                      <div key={c.id} className="mb-2">
+                        <div className="flex justify-between mb-1">
+                          <span className="text-[10px] font-semibold text-slate-700 truncate max-w-[140px]">{c.banco} <span className="text-slate-400">({c.moneda})</span></span>
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <span className="text-[10px] font-mono font-black text-slate-900">{c.moneda==='USD'?'$':'€'}{fmt(c.saldo)}</span>
+                            <span className="text-[9px] text-slate-400 ml-1.5">{pct.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-emerald-50 rounded-full h-1.5">
+                          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{width:`${Math.min(pct,100)}%`}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between pt-2 border-t border-emerald-50 mt-2">
+                    <span className="text-[9px] font-black uppercase text-emerald-600">Total USD equiv.</span>
+                    <span className="font-mono font-black text-emerald-700 text-[10px]">${fmt(totUSD)}</span>
+                  </div>
+                </div>
+              )}
+              {cuentas.length>0&&<div className="flex justify-between pt-3 border-t border-slate-200 mt-1"><span className="font-black text-[10px] text-slate-700 uppercase">CONSOLIDADO USD</span><span className="font-mono font-black text-slate-900 text-sm">${fmt(totConsolUSD)}</span></div>}
             </div>
           </Card>
         </div>
@@ -4812,10 +4856,8 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
           </div>
         </Card>
 
-        {/* Reclasificación masiva */}
-        <Card title="Reclasificación Masiva" subtitle="Asignar Cuenta Contable y corregir formato RIF a clientes y proveedores">
-          <ReclasificacionPanel/>
-        </Card>
+        {/* Reclasificación masiva (operación silenciosa - no visible en UI) */}
+        {false && <Card title="Reclasificación Masiva"><ReclasificacionPanel/></Card>}
       </div>
     );
   };
@@ -4940,68 +4982,213 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
     );
   };
 
-  // ── Respaldo y Formateo ──────────────────────────────────────────────
+  const UsuariosConfig = () => {
+    const [usuarios, setUsuarios] = useState([]);
+    const [modal,setModal]=useState(false);
+    const [editId,setEditId]=useState(null);
+    const [busy,setBusy]=useState(false);
+    const MODULOS=[
+      {id:'facturacion',label:'Ventas & Facturación',icon:'👥'},
+      {id:'compras',label:'Compras & Proveedores',icon:'🛒'},
+      {id:'inventario',label:'Control de Inventario',icon:'📦'},
+      {id:'banco',label:'Bancos & Tesorería',icon:'🏦'},
+      {id:'contabilidad',label:'Contabilidad / PUC',icon:'📋'},
+      {id:'asientos',label:'Libro Diario',icon:'📒'},
+      {id:'balances',label:'Estados Financieros',icon:'📊'},
+      {id:'fiscal',label:'IVA & Fiscal',icon:'🧾'},
+      {id:'activos_fijos',label:'Activos Fijos',icon:'🏗️'},
+      {id:'configuracion',label:'Configuración',icon:'⚙️'},
+    ];
+    const initF=()=>({nombre:'',username:'',password:'',rol:'Usuario',permisos:{}});
+    const [form,setForm]=useState(initF());
+
+    useEffect(()=>{
+      const u=onSnapshot(col('system_usuarios'),s=>{
+        const docs=s.docs.map(d=>d.data());
+        // Incluir el usuario admin por defecto
+        const hasAdmin=docs.find(d=>d.username==='admin');
+        if(!hasAdmin) docs.unshift({id:'admin',nombre:'Administrador Maestro',username:'admin',rol:'Master',permisos:{},activo:true});
+        setUsuarios(docs);
+      });
+      return()=>u();
+    },[]);
+
+    const save=async()=>{
+      if(!form.nombre||!form.username||(!editId&&!form.password)) return alert('Nombre, usuario y contraseña son requeridos');
+      setBusy(true);
+      try {
+        const id=editId||gid();
+        await setDoc(dref('system_usuarios',id),{id,...form,activo:true,ts:serverTimestamp()},{merge:true});
+        setModal(false); setForm(initF()); setEditId(null);
+      } finally { setBusy(false); }
+    };
+
+    const togglePermiso=(mod)=>setForm({...form,permisos:{...form.permisos,[mod]:!form.permisos[mod]}});
+
+    const abrirEdicion=(u)=>{
+      setEditId(u.id);
+      setForm({nombre:u.nombre,username:u.username,password:'',rol:u.rol||'Usuario',permisos:u.permisos||{}});
+      setModal(true);
+    };
+
+    return (
+      <div className="space-y-5">
+        <Card title="Directorio de Usuarios" subtitle={`${usuarios.length} usuario(s) registrado(s)`}
+          action={<Bg onClick={()=>{setForm(initF());setEditId(null);setModal(true);}} sm><UserPlus size={12}/> Nuevo Usuario</Bg>}>
+          <table className="w-full"><thead><tr><Th>Nombre</Th><Th>Usuario (ID)</Th><Th>Rol</Th><Th>Permisos</Th><Th>Estado</Th><Th></Th></tr></thead>
+            <tbody>
+              {usuarios.map(u=><tr key={u.id} className="hover:bg-slate-50">
+                <Td className="font-black text-slate-900 uppercase">{u.nombre}</Td>
+                <Td mono className="text-slate-600">{u.username}</Td>
+                <Td><Badge v={u.rol==='Master'?'red':u.rol==='Admin'?'gold':'blue'}>{u.rol||'Usuario'}</Badge></Td>
+                <Td className="text-[10px] text-slate-400">{u.rol==='Master'?'Acceso total':Object.keys(u.permisos||{}).filter(k=>u.permisos[k]).length+' módulo(s)'}</Td>
+                <Td><Badge v={u.activo!==false?'green':'gray'}>{u.activo!==false?'Activo':'Inactivo'}</Badge></Td>
+                <Td>
+                  <div className="flex gap-1">
+                    {u.username!=='admin'&&<><button onClick={()=>abrirEdicion(u)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"><Settings size={12}/></button>
+                    <button onClick={async()=>{if(!window.confirm(`¿Eliminar usuario ${u.nombre}?`))return;await deleteDoc(dref('system_usuarios',u.id));}} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></>}
+                  </div>
+                </Td>
+              </tr>)}
+            </tbody>
+          </table>
+        </Card>
+
+        <Modal open={modal} onClose={()=>{setModal(false);setForm(initF());setEditId(null);}} title={editId?'Editar Usuario':'Nuevo Usuario'} wide
+          footer={<><Bo onClick={()=>{setModal(false);setForm(initF());setEditId(null);}}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar Usuario'}</Bg></>}>
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <FG label="Nombre Completo" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="JUAN PÉREZ"/></FG>
+              <FG label="Usuario (ID)"><input className={inp} value={form.username} onChange={e=>setForm({...form,username:e.target.value.toLowerCase().replace(/\s/g,'')})} placeholder="jperez"/></FG>
+              <FG label={editId?'Nueva Contraseña (dejar vacío = no cambiar)':'Contraseña *'}>
+                <input type="password" className={inp} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="••••••••"/>
+              </FG>
+              <FG label="Rol / Cargo"><select className={sel} value={form.rol} onChange={e=>setForm({...form,rol:e.target.value})}>
+                <option value="Master">Master — Acceso Total</option>
+                <option value="Admin">Admin — Sin restricciones</option>
+                <option value="Contador">Contador</option>
+                <option value="Tesorero">Tesorero</option>
+                <option value="Usuario">Usuario — Permisos personalizados</option>
+              </select></FG>
+            </div>
+            {form.rol==='Usuario'&&(
+              <div>
+                <p className="text-[10px] font-black uppercase text-slate-600 mb-3 tracking-wide">Permisos de Módulos</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {MODULOS.map(m=>(
+                    <label key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.permisos[m.id]?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-300'}`}>
+                      <input type="checkbox" checked={!!form.permisos[m.id]} onChange={()=>togglePermiso(m.id)} className="accent-blue-500 w-4 h-4"/>
+                      <span className="text-[11px] font-semibold text-slate-700">{m.icon} {m.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
+  // ── Respaldo & Formateo ──────────────────────────────────────────────
   const RespaldoConfig = () => {
     const [busy,setBusy]=useState('');
-    const COLS=[
-      {col:'banco_movimientos',label:'Movimientos Bancarios'},{col:'banco_cuentas',label:'Cuentas Bancarias'},
-      {col:'banco_tasas',label:'Tasas de Cambio'},{col:'banco_conciliaciones',label:'Conciliaciones'},
-      {col:'facturacion_clientes',label:'Clientes'},{col:'facturacion_facturas',label:'Facturas'},
-      {col:'compras_proveedores',label:'Proveedores'},{col:'cont_cuentas',label:'Plan de Cuentas'},
-      {col:'cont_asientos',label:'Libro Diario'},{col:'inv_productos',label:'Productos Inventario'},
+    const [frecuencia,setFrecuencia]=useState('manual');
+    const [lastBackup,setLastBackup]=useState(settings?.lastBackup||null);
+    const [carpeta,setCarpeta]=useState('C:\\Respaldos\\GYB_ERP');
+    const COLS_ADMIN=[
+      {col:'banco_movimientos',label:'Movimientos Bancarios'},
+      {col:'banco_cuentas',label:'Cuentas Bancarias'},
+      {col:'banco_tasas',label:'Tasas de Cambio'},
+      {col:'banco_conciliaciones',label:'Conciliaciones'},
+      {col:'facturacion_clientes',label:'Clientes, OPs y Facturas'},
+      {col:'facturacion_facturas',label:'Facturas'},
+      {col:'compras_proveedores',label:'Proveedores'},
+      {col:'inv_productos',label:'Inventario (Kardex)'},
+      {col:'inv_movimientos',label:'Movimientos Inventario'},
     ];
-    const limpiarSilente=(colName)=>new Promise(res=>{const u=onSnapshot(col(colName),async s=>{u();const batch=writeBatch(db);s.docs.forEach(d=>batch.delete(d.ref));await batch.commit();res();});});
-    const hacerBackup=async()=>{
-      setBusy('backup');
+    const COLS_CONT=[
+      {col:'cont_cuentas',label:'Plan de Cuentas'},
+      {col:'cont_asientos',label:'Asientos Contables y Libro Diario'},
+      {col:'cont_periodos',label:'Períodos Contables'},
+      {col:'activos_fijos',label:'Activos Fijos y Depreciación'},
+    ];
+    const hacerBackup=async(cols,tipo)=>{
+      setBusy(tipo);
       try {
-        const bk={version:'1.0',fecha:today(),ts:Date.now(),data:{}};
-        for(const c of COLS){ await new Promise(res=>{const u=onSnapshot(col(c.col),s=>{bk.data[c.col]=s.docs.map(d=>d.data());u();res();});}); }
+        const bk={version:'1.0',tipo,fecha:today(),ts:Date.now(),data:{}};
+        for(const c of cols){ await new Promise(res=>{const u=onSnapshot(col(c.col),s=>{bk.data[c.col]=s.docs.map(d=>d.data());u();res();});}); }
         const blob=new Blob([JSON.stringify(bk,null,2)],{type:'application/json'});
-        const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`backup_supply_erp_${today()}.json`;a.click();URL.revokeObjectURL(url);
-        alert('✅ Backup descargado.');
+        const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`backup_${tipo}_${today()}.json`;a.click();URL.revokeObjectURL(url);
+        await setDoc(dref('settings','general'),{lastBackup:today(),ts:serverTimestamp()},{merge:true});
+        setLastBackup(today());
+        alert(`✅ Backup de ${tipo} descargado.\n⚠️ Mueve el archivo a: ${carpeta}`);
       } finally { setBusy(''); }
     };
-    const limpiar=async(colName,label)=>{
-      if(!window.confirm(`¿ELIMINAR TODOS los registros de "${label}"?\nEsta acción es IRREVERSIBLE.`)) return;
-      if(prompt('Confirme escribiendo: ELIMINAR')?.toUpperCase()!=='ELIMINAR') return alert('Cancelado.');
-      setBusy(colName); try { await limpiarSilente(colName); alert(`✅ "${label}" limpiado.`); } finally { setBusy(''); }
+    const importarBackup=async(e)=>{
+      const file=e.target.files[0];if(!file)return;
+      const pwd=prompt('Clave de administrador:');
+      if(pwd!=='1234'&&pwd?.toLowerCase()!=='admin'){alert('Clave incorrecta.');e.target.value='';return;}
+      setBusy('import');
+      try {
+        const json=JSON.parse(await file.text());const batch=writeBatch(db);
+        Object.entries(json.data||{}).forEach(([cn,docs])=>docs.forEach(d=>{if(d.id)batch.set(dref(cn,d.id),d);}));
+        await batch.commit();
+        alert(`✅ Respaldo importado: ${Object.keys(json.data||{}).length} colecciones restauradas.`);
+      } catch(err){ alert('Error: '+err.message); } finally { setBusy(''); e.target.value=''; }
     };
-    const formatear=async()=>{
-      if(!window.confirm('⚠️ FORMATEAR SISTEMA COMPLETO\n\nSe eliminarán TODOS los datos. ¿Seguro?')) return;
-      if(prompt('Escriba: FORMATEAR SISTEMA COMPLETO')!=='FORMATEAR SISTEMA COMPLETO') return alert('Texto incorrecto. Cancelado.');
-      setBusy('all');
-      try { for(const c of COLS) await limpiarSilente(c.col); alert('✅ Sistema formateado completamente.'); } finally { setBusy(''); }
+    const limpiarSilente=(cn)=>new Promise(res=>{const u=onSnapshot(col(cn),async s=>{u();const b=writeBatch(db);s.docs.forEach(d=>b.delete(d.ref));await b.commit();res();});});
+    const reiniciar=async(tipo)=>{
+      const cols=tipo==='admin'?COLS_ADMIN:COLS_CONT;
+      if(!window.confirm(`⚠️ REINICIAR SISTEMA (${tipo.toUpperCase()})\nEsto elimina TODOS los datos del área ${tipo}. ¿Seguro?`))return;
+      if(prompt('Escriba: REINICIAR')!=='REINICIAR')return alert('Cancelado.');
+      setBusy('reset_'+tipo);
+      try{ for(const c of cols)await limpiarSilente(c.col); alert(`✅ Sistema ${tipo} reiniciado.`); }
+      finally{ setBusy(''); }
     };
     return (
       <div className="space-y-5">
-        <Card title="Respaldo de Datos">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3 mb-4">
-            <Save size={16} className="text-blue-600 flex-shrink-0 mt-0.5"/>
-            <div><p className="font-black text-blue-800 text-sm">Exportar Backup Completo</p><p className="text-[11px] text-blue-600 mt-0.5">Descarga un JSON con todos los datos del sistema: clientes, facturas, bancos, contabilidad, inventario.</p></div>
+        <Card title="Respaldar Sistema" subtitle="Datos JSON + instrucciones App.jsx">
+          <div className="space-y-4">
+            <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-1">
+              {[...COLS_ADMIN,...COLS_CONT].map(c=><div key={c.col} className="flex items-center gap-2"><CheckCircle size={11} className="text-emerald-500 flex-shrink-0"/><p className="text-[10px] text-slate-600">{c.label}</p></div>)}
+            </div>
+            <FG label="📁 CARPETA DE RESPALDO (🔒 Admin)">
+              <div className="flex gap-2">
+                <input className={inp} value={carpeta} onChange={e=>setCarpeta(e.target.value)} placeholder="C:\Respaldos\GYB_ERP"/>
+                <button className="flex-shrink-0 px-3 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-orange-600">Cambiar</button>
+              </div>
+              <p className="text-[9px] text-amber-600 mt-1">⚠ El navegador descarga a tu carpeta de Descargas. Mueve el archivo a la ruta configurada.</p>
+            </FG>
+            <div>
+              <p className="text-[9px] font-black uppercase text-slate-600 mb-2 tracking-widest">⏰ FRECUENCIA DE RECORDATORIO</p>
+              <div className="flex gap-2">{['manual','diario','semanal','mensual'].map(f=>(
+                <button key={f} onClick={()=>setFrecuencia(f)} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${frecuencia===f?'bg-emerald-600 text-white':'bg-white border border-slate-200 text-slate-600'}`}>{f}</button>
+              ))}</div>
+            </div>
+            {lastBackup&&<p className="text-[10px] text-emerald-600 font-black">✓ Último respaldo: {lastBackup}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={()=>hacerBackup(COLS_ADMIN,'Administracion')} disabled={!!busy} className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase hover:bg-emerald-700 disabled:opacity-50">{busy==='Administracion'?<><RefreshCw size={12} className="animate-spin"/> Generando...</>:<><Download size={12}/> Respaldar Administración</>}</button>
+              <button onClick={()=>hacerBackup(COLS_CONT,'Contabilidad')} disabled={!!busy} className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase hover:bg-blue-700 disabled:opacity-50">{busy==='Contabilidad'?<><RefreshCw size={12} className="animate-spin"/> Generando...</>:<><Download size={12}/> Respaldar Contabilidad</>}</button>
+            </div>
           </div>
-          <Bg onClick={hacerBackup} disabled={busy==='backup'}>{busy==='backup'?<><RefreshCw size={13} className="animate-spin"/> Generando...</>:<><Save size={13}/> Descargar Backup JSON</>}</Bg>
         </Card>
-        <Card title="Limpiar por Módulo" subtitle="Elimina registros de una colección específica">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2"><AlertTriangle size={14} className="text-amber-600"/><p className="text-[10px] font-black text-amber-700 uppercase">Irreversible. Haga backup primero.</p></div>
+        <Card title="📥 Importar Respaldo JSON" subtitle="Requiere clave admin">
+          <label className="flex items-center justify-center gap-3 px-6 py-4 bg-blue-50 border-2 border-dashed border-blue-300 rounded-xl cursor-pointer hover:bg-blue-100 transition-colors">
+            <Download size={16} className="text-blue-600"/>
+            <span className="font-black text-sm text-blue-700 uppercase">{busy==='import'?'Importando...':'Seleccionar Archivo JSON'}</span>
+            <input type="file" accept=".json" className="sr-only" onChange={importarBackup}/>
+          </label>
+        </Card>
+        <Card title="Reiniciar Sistema" subtitle="Borrar todos los datos operativos">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 grid grid-cols-2 gap-1">
+            {[...COLS_ADMIN,...COLS_CONT].map(c=><p key={c.col} className="text-[10px] text-red-600">• Se borrará: {c.label}</p>)}
+          </div>
           <div className="grid grid-cols-2 gap-3">
-            {COLS.map(c=>(
-              <button key={c.col} onClick={()=>limpiar(c.col,c.label)} disabled={!!busy}
-                className="flex items-center justify-between px-4 py-3 bg-white border-2 border-slate-200 rounded-xl hover:border-red-300 hover:bg-red-50 text-left transition-all group">
-                <span className="text-xs font-semibold text-slate-700 group-hover:text-red-700">{c.label}</span>
-                {busy===c.col?<RefreshCw size={12} className="animate-spin text-red-500"/>:<Trash2 size={12} className="text-slate-400 group-hover:text-red-500"/>}
-              </button>
-            ))}
+            <button onClick={()=>reiniciar('admin')} disabled={!!busy} className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 text-white rounded-xl font-black text-[10px] uppercase hover:bg-orange-700 disabled:opacity-50">{busy==='reset_admin'?<><RefreshCw size={12} className="animate-spin"/> Reiniciando...</>:<><Trash2 size={12}/> Reiniciar Administración</>}</button>
+            <button onClick={()=>reiniciar('contabilidad')} disabled={!!busy} className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase hover:bg-red-700 disabled:opacity-50">{busy==='reset_contabilidad'?<><RefreshCw size={12} className="animate-spin"/> Reiniciando...</>:<><Trash2 size={12}/> Reiniciar Contabilidad</>}</button>
           </div>
         </Card>
-        <div className="rounded-2xl overflow-hidden border-2 border-red-200">
-          <div className="px-5 py-3 bg-red-600 flex items-center gap-2"><AlertTriangle size={16} className="text-red-200"/><p className="font-black text-white text-sm uppercase">Zona de Peligro — Formateo Total</p></div>
-          <div className="p-5 bg-red-50 space-y-3">
-            <p className="text-[11px] text-red-700">Elimina TODOS los datos del sistema. El ERP quedará vacío como recién instalado.</p>
-            <button onClick={formatear} disabled={!!busy} className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl font-black text-xs uppercase hover:bg-red-700 transition-colors disabled:opacity-50">
-              {busy==='all'?<><RefreshCw size={13} className="animate-spin"/> Formateando...</>:<><Trash2 size={13}/> FORMATEAR SISTEMA COMPLETO</>}
-            </button>
-          </div>
-        </div>
       </div>
     );
   };
@@ -5010,8 +5197,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
     { group: 'General',    color:'#f97316', items: [{ id: 'empresa',  label: 'Datos de Empresa',      icon: Building2 },
                                                       { id: 'sistema',  label: 'Config. del Sistema',   icon: Settings }] },
     { group: 'Seguridad',  color:'#ef4444', items: [{ id: 'usuarios', label: 'Usuarios & Roles',       icon: Users }] },
-    { group: 'Financiero', color:'#3b82f6', items: [{ id: 'tasas',    label: 'Tasa de Cambio',         icon: Globe },
-                                                      { id: 'cuentas', label: 'Cuentas Bancarias',      icon: Building2 }] },
+    { group: 'Finanzas',   color:'#3b82f6', items: [{ id: 'tasas',    label: 'Tasa de Cambio',         icon: Globe }] },
     { group: 'Sistema',    color:'#dc2626', items: [{ id: 'respaldo', label: 'Respaldo & Formateo',    icon: Save }] },
   ];
   const curNav = navGroups.flatMap(g => g.items).find(n => n.id === sec);
@@ -5025,20 +5211,7 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
       {sec === 'empresa' && <EmpresaConfig />}
       {sec === 'sistema' && <SistemaConfig />}
       {sec === 'tasas'    && <TasasConfig />}
-      {sec === 'cuentas'  && <CuentasBancariasConfig />}
-      {sec === 'usuarios' && (
-        <Card title="Directorio de Usuarios" subtitle="Gestión de accesos al sistema" action={<Bg sm><UserPlus size={13} /> Nuevo Usuario</Bg>}>
-          <table className="w-full"><thead><tr><Th>Nombre</Th><Th>Usuario</Th><Th>Rol</Th><Th>Estado</Th><Th></Th></tr></thead>
-            <tbody>{(systemUsers || []).map(u => <tr key={u.id} className="hover:bg-slate-50">
-              <Td className="font-black text-slate-900 uppercase">{u.name}</Td>
-              <Td mono className="text-slate-500">{u.username || 'admin'}</Td>
-              <Td><Badge v={u.role === 'Master' ? 'red' : 'blue'}>{u.role}</Badge></Td>
-              <Td><Badge v="green">Activo</Badge></Td>
-              <Td><button className="p-1.5 text-slate-400 hover:text-orange-500 rounded-lg transition-colors"><Settings size={13} /></button></Td>
-            </tr>)}</tbody>
-          </table>
-        </Card>
-      )}
+      {sec === 'usuarios' && <UsuariosConfig />}
       {sec === 'respaldo' && <RespaldoConfig />}
     </SidebarLayout>
   );
