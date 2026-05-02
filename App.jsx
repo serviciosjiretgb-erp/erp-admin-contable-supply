@@ -581,7 +581,7 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
                 <tbody>{facturas.slice(0, 6).map(f => <tr key={f.id} className="hover:bg-slate-50">
                   <Td mono className="font-black text-orange-500">{f.numero}</Td>
                   <Td className="max-w-[120px] truncate">{f.clienteNombre}</Td>
-                  <Td right mono>${fmt(f.total)}</Td>
+                  <Td right mono>{'$'+fmt(f.total)}</Td>
                   <Td><Badge v={f.estado === 'Pagada' ? 'green' : f.fechaVencimiento < today() ? 'red' : 'gold'}>{f.estado || 'Pendiente'}</Badge></Td>
                 </tr>)}</tbody>
               </table>}
@@ -860,8 +860,8 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
                   <Td>{dd(f.fechaEmision)}</Td>
                   <Td className="uppercase font-semibold max-w-[140px] truncate">{f.clienteNombre}</Td>
                   <Td className={f.fechaVencimiento < today() && f.estado === 'Pendiente' ? 'text-red-500 font-bold' : ''}>{dd(f.fechaVencimiento)}</Td>
-                  <Td right mono className="font-black">${fmt(f.total)}</Td>
-                  <Td right mono className="font-black text-orange-600">${fmt(f.saldoUSD)}</Td>
+                  <Td right mono className="font-black">{'$'+fmt(f.total)}</Td>
+                  <Td right mono className="font-black text-orange-600">{'$'+fmt(f.saldoUSD)}</Td>
                   <Td><Badge v={f.estado === 'Pagada' ? 'green' : f.fechaVencimiento < today() ? 'red' : 'gold'}>{f.estado || 'Pendiente'}</Badge></Td>
                 </tr>)}
               </tbody>
@@ -884,14 +884,14 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
                 <input type="text" className={`${inp} flex-1 bg-white`} placeholder="Descripción del producto/servicio" value={item.desc} onChange={e => { const n = [...items]; n[i].desc = e.target.value; setItems(n); }} />
                 <input type="number" min="1" className={`${inp} w-16 text-center bg-white`} value={item.cant} onChange={e => { const n = [...items]; n[i].cant = e.target.value; setItems(n); }} />
                 <input type="number" step="0.01" className={`${inp} w-28 text-right bg-white`} placeholder="P. Unit." value={item.precio} onChange={e => { const n = [...items]; n[i].precio = e.target.value; setItems(n); }} />
-                <div className="w-24 text-right font-mono font-black text-xs text-slate-600">${fmt(item.cant * item.precio)}</div>
+                <div className="w-24 text-right font-mono font-black text-xs text-slate-600">{'$'+fmt(item.cant * item.precio)}</div>
                 <button onClick={() => { const n = [...items]; n.splice(i, 1); setItems(n); }} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={13} /></button>
               </div>
             ))}
           </div>
           <div className="rounded-2xl p-5 flex justify-end gap-10" style={{ background: DARK }}>
             <div className="text-right space-y-1.5 text-xs text-slate-400"><p>SUBTOTAL</p><p>IVA (16%)</p><p className="text-sm font-black text-white mt-2 pt-1 border-t border-white/10">TOTAL</p></div>
-            <div className="text-right space-y-1.5 font-mono font-black text-xs text-white"><p>${fmt(subtotal)}</p><p>${fmt(iva)}</p><p className="text-xl mt-1 pt-1 border-t border-white/10" style={{ color: ORANGE }}>${fmt(total)}</p></div>
+            <div className="text-right space-y-1.5 font-mono font-black text-xs text-white"><p>{'$'+fmt(subtotal)}</p><p>{'$'+fmt(iva)}</p><p className="text-xl mt-1 pt-1 border-t border-white/10" style={{ color: ORANGE }}>{'$'+fmt(total)}</p></div>
           </div>
         </Modal>
       </div>
@@ -945,8 +945,8 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
                     {dd(f.fechaVencimiento)}{f.fechaVencimiento < today() && <span className="ml-1.5 text-[8px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase font-black">Vencida</span>}
                   </Td>
                   <Td right mono>{f.tasaRef}</Td>
-                  <Td right mono className="font-black">${fmt(f.total)}</Td>
-                  <Td right mono className="font-black text-orange-500 text-sm">${fmt(f.saldoUSD)}</Td>
+                  <Td right mono className="font-black">{'$'+fmt(f.total)}</Td>
+                  <Td right mono className="font-black text-orange-500 text-sm">{'$'+fmt(f.saldoUSD)}</Td>
                   <Td right>
                     <button onClick={() => { setFActiva(f); setFormPago({ fecha: today(), monto: String(f.saldoUSD), metodo: 'Transferencia Bs', ref: '' }); setModalPago(true); }}
                       className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase text-white transition-colors hover:opacity-90" style={{ background: ORANGE }}>Abonar</button>
@@ -961,7 +961,7 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
           {fActiva && <div className="space-y-5">
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex justify-between items-center">
               <div><p className="text-[10px] text-slate-400 font-black uppercase mb-0.5">Cliente</p><p className="font-black text-slate-900">{fActiva.clienteNombre}</p></div>
-              <div className="text-right"><p className="text-[10px] text-slate-400 font-black uppercase mb-0.5">Saldo Pendiente</p><p className="font-mono font-black text-2xl text-orange-500">${fmt(fActiva.saldoUSD)}</p></div>
+              <div className="text-right"><p className="text-[10px] text-slate-400 font-black uppercase mb-0.5">Saldo Pendiente</p><p className="font-mono font-black text-2xl text-orange-500">{'$'+fmt(fActiva.saldoUSD)}</p></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <FG label="Fecha de Cobro"><input type="date" className={inp} value={formPago.fecha} onChange={e => setFormPago({ ...formPago, fecha: e.target.value })} /></FG>
@@ -976,7 +976,7 @@ function FacturacionApp({ fbUser, tasasList, onBack }) {
                 <div className="border-l border-blue-200 pl-3"><p className="text-[9px] font-black text-blue-600 uppercase mb-1">Dif. Cambiario</p><p className={`font-mono font-black ${difCambiario >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{difCambiario >= 0 ? '+' : ''}Bs. {fmt(difCambiario)}</p></div>
               </div>
             )}
-            {aplicaIGTF && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center"><div><p className="text-[10px] font-black text-amber-700 uppercase flex items-center gap-1.5"><AlertTriangle size={13} /> Percepción IGTF (3%)</p><p className="text-[9px] text-slate-500 mt-0.5">Aplica por pago en divisas</p></div><p className="font-mono font-black text-xl text-amber-600">${fmt(montoIGTF)}</p></div>}
+            {aplicaIGTF && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center"><div><p className="text-[10px] font-black text-amber-700 uppercase flex items-center gap-1.5"><AlertTriangle size={13} /> Percepción IGTF (3%)</p><p className="text-[9px] text-slate-500 mt-0.5">Aplica por pago en divisas</p></div><p className="font-mono font-black text-xl text-amber-600">{'$'+fmt(montoIGTF)}</p></div>}
           </div>}
         </Modal>
       </div>
@@ -1071,7 +1071,7 @@ function InventarioApp({ fbUser, onBack }) {
                 <tbody>{[...productos].sort((a, b) => (Number(b.stockActual || 0) * Number(b.precioCosto || 0)) - (Number(a.stockActual || 0) * Number(a.precioCosto || 0))).slice(0, 6).map(p => <tr key={p.id} className="hover:bg-slate-50">
                   <Td className="max-w-[150px] truncate font-semibold">{p.nombre}</Td>
                   <Td right mono>{p.stockActual} {p.unidad}</Td>
-                  <Td right mono className="font-black">${fmt(Number(p.stockActual || 0) * Number(p.precioCosto || 0))}</Td>
+                  <Td right mono className="font-black">{'$'+fmt(Number(p.stockActual || 0) * Number(p.precioCosto || 0))}</Td>
                 </tr>)}</tbody>
               </table>}
           </Card>
@@ -1145,8 +1145,8 @@ function InventarioApp({ fbUser, onBack }) {
                     <Td className="font-semibold max-w-[160px] truncate">{p.nombre}</Td>
                     <Td><span className="text-[10px] text-slate-500 uppercase font-semibold">{p.categoriaNombre || '—'}</span></Td>
                     <Td><span className="text-[10px] font-black uppercase">{p.unidad}</span></Td>
-                    <Td right mono>${fmt(p.precioCosto)}</Td>
-                    <Td right mono className="font-black">${fmt(p.precioVenta)}</Td>
+                    <Td right mono>{'$'+fmt(p.precioCosto)}</Td>
+                    <Td right mono className="font-black">{'$'+fmt(p.precioVenta)}</Td>
                     <Td right mono className={`font-black ${bajo ? 'text-red-500' : 'text-slate-900'}`}>{p.stockActual}</Td>
                     <Td><Badge v={bajo ? 'red' : 'green'}>{bajo ? 'Stock Bajo' : 'Normal'}</Badge></Td>
                     <Td><button onClick={() => deleteDoc(dref('inv_productos', p.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={12} /></button></Td>
@@ -1356,7 +1356,7 @@ function BancoApp({ fbUser, onBack }) {
               <div key={m.id} className="flex items-center gap-3 py-2 hover:bg-slate-50 rounded-lg px-2">
                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${m.tipo==='Ingreso'?'bg-emerald-100':'bg-red-100'}`}>{m.tipo==='Ingreso'?<ArrowUpCircle size={12} className="text-emerald-600"/>:<ArrowDownCircle size={12} className="text-red-500"/>}</div>
                 <div className="flex-1 min-w-0"><p className="text-[10px] font-semibold text-slate-800 truncate">{m.concepto}</p><p className="text-[9px] text-slate-400">{m.cuentaNombre} · {dd(m.fecha)}</p></div>
-                <div className="text-right flex-shrink-0"><p className={`font-mono font-black text-[11px] ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</p><p className="text-[9px] text-slate-400">Bs.{fmtC(m.montoBs)}</p></div>
+                <div className="text-right flex-shrink-0"><p className={`font-mono font-black text-[11px] ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{'$'+fmt(m.montoUSD)}</p><p className="text-[9px] text-slate-400">Bs.{fmtC(m.montoBs)}</p></div>
               </div>
             ))}</div>}
         </Card>
@@ -1611,8 +1611,8 @@ function BancoApp({ fbUser, onBack }) {
           <p className="text-[9px] font-black uppercase text-slate-400">TOTALES</p>
           <p className="text-right font-mono font-black text-[10px] text-emerald-400">Bs.{fmt(dBs)}</p>
           <p className="text-right font-mono font-black text-[10px] text-red-400">Bs.{fmt(hBs)}</p>
-          <p className="text-right font-mono text-[10px] text-emerald-400">${fmt(dUSD)}</p>
-          <p className="text-right font-mono text-[10px] text-red-400">${fmt(hUSD)}</p>
+          <p className="text-right font-mono text-[10px] text-emerald-400">{'$'+fmt(dUSD)}</p>
+          <p className="text-right font-mono text-[10px] text-red-400">{'$'+fmt(hUSD)}</p>
           <div className="flex justify-center">{ok?<CheckCircle size={13} className="text-emerald-400"/>:<X size={13} className="text-amber-400"/>}</div>
         </div>
         {!ok&&mNat>0&&<p className="text-[9px] text-amber-600 font-black">Diferencia: Bs.{fmt(diff)}</p>}
@@ -2104,7 +2104,7 @@ function BancoApp({ fbUser, onBack }) {
                     <FG label="Tasa Bs/$"><input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/></FG>
                     <div className="flex flex-col justify-end pb-0.5">
                       <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
-                        <p className="text-emerald-400 font-mono font-black text-lg leading-none">${fmt(montoUSD)}</p>
+                        <p className="text-emerald-400 font-mono font-black text-lg leading-none">{'$'+fmt(montoUSD)}</p>
                         <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
                       </div>
                     </div>
@@ -2177,7 +2177,7 @@ function BancoApp({ fbUser, onBack }) {
                   <div className="text-right">
                     {movDetalle.moneda==='BS'
                       ? <><p className="font-mono font-black text-2xl text-emerald-400">Bs. {fmt(movDetalle.montoBs)}</p><p className="text-slate-400 text-xs">≈ ${fmt(movDetalle.montoUSD)}</p></>
-                      : <><p className="font-mono font-black text-2xl text-emerald-400">${fmt(movDetalle.montoUSD)}</p><p className="text-slate-400 text-xs">≈ Bs. {fmt(movDetalle.montoBs)}</p></>
+                      : <><p className="font-mono font-black text-2xl text-emerald-400">{'$'+fmt(movDetalle.montoUSD)}</p><p className="text-slate-400 text-xs">≈ Bs. {fmt(movDetalle.montoBs)}</p></>
                     }
                     <p className="text-slate-500 text-[10px]">Tasa: {movDetalle.tasa}</p>
                   </div>
@@ -2356,7 +2356,7 @@ function BancoApp({ fbUser, onBack }) {
                 <div className="flex flex-col justify-end pb-0.5">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Equivalencia</p>
                   <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
-                    <p className="text-emerald-400 font-mono font-black text-lg leading-none">${fmt(montoUSD)}</p>
+                    <p className="text-emerald-400 font-mono font-black text-lg leading-none">{'$'+fmt(montoUSD)}</p>
                     <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
                   </div>
                 </div>
@@ -2518,7 +2518,7 @@ function BancoApp({ fbUser, onBack }) {
                         <label key={f.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.facturaId===f.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-100'}`}>
                           <input type="radio" name="fid" value={f.id} checked={form.facturaId===f.id} onChange={()=>setForm({...form,facturaId:f.id})} className="accent-blue-500"/>
                           <div className="flex-1"><p className="font-black text-xs text-slate-900">{f.numero} · {dd(f.fechaVencimiento)}</p></div>
-                          <p className="font-mono font-black text-orange-500">${fmt(f.saldoUSD)}</p>
+                          <p className="font-mono font-black text-orange-500">{'$'+fmt(f.saldoUSD)}</p>
                           {f.fechaVencimiento<today()&&<Badge v="red">Vencida</Badge>}
                         </label>
                       ))
@@ -2584,7 +2584,7 @@ function BancoApp({ fbUser, onBack }) {
                   <Td className="text-[10px] max-w-[100px] truncate">{m.terceroNombre||'—'}</Td>
                   <Td mono className="text-slate-400 text-[10px]">{m.referencia||'—'}</Td>
                   <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>Bs.{fmt(m.montoBs)}</Td>
-                  <Td right mono className={`text-xs ${m.tipo==='Ingreso'?'text-emerald-500':'text-red-400'}`}>${fmt(m.montoUSD)}</Td>
+                  <Td right mono className={`text-xs ${m.tipo==='Ingreso'?'text-emerald-500':'text-red-400'}`}>{'$'+fmt(m.montoUSD)}</Td>
                   <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
                 </tr>)}
               </tbody>
@@ -2620,7 +2620,7 @@ function BancoApp({ fbUser, onBack }) {
               <div className="flex flex-col justify-end pb-0.5">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5">Equivalencia</p>
                 <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
-                  <p className="text-emerald-400 font-mono font-black text-base">${fmt(montoUSD)}</p>
+                  <p className="text-emerald-400 font-mono font-black text-base">{'$'+fmt(montoUSD)}</p>
                   <p className="text-slate-400 text-[10px]">Bs.{fmt(montoBs)}</p>
                 </div>
               </div>
@@ -2962,7 +2962,7 @@ function BancoApp({ fbUser, onBack }) {
                 <label key={m.id} className={`flex items-center gap-4 py-3 px-2 cursor-pointer rounded-xl hover:bg-slate-50 ${marcados[m.id]?'bg-emerald-50/60':''}`}>
                   <input type="checkbox" checked={!!marcados[m.id]} onChange={()=>toggle(m.id)} className="w-4 h-4 accent-emerald-500 flex-shrink-0"/>
                   <div className="flex-1 min-w-0"><div className="flex items-center gap-2 mb-0.5"><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':'blue'}>{m.tipo}</Badge><span className="text-[10px] text-slate-400">{dd(m.fecha)}</span></div><p className="text-xs font-semibold text-slate-700 truncate">{m.concepto}</p></div>
-                  <div className="text-right flex-shrink-0"><p className={`font-mono font-black text-sm ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</p><p className="text-[10px] text-slate-400">Bs.{fmt(m.montoBs)}</p></div>
+                  <div className="text-right flex-shrink-0"><p className={`font-mono font-black text-sm ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{'$'+fmt(m.montoUSD)}</p><p className="text-[10px] text-slate-400">Bs.{fmt(m.montoBs)}</p></div>
                   {marcados[m.id]&&<CheckCircle size={16} className="text-emerald-500 flex-shrink-0"/>}
                 </label>
               ))}</div>}
@@ -2985,15 +2985,15 @@ function BancoApp({ fbUser, onBack }) {
             <div className="px-5 py-4" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}><p className="font-black text-white text-sm uppercase tracking-widest">Panel de Cuadre</p></div>
             <div className="p-5 space-y-3">
               {[{l:'Saldo en Libros (Sistema)',v:saldoLibros,c:'text-slate-900',b:true},{l:'(+) Cargos NC no contabilizados',v:cargos,c:'text-red-600'},{l:'(−) Abonos NC no contabilizados',v:abonos,c:'text-emerald-600'},{l:'(+) Egresos en Tránsito',v:egTrans,c:'text-red-500'},{l:'(−) Ingresos en Tránsito',v:ingTrans,c:'text-emerald-500'}].map(({l,v,c,b})=>(
-                <div key={l} className="flex items-center justify-between"><p className={`text-[10px] ${b?'font-black text-slate-700':'font-medium text-slate-500'} leading-tight max-w-[150px]`}>{l}</p><p className={`font-mono font-black text-sm ${c}`}>${fmt(v)}</p></div>
+                <div key={l} className="flex items-center justify-between"><p className={`text-[10px] ${b?'font-black text-slate-700':'font-medium text-slate-500'} leading-tight max-w-[150px]`}>{l}</p><p className={`font-mono font-black text-sm ${c}`}>{'$'+fmt(v)}</p></div>
               ))}
               <div className="border-t-2 border-slate-200 pt-3 space-y-1">
-                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-700 uppercase">= Saldo Conciliado</p><p className="font-mono font-black text-blue-600">${fmt(saldoConcil)}</p></div>
-                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-500 uppercase">Saldo según Banco</p><p className="font-mono font-black text-slate-900">${fmt(sbNum)}</p></div>
+                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-700 uppercase">= Saldo Conciliado</p><p className="font-mono font-black text-blue-600">{'$'+fmt(saldoConcil)}</p></div>
+                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-500 uppercase">Saldo según Banco</p><p className="font-mono font-black text-slate-900">{'$'+fmt(sbNum)}</p></div>
               </div>
               <div className={`rounded-xl p-4 text-center border-2 ${OK?'border-emerald-400 bg-emerald-50':'border-amber-400 bg-amber-50'}`}>
                 <p className="text-[9px] font-black uppercase tracking-widest mb-1 text-slate-500">Diferencia</p>
-                <p className={`font-mono font-black text-2xl ${OK?'text-emerald-600':'text-amber-600'}`}>${fmt(diff)}</p>
+                <p className={`font-mono font-black text-2xl ${OK?'text-emerald-600':'text-amber-600'}`}>{'$'+fmt(diff)}</p>
                 {OK?<p className="text-[10px] text-emerald-600 font-black mt-1">✓ Cuadrado</p>:<p className="text-[10px] text-amber-600 font-black mt-1">Pendiente</p>}
               </div>
               <Bg onClick={aprobar} disabled={!OK||busy}>{busy?<><RefreshCw size={13} className="animate-spin"/> Procesando...</>:<><CheckCircle size={13}/> Aprobar</>}</Bg>
@@ -3066,13 +3066,13 @@ function BancoApp({ fbUser, onBack }) {
               <Td className="max-w-[130px] truncate">{m.concepto}</Td>
               <Td className="text-[10px] max-w-[100px] truncate">{m.terceroNombre||'—'}</Td>
               <Td mono className="text-slate-400 text-[10px]">{m.referencia||'—'}</Td>
-              <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>${fmt(m.montoUSD)}</Td>
+              <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{'$'+fmt(m.montoUSD)}</Td>
               <Td right mono className="text-slate-400 text-xs">Bs.{fmt(m.montoBs)}</Td>
               <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
               <Td><Badge v={m.estatus==='Conciliado'?'green':'gray'}>{m.estatus||'Pendiente'}</Badge></Td>
             </tr>)}
           </tbody>
-          {filt.length>0&&<tfoot><tr style={{background:'#0f172a'}}><td colSpan={6} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400">TOTALES</td><td className="px-4 py-3 text-right font-mono font-black text-white">${fmt(iU-eU)}</td><td className="px-4 py-3 text-right font-mono text-slate-400 text-xs">Bs.{fmt(iB-eB)}</td><td colSpan={2}></td></tr></tfoot>}
+          {filt.length>0&&<tfoot><tr style={{background:'#0f172a'}}><td colSpan={6} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400">TOTALES</td><td className="px-4 py-3 text-right font-mono font-black text-white">{'$'+fmt(iU-eU)}</td><td className="px-4 py-3 text-right font-mono text-slate-400 text-xs">Bs.{fmt(iB-eB)}</td><td colSpan={2}></td></tr></tfoot>}
         </table></div>
       </Card>
     </div>);
@@ -3154,7 +3154,7 @@ function BancoApp({ fbUser, onBack }) {
               <table className="w-full"><thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead>
                 <tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{
                   const bs=c.moneda==='BS'; const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo); const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
-                  return <tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">${fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
+                  return <tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
                 })}</tbody>
               </table>
             </div>
@@ -3182,9 +3182,9 @@ function BancoApp({ fbUser, onBack }) {
             {rows.map((r,i)=><tr key={i} className="hover:bg-slate-50">
               <Td className="font-semibold uppercase max-w-[200px] truncate">{r.concepto}</Td>
               <Td right mono className="text-slate-500">{r.count}</Td>
-              <Td right mono className="text-emerald-600 font-black">${fmt(r.ingresos)}</Td>
-              <Td right mono className="text-red-500 font-black">${fmt(r.egresos)}</Td>
-              <Td right mono className={`font-black ${r.ingresos-r.egresos>=0?'text-emerald-700':'text-red-600'}`}>${fmt(r.ingresos-r.egresos)}</Td>
+              <Td right mono className="text-emerald-600 font-black">{'$'+fmt(r.ingresos)}</Td>
+              <Td right mono className="text-red-500 font-black">{'$'+fmt(r.egresos)}</Td>
+              <Td right mono className={`font-black ${r.ingresos-r.egresos>=0?'text-emerald-700':'text-red-600'}`}>{'$'+fmt(r.ingresos-r.egresos)}</Td>
             </tr>)}
           </tbody>
         </table>
@@ -3294,7 +3294,7 @@ function BancoApp({ fbUser, onBack }) {
                         </div>
                         <div className="text-right">
                           <p className="text-slate-400 text-[10px]">{dd(r.fecha)}</p>
-                          <p className="font-mono font-black text-emerald-400 text-sm">${fmt(dUSD)}</p>
+                          <p className="font-mono font-black text-emerald-400 text-sm">{'$'+fmt(dUSD)}</p>
                         </div>
                       </div>
                       {/* Descripción */}
@@ -3327,8 +3327,8 @@ function BancoApp({ fbUser, onBack }) {
                           <div className="col-span-4 text-[9px] font-black uppercase text-slate-500">TOTALES</div>
                           <div className="text-right font-mono font-black text-[11px] text-emerald-700">Bs.{fmt(dBs)}</div>
                           <div className="text-right font-mono font-black text-[11px] text-red-500">Bs.{fmt(hBs)}</div>
-                          <div className="text-right font-mono font-black text-[11px] text-emerald-700">${fmt(dUSD)}</div>
-                          <div className="text-right font-mono font-black text-[11px] text-red-500">${fmt(hUSD)}</div>
+                          <div className="text-right font-mono font-black text-[11px] text-emerald-700">{'$'+fmt(dUSD)}</div>
+                          <div className="text-right font-mono font-black text-[11px] text-red-500">{'$'+fmt(hUSD)}</div>
                         </div>
                       </div>
                     </div>
@@ -3664,14 +3664,14 @@ function ContabilidadApp({ fbUser, onBack }) {
           <td>${f.nroDoc}</td><td>${f.concepto}</td><td style="text-align:right">${f.tasa}</td>
           <td class="debe" style="text-align:right">${f.debeBs>0?fmt(f.debeBs):''}</td>
           <td class="haber" style="text-align:right">${f.haberBs>0?fmt(f.haberBs):''}</td>
-          <td class="saldo" style="text-align:right">${fmt(f.saldoBs)}</td>
+          <td class="saldo" style="text-align:right">{'$'+fmt(f.saldoBs)}</td>
           <td class="debe" style="text-align:right">${f.debeUSD>0?fmt(f.debeUSD):''}</td>
           <td class="haber" style="text-align:right">${f.haberUSD>0?fmt(f.haberUSD):''}</td>
-          <td class="saldo" style="text-align:right">${fmt(f.saldoUSD)}</td></tr>`;
+          <td class="saldo" style="text-align:right">{'$'+fmt(f.saldoUSD)}</td></tr>`;
       });
       html+=`<tr class="tot"><td colspan="9" style="text-align:right">TOTALES</td>
-        <td style="text-align:right">${fmt(totDebBs)}</td><td style="text-align:right">${fmt(totHabBs)}</td><td style="text-align:right">${fmt(filas[filas.length-1]?.saldoBs||0)}</td>
-        <td style="text-align:right">${fmt(totDebUSD)}</td><td style="text-align:right">${fmt(totHabUSD)}</td><td style="text-align:right">${fmt(filas[filas.length-1]?.saldoUSD||0)}</td></tr>
+        <td style="text-align:right">{'$'+fmt(totDebBs)}</td><td style="text-align:right">{'$'+fmt(totHabBs)}</td><td style="text-align:right">{'$'+fmt(filas[filas.length-1]?.saldoBs||0)}</td>
+        <td style="text-align:right">{'$'+fmt(totDebUSD)}</td><td style="text-align:right">{'$'+fmt(totHabUSD)}</td><td style="text-align:right">{'$'+fmt(filas[filas.length-1]?.saldoUSD||0)}</td></tr>
       </tbody></table></body></html>`;
       const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
       const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`comprobante_${modulo.toLowerCase()}_${desde.substring(0,7)}.xls`;a.click();URL.revokeObjectURL(url);
@@ -3883,7 +3883,7 @@ function AsientosApp({ fbUser, onBack }) {
       <p style="font-size:10px;color:#666">Generado: ${dd(today())} · ${filas.length} líneas</p>
       <table><thead><tr><th>Comprobante</th><th>Mes</th><th>Fecha</th><th>Código</th><th>Cuenta de movimiento</th><th>Tipo</th><th>Nro Documento</th><th>CONCEPTO</th><th>Tasa</th><th>Debe Bs</th><th>Haber Bs</th><th>Saldo Bs</th><th>Debe USD</th><th>Haber USD</th><th>Saldo USD</th></tr></thead><tbody>`;
       filas.forEach(f=>{
-        html+=`<tr class="${f.tipo}"><td style="font-family:Courier New;font-weight:bold">${f.comprobante}</td><td>${f.mes}</td><td>${dd(f.fecha)}</td><td style="font-family:Courier New;color:#1e40af;font-weight:bold">${f.codigo}</td><td>${f.cuenta}</td><td style="font-weight:bold;${f.tipo==='D'?'color:#16a34a':'color:#dc2626'}">${f.tipo}</td><td>${f.nroDoc}</td><td>${f.concepto}</td><td style="text-align:right">${f.tasa}</td><td style="text-align:right">${f.debeBs>0?fmt(f.debeBs):''}</td><td style="text-align:right">${f.haberBs>0?fmt(f.haberBs):''}</td><td style="text-align:right">${fmt(f.saldoBs)}</td><td style="text-align:right">${f.debeUSD>0?fmt(f.debeUSD):''}</td><td style="text-align:right">${f.haberUSD>0?fmt(f.haberUSD):''}</td><td style="text-align:right">${fmt(f.saldoUSD)}</td></tr>`;
+        html+=`<tr class="${f.tipo}"><td style="font-family:Courier New;font-weight:bold">${f.comprobante}</td><td>${f.mes}</td><td>${dd(f.fecha)}</td><td style="font-family:Courier New;color:#1e40af;font-weight:bold">${f.codigo}</td><td>${f.cuenta}</td><td style="font-weight:bold;${f.tipo==='D'?'color:#16a34a':'color:#dc2626'}">${f.tipo}</td><td>${f.nroDoc}</td><td>${f.concepto}</td><td style="text-align:right">${f.tasa}</td><td style="text-align:right">${f.debeBs>0?fmt(f.debeBs):''}</td><td style="text-align:right">${f.haberBs>0?fmt(f.haberBs):''}</td><td style="text-align:right">{'$'+fmt(f.saldoBs)}</td><td style="text-align:right">${f.debeUSD>0?fmt(f.debeUSD):''}</td><td style="text-align:right">${f.haberUSD>0?fmt(f.haberUSD):''}</td><td style="text-align:right">{'$'+fmt(f.saldoUSD)}</td></tr>`;
       });
       html+=`</tbody></table></body></html>`;
       const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=utf-8'});
@@ -3946,7 +3946,7 @@ function AsientosApp({ fbUser, onBack }) {
                       {/* Columnas USD - visibles si monedaVista es USD o AMBAS */}
                       {monedaVista!=='BS'&&<><td className="px-3 py-2 font-mono text-emerald-700 text-right whitespace-nowrap">{f.debeUSD>0?`$${fmt(f.debeUSD)}`:''}</td>
                       <td className="px-3 py-2 font-mono text-red-600 text-right whitespace-nowrap">{f.haberUSD>0?`$${fmt(f.haberUSD)}`:''}</td>
-                      <td className="px-3 py-2 font-mono text-slate-600 text-right whitespace-nowrap">${fmt(f.saldoUSD)}</td></>}
+                      <td className="px-3 py-2 font-mono text-slate-600 text-right whitespace-nowrap">{'$'+fmt(f.saldoUSD)}</td></>}
                     </tr>
                   );
                 })}
@@ -3954,7 +3954,7 @@ function AsientosApp({ fbUser, onBack }) {
               <tfoot><tr style={{background:'#0f172a'}}>
                 <td colSpan={9} className="px-3 py-3 font-black text-xs text-slate-400 uppercase tracking-widest">TOTALES PERÍODO</td>
                 {monedaVista!=='USD'&&<><td className="px-3 py-3 font-mono font-black text-emerald-400 text-right whitespace-nowrap">Bs.{fmt(filas.reduce((a,f)=>a+f.debeBs,0))}</td><td className="px-3 py-3 font-mono font-black text-red-400 text-right whitespace-nowrap">Bs.{fmt(filas.reduce((a,f)=>a+f.haberBs,0))}</td><td className="px-3 py-3"></td></>}
-                {monedaVista!=='BS'&&<><td className="px-3 py-3 font-mono font-black text-emerald-400 text-right whitespace-nowrap">${fmt(filas.reduce((a,f)=>a+f.debeUSD,0))}</td><td className="px-3 py-3 font-mono font-black text-red-400 text-right whitespace-nowrap">${fmt(filas.reduce((a,f)=>a+f.haberUSD,0))}</td><td className="px-3 py-3"></td></>}
+                {monedaVista!=='BS'&&<><td className="px-3 py-3 font-mono font-black text-emerald-400 text-right whitespace-nowrap">{'$'+fmt(filas.reduce((a,f)=>a+f.debeUSD,0))}</td><td className="px-3 py-3 font-mono font-black text-red-400 text-right whitespace-nowrap">{'$'+fmt(filas.reduce((a,f)=>a+f.haberUSD,0))}</td><td className="px-3 py-3"></td></>}
               </tr></tfoot>
             </table>
           </div>}
@@ -4118,8 +4118,8 @@ function AsientosApp({ fbUser, onBack }) {
               <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">TOTALES</div>
               <div className={`text-right font-mono font-black text-sm ${balOkBs?'text-emerald-400':'text-white'}`}>Bs.{fmt(totDebeBs)}</div>
               <div className={`text-right font-mono font-black text-sm ${balOkBs?'text-emerald-400':'text-white'}`}>Bs.{fmt(totHaberBs)}</div>
-              <div className={`text-right font-mono font-black text-sm ${balOkUSD?'text-emerald-400':'text-slate-400'}`}>${fmt(totDebeUSD)}</div>
-              <div className={`text-right font-mono font-black text-sm ${balOkUSD?'text-emerald-400':'text-slate-400'}`}>${fmt(totHaberUSD)}</div>
+              <div className={`text-right font-mono font-black text-sm ${balOkUSD?'text-emerald-400':'text-slate-400'}`}>{'$'+fmt(totDebeUSD)}</div>
+              <div className={`text-right font-mono font-black text-sm ${balOkUSD?'text-emerald-400':'text-slate-400'}`}>{'$'+fmt(totHaberUSD)}</div>
               <div className="flex justify-center">{balOk?<CheckCircle size={16} className="text-emerald-400"/>:<X size={16} className="text-red-400"/>}</div>
             </div>
           </div>
@@ -4220,7 +4220,7 @@ function BalancesApp({ fbUser, onBack }) {
       <p style="font-size:13px;font-weight:bold">Balance de Comprobación — Servicios Jiret G&B, C.A.</p>
       <p style="font-size:10px;color:#666">Al ${dd(hasta)} · ${filas.length} cuentas</p>
       <table><thead><tr><th>Código</th><th>Cuenta</th><th>Grupo</th><th>Debe Bs</th><th>Haber Bs</th><th>Saldo Bs</th><th>Debe USD</th><th>Haber USD</th><th>Saldo USD</th></tr></thead><tbody>`;
-      filas.forEach(c=>{h+=`<tr><td style="font-family:monospace;color:#1e40af;font-weight:bold">${c.codigo}</td><td>${c.nombre}</td><td>${grupoMap[String(c.codigo).charAt(0)]||''}</td><td style="text-align:right">${c.dBs>0?fmt(c.dBs):''}</td><td style="text-align:right">${c.hBs>0?fmt(c.hBs):''}</td><td style="text-align:right;font-weight:bold;${c.saldoBs>=0?'color:#16a34a':'color:#dc2626'}">${fmt(c.saldoBs)}</td><td style="text-align:right">${c.dUSD>0?fmt(c.dUSD):''}</td><td style="text-align:right">${c.hUSD>0?fmt(c.hUSD):''}</td><td style="text-align:right;font-weight:bold">${fmt(c.saldoUSD)}</td></tr>`;});
+      filas.forEach(c=>{h+=`<tr><td style="font-family:monospace;color:#1e40af;font-weight:bold">${c.codigo}</td><td>${c.nombre}</td><td>${grupoMap[String(c.codigo).charAt(0)]||''}</td><td style="text-align:right">${c.dBs>0?fmt(c.dBs):''}</td><td style="text-align:right">${c.hBs>0?fmt(c.hBs):''}</td><td style="text-align:right;font-weight:bold;${c.saldoBs>=0?'color:#16a34a':'color:#dc2626'}">{'$'+fmt(c.saldoBs)}</td><td style="text-align:right">${c.dUSD>0?fmt(c.dUSD):''}</td><td style="text-align:right">${c.hUSD>0?fmt(c.hUSD):''}</td><td style="text-align:right;font-weight:bold">{'$'+fmt(c.saldoUSD)}</td></tr>`;});
       h+=`<tr style="background:#0f172a"><td colspan="3" style="color:#94a3b8;font-weight:bold;padding:6px 8px">TOTALES</td><td style="text-align:right;color:#4ade80;font-weight:bold">Bs.${fmt(totDeBs)}</td><td style="text-align:right;color:#f87171;font-weight:bold">Bs.${fmt(totHaBs)}</td><td></td><td style="text-align:right;color:#4ade80;font-weight:bold">$${fmt(totDeUSD)}</td><td style="text-align:right;color:#f87171;font-weight:bold">$${fmt(totHaUSD)}</td><td></td></tr>`;
       h+=`</tbody></table></body></html>`;
       const blob=new Blob([h],{type:'application/vnd.ms-excel;charset=utf-8'});
@@ -4253,7 +4253,7 @@ function BalancesApp({ fbUser, onBack }) {
                   <td className={`px-3 py-2 font-mono font-black text-right ${c.saldoBs>=0?'text-emerald-700':'text-red-600'}`}>Bs.{fmt(c.saldoBs)}</td>
                   <td className="px-3 py-2 font-mono text-emerald-600 text-right">{c.dUSD>0?`$${fmt(c.dUSD)}`:''}</td>
                   <td className="px-3 py-2 font-mono text-red-500 text-right">{c.hUSD>0?`$${fmt(c.hUSD)}`:''}</td>
-                  <td className={`px-3 py-2 font-mono font-black text-right ${c.saldoUSD>=0?'text-emerald-700':'text-red-600'}`}>${fmt(c.saldoUSD)}</td>
+                  <td className={`px-3 py-2 font-mono font-black text-right ${c.saldoUSD>=0?'text-emerald-700':'text-red-600'}`}>{'$'+fmt(c.saldoUSD)}</td>
                 </tr>
               ))}
             </tbody>
@@ -4262,9 +4262,9 @@ function BalancesApp({ fbUser, onBack }) {
               <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right">Bs.{fmt(totDeBs)}</td>
               <td className="px-3 py-3 font-mono font-black text-red-400 text-right">Bs.{fmt(totHaBs)}</td>
               <td className="px-3 py-3 font-mono font-black text-white text-right">Bs.{fmt(totDeBs-totHaBs)}</td>
-              <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right">${fmt(totDeUSD)}</td>
-              <td className="px-3 py-3 font-mono font-black text-red-400 text-right">${fmt(totHaUSD)}</td>
-              <td className="px-3 py-3 font-mono font-black text-white text-right">${fmt(totDeUSD-totHaUSD)}</td>
+              <td className="px-3 py-3 font-mono font-black text-emerald-400 text-right">{'$'+fmt(totDeUSD)}</td>
+              <td className="px-3 py-3 font-mono font-black text-red-400 text-right">{'$'+fmt(totHaUSD)}</td>
+              <td className="px-3 py-3 font-mono font-black text-white text-right">{'$'+fmt(totDeUSD-totHaUSD)}</td>
             </tr></tfoot>
           </table>
         </div>
@@ -4288,12 +4288,12 @@ function BalancesApp({ fbUser, onBack }) {
       <div className="mb-5">
         <div className="flex items-center justify-between px-5 py-3 rounded-xl mb-2" style={{background:`${colorBorder}15`,border:`1.5px solid ${colorBorder}40`}}>
           <p className="font-black text-sm uppercase tracking-wide" style={{color:colorBorder}}>{titulo}</p>
-          <div className="text-right"><p className="font-mono font-black" style={{color:colorBorder}}>Bs. {fmt(Math.abs(totalBs))}</p><p className="text-[10px] text-slate-400">${fmt(Math.abs(totalUSD))}</p></div>
+          <div className="text-right"><p className="font-mono font-black" style={{color:colorBorder}}>Bs. {fmt(Math.abs(totalBs))}</p><p className="text-[10px] text-slate-400">{'$'+fmt(Math.abs(totalUSD))}</p></div>
         </div>
         {items.filter(c=>Math.abs(c.saldoBs)>0.001).map(c=>(
           <div key={c.id} className="flex justify-between py-1.5 px-5 text-xs hover:bg-slate-50 rounded">
             <div className="flex items-center gap-2"><span className="font-mono text-blue-500 text-[10px]">{c.codigo}</span><span className="text-slate-700">{c.nombre}</span></div>
-            <div className="text-right"><span className="font-mono font-black text-slate-900">Bs. {fmt(Math.abs(c.saldoBs))}</span><span className="text-slate-400 ml-3">${fmt(Math.abs(c.saldoUSD))}</span></div>
+            <div className="text-right"><span className="font-mono font-black text-slate-900">Bs. {fmt(Math.abs(c.saldoBs))}</span><span className="text-slate-400 ml-3">{'$'+fmt(Math.abs(c.saldoUSD))}</span></div>
           </div>
         ))}
       </div>
@@ -4310,7 +4310,7 @@ function BalancesApp({ fbUser, onBack }) {
             <SeccionBG titulo="PATRIMONIO" items={patrimonio} colorBorder="#8b5cf6" totalBs={totPatBs} totalUSD={patrimonio.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)}/>
             <div className="flex items-center justify-between px-5 py-4 rounded-xl mt-3" style={{background:'#0f172a'}}>
               <p className="font-black text-white uppercase tracking-wide">PASIVO + PATRIMONIO</p>
-              <div className="text-right"><p className="font-mono font-black text-orange-400">Bs. {fmt(totPasBs+totPatBs)}</p><p className="text-[10px] text-slate-400">${fmt(pasivos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)+patrimonio.reduce((a,c)=>a+Math.abs(c.saldoUSD),0))}</p></div>
+              <div className="text-right"><p className="font-mono font-black text-orange-400">Bs. {fmt(totPasBs+totPatBs)}</p><p className="text-[10px] text-slate-400">{'$'+fmt(pasivos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)+patrimonio.reduce((a,c)=>a+Math.abs(c.saldoUSD),0))}</p></div>
             </div>
           </div>
         </div>
@@ -4337,11 +4337,11 @@ function BalancesApp({ fbUser, onBack }) {
       <div className="mb-4">
         <div className="flex justify-between px-4 py-2 rounded-lg mb-1" style={{background:color+'15'}}>
           <p className="font-black text-xs uppercase tracking-wide" style={{color}}>{titulo}</p>
-          <div className="text-right"><span className="font-mono font-black text-xs" style={{color}}>Bs.{fmt(Math.abs(totalBs))}</span><span className="text-slate-400 text-[10px] ml-2">${fmt(Math.abs(totalUSD))}</span></div>
+          <div className="text-right"><span className="font-mono font-black text-xs" style={{color}}>Bs.{fmt(Math.abs(totalBs))}</span><span className="text-slate-400 text-[10px] ml-2">{'$'+fmt(Math.abs(totalUSD))}</span></div>
         </div>
         {items.map(c=><div key={c.id} className="flex justify-between py-1 px-6 text-xs hover:bg-slate-50 rounded">
           <span className="text-slate-600">{c.nombre}</span>
-          <div><span className="font-mono text-slate-800">Bs.{fmt(Math.abs(c.saldoBs))}</span><span className="text-slate-400 ml-2">${fmt(Math.abs(c.saldoUSD))}</span></div>
+          <div><span className="font-mono text-slate-800">Bs.{fmt(Math.abs(c.saldoBs))}</span><span className="text-slate-400 ml-2">{'$'+fmt(Math.abs(c.saldoUSD))}</span></div>
         </div>)}
       </div>
     );
@@ -4358,7 +4358,7 @@ function BalancesApp({ fbUser, onBack }) {
           <SecER titulo="GASTOS OPERATIVOS" items={gastos} totalBs={totGasBs} totalUSD={gastos.reduce((a,c)=>a+Math.abs(c.saldoUSD),0)} color="#ef4444"/>
           <div className="flex justify-between px-4 py-4 rounded-xl" style={{background:'#0f172a'}}>
             <p className="font-black text-white uppercase tracking-wide">UTILIDAD / PÉRDIDA NETA</p>
-            <div className="text-right"><p className={`font-mono font-black text-xl ${utilNeBs>=0?'text-emerald-400':'text-red-400'}`}>Bs.{fmt(utilNeBs)}</p><p className="text-slate-400 text-[10px]">${fmt(utilNeUSD)}</p></div>
+            <div className="text-right"><p className={`font-mono font-black text-xl ${utilNeBs>=0?'text-emerald-400':'text-red-400'}`}>Bs.{fmt(utilNeBs)}</p><p className="text-slate-400 text-[10px]">{'$'+fmt(utilNeUSD)}</p></div>
           </div>
         </div>
       </Card>
@@ -4403,7 +4403,7 @@ function BalancesApp({ fbUser, onBack }) {
           <div>
             <div className="flex items-center gap-4 p-4 rounded-2xl mb-5" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
               <div><p className="text-[9px] font-black text-slate-400 uppercase mb-0.5">{cuentaSel.codigo}</p><p className="font-black text-white">{cuentaSel.nombre}</p></div>
-              <div className="ml-auto text-right"><p className="text-emerald-400 font-mono font-black text-xl">Bs.{fmt(saldoBsAcum)}</p><p className="text-slate-400 text-xs">${fmt(saldoUSDacum)}</p></div>
+              <div className="ml-auto text-right"><p className="text-emerald-400 font-mono font-black text-xl">Bs.{fmt(saldoBsAcum)}</p><p className="text-slate-400 text-xs">{'$'+fmt(saldoUSDacum)}</p></div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-[11px]">
@@ -4422,7 +4422,7 @@ function BalancesApp({ fbUser, onBack }) {
                     <td className={`px-3 py-2 font-mono font-black text-right ${m.saldoBs>=0?'text-emerald-700':'text-red-600'}`}>Bs.{fmt(m.saldoBs)}</td>
                     <td className="px-3 py-2 font-mono text-emerald-600 text-right">{m.dUSD>0?`$${fmt(m.dUSD)}`:''}</td>
                     <td className="px-3 py-2 font-mono text-red-500 text-right">{m.hUSD>0?`$${fmt(m.hUSD)}`:''}</td>
-                    <td className={`px-3 py-2 font-mono font-black text-right ${m.saldoUSD>=0?'text-emerald-700':'text-red-600'}`}>${fmt(m.saldoUSD)}</td>
+                    <td className={`px-3 py-2 font-mono font-black text-right ${m.saldoUSD>=0?'text-emerald-700':'text-red-600'}`}>{'$'+fmt(m.saldoUSD)}</td>
                   </tr>)}
                 </tbody>
               </table>
@@ -4568,9 +4568,9 @@ function ActivosFijosApp({ fbUser, onBack }) {
                   <Td className="font-semibold max-w-[160px] truncate">{a.descripcion}</Td>
                   <Td className="text-[10px] uppercase text-slate-500">{a.categoria}</Td>
                   <Td>{dd(a.fechaAdquisicion)}</Td>
-                  <Td right mono className="font-black">${fmt(a.valorCosto)}</Td>
-                  <Td right mono className="text-red-500">${fmt(dep)}</Td>
-                  <Td right mono className="font-black text-emerald-600">${fmt(neto)}</Td>
+                  <Td right mono className="font-black">{'$'+fmt(a.valorCosto)}</Td>
+                  <Td right mono className="text-red-500">{'$'+fmt(dep)}</Td>
+                  <Td right mono className="font-black text-emerald-600">{'$'+fmt(neto)}</Td>
                   <Td><Badge v={neto>0?'green':'gray'}>{neto>0?'Activo':'Depreciado'}</Badge></Td>
                 </tr>);})}</tbody>
             </table>}
@@ -4598,10 +4598,10 @@ function ActivosFijosApp({ fbUser, onBack }) {
                   <Td className="font-semibold max-w-[160px] truncate">{a.descripcion}</Td>
                   <Td className="text-[10px] uppercase text-slate-500">{a.categoria}</Td>
                   <Td>{dd(a.fechaAdquisicion)}</Td>
-                  <Td right mono>${fmt(a.valorCosto)}</Td>
-                  <Td right mono className="text-slate-400">${fmt(a.valorResidual||0)}</Td>
+                  <Td right mono>{'$'+fmt(a.valorCosto)}</Td>
+                  <Td right mono className="text-slate-400">{'$'+fmt(a.valorResidual||0)}</Td>
                   <Td right><span className="font-semibold">{a.vidaUtilAnios} años</span></Td>
-                  <Td right mono className="font-black text-amber-600">${fmt(dm)}</Td>
+                  <Td right mono className="font-black text-amber-600">{'$'+fmt(dm)}</Td>
                   <Td><button onClick={()=>deleteDoc(dref('activos_fijos',a.id))} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={12}/></button></Td>
                 </tr>);})}
             </tbody>
@@ -4712,16 +4712,16 @@ function FiscalApp({ fbUser, onBack }) {
                 <Td mono className="text-slate-600">{f.clienteRif||'—'}</Td>
                 <Td className="max-w-[140px] truncate uppercase font-medium">{f.clienteNombre}</Td>
                 <Td mono className="font-black text-blue-600">{f.numero}</Td>
-                <Td right mono>${fmt(f.subtotal||0)}</Td>
-                <Td right mono className="text-red-500">${fmt(f.iva||0)}</Td>
-                <Td right mono className="font-black">${fmt(f.total||0)}</Td>
+                <Td right mono>{'$'+fmt(f.subtotal||0)}</Td>
+                <Td right mono className="text-red-500">{'$'+fmt(f.iva||0)}</Td>
+                <Td right mono className="font-black">{'$'+fmt(f.total||0)}</Td>
               </tr>)}
             </tbody>
             {filtradas.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
               <td colSpan={5} className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase">TOTALES — {filtradas.length} facturas</td>
-              <td className="px-4 py-3 text-right font-mono font-black text-white">${fmt(filtradas.reduce((a,f)=>a+Number(f.subtotal||0),0))}</td>
-              <td className="px-4 py-3 text-right font-mono font-black text-red-400">${fmt(filtradas.reduce((a,f)=>a+Number(f.iva||0),0))}</td>
-              <td className="px-4 py-3 text-right font-mono font-black text-emerald-400">${fmt(filtradas.reduce((a,f)=>a+Number(f.total||0),0))}</td>
+              <td className="px-4 py-3 text-right font-mono font-black text-white">{'$'+fmt(filtradas.reduce((a,f)=>a+Number(f.subtotal||0),0))}</td>
+              <td className="px-4 py-3 text-right font-mono font-black text-red-400">{'$'+fmt(filtradas.reduce((a,f)=>a+Number(f.iva||0),0))}</td>
+              <td className="px-4 py-3 text-right font-mono font-black text-emerald-400">{'$'+fmt(filtradas.reduce((a,f)=>a+Number(f.total||0),0))}</td>
             </tr></tfoot>}
           </table>
         </div>
