@@ -1422,7 +1422,6 @@ function BancoApp({ fbUser, onBack }) {
           <style>{PRINT_STYLE}</style>
           <div className="flex gap-3 mb-5 no-print">
             <Bo onClick={()=>setCert(null)}><ArrowLeft size={13}/> Volver</Bo>
-            <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"><Download size={13}/> Imprimir / PDF</button>
           </div>
           <div className="bg-white rounded-2xl border-2 border-slate-200 p-10 max-w-2xl mx-auto">
             <div className="text-center border-b-2 border-slate-100 pb-6 mb-6">
@@ -1501,7 +1500,6 @@ function BancoApp({ fbUser, onBack }) {
         <style>{PRINT_STYLE}</style>
         {/* Botones de acción */}
         <div className="flex gap-3 justify-end">
-          <button onClick={imprimirCuentas} className="flex items-center gap-2 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
           <button onClick={()=>exportarCuentas('pdf')} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><FileText size={12}/> PDF</button>
           <button onClick={()=>exportarCuentas('excel')} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
           <Bg onClick={openNew}><Plus size={12}/> Nueva Cuenta</Bg>
@@ -1704,34 +1702,40 @@ function BancoApp({ fbUser, onBack }) {
         const numComp = `CB-${yyyymm}-${String(movBanco.filter(m=>m.fecha?.startsWith(form.fecha.substring(0,7))).length+1).padStart(4,'0')}`;
         const mesLabel = form.fecha.substring(5,7)+'/'+form.fecha.substring(0,4);
         const esMonedaLocal = cuenta.moneda === 'BS';
-        // Línea del banco - para Traslado el banco SIEMPRE va al HABER (sale dinero del banco)
         const bancoBs=esMonedaLocal?montoBs:montoUSD*tasa;
         const bancoUSD=esMonedaLocal?montoBs/tasa:montoUSD;
         const esIngreso=form.tipo==='Ingreso';
         const esTraslado=form.tipo==='Traslado Banco→Caja';
-        // Banco: Debe si Ingreso, Haber si Egreso o Traslado
-        const bancoEnDebe = esIngreso && !esTraslado;
-        const debitLinea = {
-          codigo:cuentaSel?.cuentaContableCod||'',
-          cuenta:cuentaSel?.cuentaContableNom||`Banco ${cuenta.banco}`,
-          tipoLinea:bancoEnDebe?'D':'H',
-          nroDoc:form.referencia||'',
-          concepto:form.concepto,tasa,
-          debeBs:bancoEnDebe?bancoBs:0,haberBs:bancoEnDebe?0:bancoBs,
-          debeUSD:bancoEnDebe?bancoUSD:0,haberUSD:bancoEnDebe?0:bancoUSD,
-        };
-        // Líneas contrapartidas (compuestas)
-        const lineasContraFinal=(form.lineasContra||[]).filter(l=>l.ctaId&&(Number(l.debeBs||0)>0||Number(l.haberBs||0)>0)).map(l=>{
-          const ctaInfo=contCuentas.find(c=>c.id===l.ctaId)||{};
-          return {
-            codigo:ctaInfo.codigo||'',cuenta:ctaInfo.nombre||l.ctaNom||'',
-            tipoLinea:Number(l.debeBs||0)>0?'D':'H',
+        const esTransferencia=form.tipo==='Transferencia';
+
+        let todasLineas=[];
+
+        if(esTransferencia && cuentaDest) {
+          // Transferencia banco a banco: banco origen→Haber, banco destino→Debe
+          const cuentaDestObj=cuentas.find(c=>c.id===form.cuentaDestinoId);
+          const bsOrigen=esMonedaLocal?montoBs:montoUSD*tasa;
+          const usdOrigen=esMonedaLocal?montoBs/tasa:montoUSD;
+          todasLineas=[
+            {codigo:cuentaDest?.cuentaContableCod||'',cuenta:cuentaDest?.cuentaContableNom||`Banco ${cuentaDestObj?.banco||'Destino'}`,tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:bsOrigen,haberBs:0,debeUSD:usdOrigen,haberUSD:0},
+            {codigo:cuentaSel?.cuentaContableCod||'',cuenta:cuentaSel?.cuentaContableNom||`Banco ${cuenta.banco}`,tipoLinea:'H',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:0,haberBs:bsOrigen,debeUSD:0,haberUSD:usdOrigen},
+          ];
+        } else {
+          // Banco: Debe si Ingreso, Haber si Egreso o Traslado
+          const bancoEnDebe = esIngreso && !esTraslado;
+          const debitLinea = {
+            codigo:cuentaSel?.cuentaContableCod||'',
+            cuenta:cuentaSel?.cuentaContableNom||`Banco ${cuenta.banco}`,
+            tipoLinea:bancoEnDebe?'D':'H',
             nroDoc:form.referencia||'',concepto:form.concepto,tasa,
-            debeBs:Number(l.debeBs||0),haberBs:Number(l.haberBs||0),
-            debeUSD:Number(l.debeUSD||0),haberUSD:Number(l.haberUSD||0),
+            debeBs:bancoEnDebe?bancoBs:0,haberBs:bancoEnDebe?0:bancoBs,
+            debeUSD:bancoEnDebe?bancoUSD:0,haberUSD:bancoEnDebe?0:bancoUSD,
           };
-        });
-        const todasLineas=[debitLinea,...lineasContraFinal];
+          const lineasContraFinal=(form.lineasContra||[]).filter(l=>l.ctaId&&(Number(l.debeBs||0)>0||Number(l.haberBs||0)>0)).map(l=>{
+            const ctaInfo=contCuentas.find(c=>c.id===l.ctaId)||{};
+            return {codigo:ctaInfo.codigo||'',cuenta:ctaInfo.nombre||l.ctaNom||'',tipoLinea:Number(l.debeBs||0)>0?'D':'H',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:Number(l.debeBs||0),haberBs:Number(l.haberBs||0),debeUSD:Number(l.debeUSD||0),haberUSD:Number(l.haberUSD||0)};
+          });
+          todasLineas=[debitLinea,...lineasContraFinal];
+        }
         const asientoId=gid();
         batch.set(dref('cont_asientos',asientoId),{
           id:asientoId,
@@ -2161,7 +2165,12 @@ function BancoApp({ fbUser, onBack }) {
             </div>
             <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
               <option value="">Todos los bancos</option>
-              {cuentas.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
+              {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').length>0&&<optgroup label="🇻🇪 Bolívares">
+                {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
+              </optgroup>}
+              {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').length>0&&<optgroup label="💵 Moneda Extranjera">
+                {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco} ({c.moneda})</option>)}
+              </optgroup>}
             </select>
             <div className="flex items-center gap-1.5">
               <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtDesde} onChange={e=>setFiltD(e.target.value)} title="Desde"/>
@@ -2169,7 +2178,6 @@ function BancoApp({ fbUser, onBack }) {
               <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
             </div>
             {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
-            <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
             <button onClick={()=>exportarMovimientos('pdf')} className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><FileText size={12}/> PDF</button>
             <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
             <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
@@ -2442,8 +2450,8 @@ function BancoApp({ fbUser, onBack }) {
                               const ctasTraslado=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('TRASLADO'));
                               const ctasReb=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('REBANCAR')||c.nombre?.toUpperCase().includes('DIFERENC'));
                               const nl=[
-                                {ctaId:ctasTraslado[0]?.id||'',ctaNom:ctasTraslado[0]?`${ctasTraslado[0].codigo} · ${ctasTraslado[0].nombre}`:'Traslados de Fondos',debeBs:fmt(bsSalidos-diffBs).replace(/,/g,''),haberBs:'',debeUSD:fmt(usdEntran).replace(/,/g,''),haberUSD:''},
-                                {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?`${ctasReb[0].codigo} · ${ctasReb[0].nombre}`:'Diferencias en Compensación',debeBs:fmt(diffBs).replace(/,/g,''),haberBs:'',debeUSD:fmt(diffUSD).replace(/,/g,''),haberUSD:''},
+                                {ctaId:ctasTraslado[0]?.id||'',ctaNom:ctasTraslado[0]?`${ctasTraslado[0].codigo} · ${ctasTraslado[0].nombre}`:'Traslados de Fondos',debeBs:String(bsSalidos-diffBs),haberBs:'',debeUSD:String(usdEntran),haberUSD:''},
+                                {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?`${ctasReb[0].codigo} · ${ctasReb[0].nombre}`:'Diferencias en Compensación',debeBs:String(diffBs),haberBs:'',debeUSD:String(diffUSD),haberUSD:''},
                               ];
                               setForm({...form,lineasContra:nl,tasa:form.tasaBanco});
                             }}
@@ -3044,7 +3052,6 @@ function BancoApp({ fbUser, onBack }) {
         <KPI label="Flujo Neto"   value={`$${fmt(iU-eU)}`} accent={iU-eU>=0?'green':'red'} Icon={ArrowLeftRight}/>
         <KPI label="Transacciones" value={filt.length} accent="blue" Icon={FileText}/>
       </div>
-      <Card title={`Detalle — ${filt.length} transacciones`} action={<button onClick={()=>window.print()} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase hover:bg-blue-700"><Download size={12}/> Imprimir</button>}>
         <div className="overflow-x-auto"><table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th>Tercero</Th><Th>Ref.</Th><Th right>USD</Th><Th right>Bs.</Th><Th right>Tasa</Th><Th>Estado</Th></tr></thead>
           <tbody>
             {filt.length===0&&<tr><td colSpan={10}><EmptyState icon={BarChart3} title="Sin datos" desc="Ajuste los filtros"/></td></tr>}
@@ -4494,7 +4501,6 @@ function BalancesApp({ fbUser, onBack }) {
       headerContent={<>
         <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav?.label}</h1><p className="text-[9px] text-slate-400 uppercase tracking-widest">Contabilidad <ChevronRight size={8} className="inline"/> Reportes</p></div>
         <div className="flex gap-2">
-          <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50"><Download size={12}/> Imprimir</button>
         </div>
       </>}>
       {views[sec]||<ComprobacionView/>}
