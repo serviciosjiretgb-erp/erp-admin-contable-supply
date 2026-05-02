@@ -2447,10 +2447,11 @@ function BancoApp({ fbUser, onBack }) {
                   })}
 
                   {/* Totales y cuadre */}
-                  {cuentaSel&&AsientoTotales({form,bs,montoBs,montoUSD,tasa,mNat,fmt})}
+{cuentaSel&&AsientoTotales({form,bs,montoBs,montoUSD,tasa,mNat,fmt})}
 
-                  </div>
-                  )}
+  </div>
+</div> {/* <--- Agrega este </div> para cerrar el contenedor principal */}
+)}
 
                   {/* Botón agregar línea */}
                   <button onClick={()=>setForm({...form,lineasContra:[...form.lineasContra,{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]})}
