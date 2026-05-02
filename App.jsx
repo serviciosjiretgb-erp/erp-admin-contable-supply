@@ -2449,10 +2449,6 @@ function BancoApp({ fbUser, onBack }) {
                   {/* Totales y cuadre */}
 {cuentaSel&&AsientoTotales({form,bs,montoBs,montoUSD,tasa,mNat,fmt})}
 
-  </div>
-</div> {/* <--- Agrega este </div> para cerrar el contenedor principal */}
-)}
-
                   {/* Botón agregar línea */}
                   <button onClick={()=>setForm({...form,lineasContra:[...form.lineasContra,{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]})}
                     className="flex items-center gap-1.5 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
