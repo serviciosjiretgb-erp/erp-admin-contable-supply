@@ -2466,6 +2466,9 @@ function BancoApp({ fbUser, onBack }) {
                       contCuentas={contCuentas} inp={inp} fmt={fmt} FG={FG}
                     />
                   )}
+                </div>
+              </div>
+            )}
 
             {/* Terceros */}
             {form.tipo!=='Transferencia'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
