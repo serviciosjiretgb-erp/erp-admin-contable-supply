@@ -97,6 +97,14 @@ const LETTERHEAD_CSS = `
   @media print{@page{margin:1cm}}
 `;
 
+// Company data singleton — updated when settings load
+let EMPRESA_DATA = {
+  razonSocial:'SERVICIOS JIRET G&B, C.A.',
+  rif:'J-412309374',
+  direccion:'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB SECTOR EL TREBOL MARACAIBO-ZULIA',
+  telefono:'0414-693.03.42',
+};
+
 const letterheadOpen = (titulo, subtitulo='') => `
   <html><head><meta charset="utf-8"><title>${titulo}</title><style>${LETTERHEAD_CSS}</style></head><body>
   <div class="lh-header">
@@ -104,9 +112,10 @@ const letterheadOpen = (titulo, subtitulo='') => `
       <span class="supply">Supply</span><span class="g">G</span><span class="amp">&amp;</span><span class="b">B</span>
     </div>
     <div class="lh-company">
-      <strong>Servicios Jiret G&amp;B, C.A.</strong>
-      RIF: J-412309374 · Caracas, Venezuela<br>
-      ERP — Sistema de Gestión Empresarial
+      <strong>${EMPRESA_DATA.razonSocial}</strong>
+      RIF: ${EMPRESA_DATA.rif}<br>
+      ${EMPRESA_DATA.direccion}<br>
+      ${EMPRESA_DATA.telefono?'Tel: '+EMPRESA_DATA.telefono:''}
     </div>
   </div>
   <div class="lh-title">
@@ -118,7 +127,7 @@ const letterheadOpen = (titulo, subtitulo='') => `
 const letterheadClose = (extra='') => `
   </div>
   <div class="lh-footer">
-    <span>Servicios Jiret G&amp;B, C.A. — RIF: J-412309374</span>
+    <span>${EMPRESA_DATA.razonSocial} — RIF: ${EMPRESA_DATA.rif}</span>
     <span>${extra}</span>
     <span>Supply ERP · ${new Date().toLocaleDateString('es-VE')}</span>
   </div>
@@ -1255,7 +1264,7 @@ const TIPO_BANCO = [
 
 // Denominaciones VES para arqueo
 const DENOM_BS  = [500,200,100,50,20,10,5,2,1,0.5,0.25,0.10,0.05,0.01];
-const DENOM_USD = [100,50,20,10,5,1,0.50,0.25,0.10,0.05,0.01];
+const DENOM_USD = [100,50,20,10,5,2,1];
 
 function BancoApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('dashboard');
@@ -1467,20 +1476,15 @@ function BancoApp({ fbUser, onBack }) {
         cuentas.filter(c=>c.tipoBanco==='Nacional-Ext'||c.tipoBanco==='Internacional'),
       ];
       const mkRows = (lista) => lista.map(c=>{
-        const bs=c.moneda==='BS';
         return `<tr>
           <td style="font-weight:bold">${c.banco}</td>
           <td style="font-family:monospace">${c.numeroCuenta}</td>
           <td>${c.tipoCuenta||'—'}</td>
           <td>${c.moneda}</td>
           <td>${c.titular||'—'}</td>
-          <td style="font-family:monospace;color:#1e40af">${c.cuentaContableCod||'—'}</td>
-          <td style="text-align:right;font-weight:bold;font-family:monospace">${bs?'Bs.':'$'} ${fmt(c.saldo)}</td>
-          <td style="text-align:right;font-family:monospace;color:#16a34a">$${fmt(bs?Number(c.saldo)/tasaActiva:Number(c.saldo))}</td>
-          <td style="text-align:right;font-family:monospace;color:#2563eb">Bs.${fmt(bs?Number(c.saldo):Number(c.saldo)*tasaActiva)}</td>
         </tr>`;
       }).join('');
-      const thead=`<thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Titular</th><th>PUC</th><th>Saldo</th><th>Equiv. USD</th><th>Equiv. Bs.</th></tr></thead>`;
+      const thead=`<thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Titular</th></tr></thead>`;
       const content=letterheadOpen('Reporte de Cuentas Bancarias',`Titular: Servicios Jiret G&B, C.A. · RIF: J-412309374 · ${dd(today())} · Tasa: ${tasaActiva} Bs/$`)+
         `<h3 style="color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:16px 0 8px">🇻🇪 Cuentas Nacionales — Bolívares</h3>
         <table>${thead}<tbody>${mkRows(nacBs)}</tbody></table>
@@ -1648,7 +1652,7 @@ function BancoApp({ fbUser, onBack }) {
       cerrarCxC:false,facturaId:'',
       ctaContraId:'',ctaContraNombre:'',
       lineasContra:[{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}],
-      tasaCaja:'',montoCaja:''   // para traslado banco→caja
+      tasaBanco:'',tasaBcv:String(tasaActiva)
     });
     const [form, setForm] = useState(initF());
 
@@ -2380,20 +2384,75 @@ function BancoApp({ fbUser, onBack }) {
                     );
                   })()}
 
+                  </div>
+                  )}
+
                   {/* Botón agregar línea */}
                   <button onClick={()=>setForm({...form,lineasContra:[...form.lineasContra,{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]})}
                     className="flex items-center gap-1.5 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
                     <Plus size={12}/> Agregar Cuenta Contrapartida
                   </button>
 
-                  {/* Info traslado banco→caja */}
-                  {form.tipo==='Traslado Banco→Caja'&&(
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-700 space-y-0.5">
-                      <p className="font-black">💡 Traslado Banco → Caja con Rebancarización:</p>
-                      <p>• Línea 1: <span className="font-mono">Traslados de Fondos</span> — Debe Bs. × (monto que entra a caja)</p>
-                      <p>• Línea 2: <span className="font-mono">Diferencias en Compensación (Rebancarización)</span> — Debe Bs. × diferencial cambiario</p>
-                    </div>
-                  )}
+                  {/* Alerta de balance del asiento */}
+                  {form.tipo!=='Transferencia'&&cuentaSel&&mNat>0&&(()=>{
+                    const totContra=form.lineasContra.reduce((a,l)=>a+Number(l.debeBs||0)+Number(l.haberBs||0),0);
+                    const bancoAmt=bs?montoBs:montoUSD*tasa;
+                    const diff=Math.abs(totContra-bancoAmt);
+                    const cuadrado=diff<0.05&&totContra>0;
+                    return cuadrado
+                      ? <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border-2 border-emerald-400 rounded-xl"><CheckCircle size={16} className="text-emerald-600 flex-shrink-0"/><p className="text-[11px] font-black text-emerald-700 uppercase">✓ Asiento Cuadrado — Débitos = Créditos</p></div>
+                      : totContra>0
+                        ? <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border-2 border-red-400 rounded-xl"><AlertTriangle size={16} className="text-red-600 flex-shrink-0"/><div><p className="text-[11px] font-black text-red-700 uppercase">⚠ Asiento NO Cuadrado</p><p className="text-[10px] text-red-600">Diferencia: Bs.{fmt(diff)} — El asiento no puede ser registrado sin cuadrar.</p></div></div>
+                        : <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl"><AlertTriangle size={14} className="text-amber-600 flex-shrink-0"/><p className="text-[10px] font-black text-amber-700 uppercase">Complete las contrapartidas para cuadrar el asiento</p></div>;
+                  })()}
+
+                  {/* Traslado automático: tasa banco vs tasa BCV + rebancarización */}
+                  {form.tipo==='Traslado Banco→Caja'&&cuentaSel&&mNat>0&&(
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                      <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">⚡ Asistente de Rebancarización</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <FG label="Tasa del Banco (a la que salió)">
+                          <input type="number" step="0.01" className={inp} value={form.tasaBanco||form.tasa}
+                            onChange={e=>setForm({...form,tasaBanco:e.target.value})} placeholder="Ej: 375.08"/>
+                          <p className="text-[9px] text-slate-400 mt-1">Bs. que salieron del banco ÷ USD</p>
+                        </FG>
+                        <FG label="Tasa BCV (a la que entra a caja)">
+                          <input type="number" step="0.01" className={inp} value={form.tasaBcv||tasaActiva}
+                            onChange={e=>setForm({...form,tasaBcv:e.target.value})} placeholder={String(tasaActiva)}/>
+                          <p className="text-[9px] text-slate-400 mt-1">USD que entran a caja</p>
+                        </FG>
+                      </div>
+                      {form.tasaBanco&&form.tasaBcv&&mNat>0&&(()=>{
+                        const tBanco=Number(form.tasaBanco)||tasa;
+                        const tBcv  =Number(form.tasaBcv)||tasa;
+                        const bsSalidos=bs?mNat:mNat*tBanco;     // Bs. que salen del banco
+                        const usdEntran=bsSalidos/tBcv;           // USD que entran a caja (a tasa BCV)
+                        const usdBanco =bs?mNat/tBanco:mNat;      // USD al precio del banco
+                        const diffUSD  =usdBanco-usdEntran;       // diferencia = rebancarización
+                        const diffBs   =diffUSD*tBcv;
+                        return(
+                          <div className="bg-white rounded-xl p-3 border border-amber-200 space-y-2">
+                            <div className="grid grid-cols-3 gap-2 text-[10px]">
+                              <div className="bg-slate-50 rounded-lg p-2 text-center"><p className="text-slate-400 font-medium">Salen del banco</p><p className="font-mono font-black text-slate-900">Bs.{fmt(bsSalidos)}</p><p className="text-slate-400">= ${fmt(usdBanco)} (t.banco)</p></div>
+                              <div className="bg-emerald-50 rounded-lg p-2 text-center"><p className="text-emerald-600 font-black">Entran a caja</p><p className="font-mono font-black text-emerald-700">${fmt(usdEntran)}</p><p className="text-emerald-500">a tasa BCV</p></div>
+                              <div className="bg-red-50 rounded-lg p-2 text-center"><p className="text-red-600 font-black">Diferencial</p><p className="font-mono font-black text-red-600">${fmt(diffUSD)}</p><p className="text-red-400">Bs.{fmt(diffBs)}</p></div>
+                            </div>
+                            <button onClick={()=>{
+                              // Auto-poblar las líneas contrapartida con Traslado y Rebancarización
+                              const ctasTraslado=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('TRASLADO'));
+                              const ctasReb=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('REBANCAR')||c.nombre?.toUpperCase().includes('DIFERENC'));
+                              const nl=[
+                                {ctaId:ctasTraslado[0]?.id||'',ctaNom:ctasTraslado[0]?`${ctasTraslado[0].codigo} · ${ctasTraslado[0].nombre}`:'Traslados de Fondos',debeBs:fmt(bsSalidos-diffBs).replace(/,/g,''),haberBs:'',debeUSD:fmt(usdEntran).replace(/,/g,''),haberUSD:''},
+                                {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?`${ctasReb[0].codigo} · ${ctasReb[0].nombre}`:'Diferencias en Compensación',debeBs:fmt(diffBs).replace(/,/g,''),haberBs:'',debeUSD:fmt(diffUSD).replace(/,/g,''),haberUSD:''},
+                              ];
+                              setForm({...form,lineasContra:nl,tasa:form.tasaBanco});
+                            }}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-colors">
+                              <ArrowRight size={12}/> Aplicar Rebancarización Automática
+                            </button>
+                          </div>
+                        );
+                      })()}
                 </div>
               </div>
             )}
@@ -2787,16 +2846,15 @@ function BancoApp({ fbUser, onBack }) {
   const ArqueoCajaView = () => {
     const [modal, setModal] = useState(false);
     const [busy, setBusy]   = useState(false);
-    const [moneda, setMoneda] = useState('BS');
     const [cantidades, setCants] = useState({});
-    const denoms = moneda==='BS' ? DENOM_BS : DENOM_USD;
+    const denoms = DENOM_USD;
     const totalArqueo = denoms.reduce((a,d)=>a+(Number(cantidades[d]||0)*d),0);
 
     const save = async()=>{
       setBusy(true);
       try {
         const id=gid();
-        await setDoc(dref('caja_arques',id),{id,fecha:today(),moneda,cantidades,totalArqueo,ts:serverTimestamp()});
+        await setDoc(dref('caja_arques',id),{id,fecha:today(),moneda:'USD',cantidades,totalArqueo,ts:serverTimestamp()});
         setModal(false); setCants({});
       } finally { setBusy(false); }
     };
@@ -2805,38 +2863,36 @@ function BancoApp({ fbUser, onBack }) {
       <div className="space-y-5">
         <div className="grid grid-cols-3 gap-4">
           <KPI label="Arqueos Realizados" value={arques.length} accent="blue" Icon={FileText}/>
-          <KPI label="Último Arqueo Bs." value={`Bs.${fmt(arques.find(a=>a.moneda==='BS')?.totalArqueo||0)}`} accent="green" Icon={Banknote}/>
-          <KPI label="Último Arqueo USD" value={`$${fmt(arques.find(a=>a.moneda==='USD')?.totalArqueo||0)}`} accent="gold" Icon={DollarSign}/>
+          <KPI label="Último Arqueo USD" value={`$${fmt(arques[0]?.totalArqueo||0)}`} accent="green" Icon={DollarSign}/>
+          <KPI label="Fecha Último Arqueo" value={arques[0]?.fecha?dd(arques[0].fecha):'—'} accent="gold" Icon={CalendarDays}/>
         </div>
-        <Card title="Historial de Arqueos" subtitle="Conteos físicos de caja" action={<Bg onClick={()=>{setCants({});setModal(true);}} sm><Plus size={12}/> Nuevo Arqueo</Bg>}>
+        <Card title="Historial de Arqueos" subtitle="Conteos físicos de caja USD" action={<Bg onClick={()=>{setCants({});setModal(true);}} sm><Plus size={12}/> Nuevo Arqueo</Bg>}>
           {arques.length===0?<EmptyState icon={Coins} title="Sin arqueos" desc="Realice el primer arqueo de caja"/>:
             <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Moneda</Th><Th right>Total Contado</Th></tr></thead>
               <tbody>{arques.map(a=><tr key={a.id} className="hover:bg-slate-50">
-                <Td>{dd(a.fecha)}</Td><Td><Pill usd={a.moneda==='USD'}>{a.moneda}</Pill></Td>
-                <Td right mono className="font-black text-slate-900">{a.moneda==='BS'?'Bs.':'$'} {fmt(a.totalArqueo)}</Td>
+                <Td>{dd(a.fecha)}</Td><Td><Pill usd>USD</Pill></Td>
+                <Td right mono className="font-black text-slate-900">$ {fmt(a.totalArqueo)}</Td>
               </tr>)}</tbody>
             </table>}
         </Card>
 
-        <Modal open={modal} onClose={()=>setModal(false)} title="Arqueo de Caja — Conteo por Denominaciones" wide
+        <Modal open={modal} onClose={()=>setModal(false)} title="Arqueo de Caja — Dólares (USD)" wide
           footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Guardando...':'Guardar Arqueo'}</Bg></>}>
           <div className="space-y-5">
-            <div className="flex gap-2">
-              {[{m:'BS',l:'Bolívares 🇻🇪'},{m:'USD',l:'Dólares 🇺🇸'}].map(({m,l})=>(
-                <button key={m} onClick={()=>{setMoneda(m);setCants({});}}
-                  className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase border-2 transition-all ${moneda===m?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{l}</button>
-              ))}
+            <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+              <DollarSign size={16} className="text-blue-600"/>
+              <p className="text-[11px] font-black text-blue-700 uppercase">Conteo de Billetes USD — Ingrese cantidad de billetes por denominación</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {denoms.map(d=>(
                 <div key={d} className="flex items-center gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <div className="w-20 text-right"><p className="font-mono font-black text-slate-700">{moneda==='BS'?'Bs.':'$'} {d>=1?fmt(d):d}</p></div>
+                  <div className="w-20 text-right"><p className="font-mono font-black text-slate-700">$ {d>=1?fmt(d):`${d}`}</p></div>
                   <div className="flex-1 flex items-center gap-2">
                     <p className="text-[10px] text-slate-400">×</p>
                     <input type="number" min="0" className={`${inp} text-center w-20`} value={cantidades[d]||''} onChange={e=>{const n={...cantidades};n[d]=e.target.value;setCants(n);}} placeholder="0"/>
                   </div>
                   <div className="w-24 text-right">
-                    <p className="font-mono font-black text-slate-900">{moneda==='BS'?'Bs.':'$'} {fmt(d*(Number(cantidades[d])||0))}</p>
+                    <p className="font-mono font-black text-slate-900">$ {fmt(d*(Number(cantidades[d])||0))}</p>
                   </div>
                 </div>
               ))}
@@ -3127,23 +3183,18 @@ function BancoApp({ fbUser, onBack }) {
   const ComprobantesBancariosView = () => {
     const [mes, setMes] = useState(mesActual());
     const [filtBanco, setFiltBanco] = useState('');
-
-    // Usar cont_asientos como fuente principal para tener los datos reales
-    // filtrar los que vienen del módulo Bancos en el mes seleccionado
-    const asientosMes = asientos.filter(a=>
+    const [asientosLocal, setAsientosLocal] = useState([]);
+    useEffect(()=>{
+      const u=onSnapshot(query(col('cont_asientos'),orderBy('fecha','desc')),s=>setAsientosLocal(s.docs.map(d=>d.data())));
+      return()=>u();
+    },[]);
+    const asientosMes = asientosLocal.filter(a=>
       a.modulo==='Bancos' &&
       a.fecha?.startsWith(mes) &&
-      (!filtBanco || a.movimientoBancoId && movBanco.find(m=>m.id===a.movimientoBancoId)?.cuentaId===filtBanco)
+      (!filtBanco || movBanco.find(m=>m.id===a.movimientoBancoId)?.cuentaId===filtBanco)
     );
 
-    // También buscar movimientos directos (retrocompatibilidad)
-    const movsMes = movBanco.filter(m=>
-      m.fecha?.startsWith(mes) &&
-      (m.asientoDebito||m.asientoCredito) &&
-      (!filtBanco||m.cuentaId===filtBanco)
-    );
-
-    const rows = asientosMes.length > 0 ? asientosMes : movsMes.map(m=>({
+    const rows = asientosMes.length > 0 ? asientosMes : movBanco.filter(m=>m.fecha?.startsWith(mes)&&(m.asientoDebito||m.asientoCredito)&&(!filtBanco||m.cuentaId===filtBanco)).map(m=>({
       id:m.id, comprobante:m.asientoContableId||m.id,
       fecha:m.fecha, descripcion:m.concepto,
       cuentaNombre:m.cuentaNombre,
@@ -5159,6 +5210,13 @@ function ConfiguracionApp({ settings, systemUsers, tasasList, onBack }) {
           empresaDireccion:form.direccion,empresaActividad:form.actividad,
           ts:serverTimestamp()
         },{merge:true});
+        // Update global EMPRESA_DATA immediately so letterhead reflects the change
+        EMPRESA_DATA = {
+          razonSocial:form.razonSocial,
+          rif:form.rif,
+          direccion:form.direccion,
+          telefono:form.telefono,
+        };
         setSaved(true); setTimeout(()=>setSaved(false),3000);
       } finally { setBusy(false); }
     };
@@ -5594,7 +5652,19 @@ export default function App() {
       setFbUser(u);
       if (u) {
         setLoading(false);
-        onSnapshot(doc(db, 'settings', 'general'), d => { if (d.exists()) setSettings(d.data()); });
+        onSnapshot(doc(db, 'settings', 'general'), d => {
+          if (d.exists()) {
+            const s=d.data();
+            setSettings(s);
+            // Update global letterhead data
+            if(s.empresaRazonSocial) EMPRESA_DATA={
+              razonSocial:s.empresaRazonSocial||EMPRESA_DATA.razonSocial,
+              rif:s.empresaRif||EMPRESA_DATA.rif,
+              direccion:s.empresaDireccion||EMPRESA_DATA.direccion,
+              telefono:s.empresaTelefono||EMPRESA_DATA.telefono,
+            };
+          }
+        });
         onSnapshot(query(col('banco_tasas'), orderBy('fecha', 'desc')), s => { if (!s.empty) setTasasList(s.docs.map(x => x.data())); });
       }
     });
