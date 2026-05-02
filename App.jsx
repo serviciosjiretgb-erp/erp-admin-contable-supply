@@ -1596,17 +1596,105 @@ function BancoApp({ fbUser, onBack }) {
   // ══════════════════════════════════════════════════════════════════════
   // 3. MOVIMIENTOS BANCARIOS — Ver / Editar / Eliminar + Asiento Contable
   // ══════════════════════════════════════════════════════════════════════
+  // Helper functions for asiento contable (avoids IIFE-in-JSX esbuild issue)
+  const AsientoTotales = ({form,bs,montoBs,montoUSD,tasa,mNat,fmt}) => {
+    const dBs=form.lineasContra.reduce((a,l)=>a+Number(l.debeBs||0),0);
+    const hBs=form.lineasContra.reduce((a,l)=>a+Number(l.haberBs||0),0);
+    const dUSD=form.lineasContra.reduce((a,l)=>a+Number(l.debeUSD||0),0);
+    const hUSD=form.lineasContra.reduce((a,l)=>a+Number(l.haberUSD||0),0);
+    const bBs=bs?montoBs:montoUSD*tasa;
+    const diff=Math.abs((form.tipo==='Ingreso'?hBs:dBs)-bBs);
+    const ok=diff<0.05;
+    return(
+      <div className="mt-1 space-y-2">
+        <div className="grid gap-2 px-1 py-2 bg-slate-900 rounded-xl items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+          <p className="text-[9px] font-black uppercase text-slate-400">TOTALES</p>
+          <p className="text-right font-mono font-black text-[10px] text-emerald-400">Bs.{fmt(dBs)}</p>
+          <p className="text-right font-mono font-black text-[10px] text-red-400">Bs.{fmt(hBs)}</p>
+          <p className="text-right font-mono text-[10px] text-emerald-400">${fmt(dUSD)}</p>
+          <p className="text-right font-mono text-[10px] text-red-400">${fmt(hUSD)}</p>
+          <div className="flex justify-center">{ok?<CheckCircle size={13} className="text-emerald-400"/>:<X size={13} className="text-amber-400"/>}</div>
+        </div>
+        {!ok&&mNat>0&&<p className="text-[9px] text-amber-600 font-black">Diferencia: Bs.{fmt(diff)}</p>}
+      </div>
+    );
+  };
+
+  const AsientoAlerta = ({form,bs,montoBs,montoUSD,tasa,fmt}) => {
+    const tc=form.lineasContra.reduce((a,l)=>a+Number(l.debeBs||0)+Number(l.haberBs||0),0);
+    const ba=bs?montoBs:montoUSD*tasa;
+    const df=Math.abs(tc-ba);
+    const ok=df<0.05&&tc>0;
+    if(ok) return <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border-2 border-emerald-400 rounded-xl"><CheckCircle size={16} className="text-emerald-600 flex-shrink-0"/><p className="text-[11px] font-black text-emerald-700 uppercase">Asiento Cuadrado</p></div>;
+    if(tc>0) return <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border-2 border-red-400 rounded-xl"><AlertTriangle size={16} className="text-red-600 flex-shrink-0"/><div><p className="text-[11px] font-black text-red-700 uppercase">Asiento NO Cuadrado</p><p className="text-[10px] text-red-600">Diferencia: Bs.{fmt(df)}</p></div></div>;
+    return <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl"><AlertTriangle size={14} className="text-amber-600 flex-shrink-0"/><p className="text-[10px] font-black text-amber-700 uppercase">Complete las contrapartidas</p></div>;
+  };
+
+  // ── Subcomponente para asistente de Traslado Banco→Caja (fuera del JSX anidado para evitar issues con esbuild)
+  const TrasladoRebancarizacion = ({form,setForm,bs,mNat,tasa,tasaActiva,contCuentas,inp,fmt,FG}) => {
+    const tBanco = Number(form.tasaBanco||form.tasa)||tasa;
+    const tBcv   = Number(form.tasaBcv||tasaActiva)||tasa;
+    const bsSalidos = bs?mNat:mNat*tBanco;
+    const usdBanco  = bs?mNat/tBanco:mNat;
+    const usdEntran = bsSalidos/tBcv;
+    const diffUSD   = usdBanco-usdEntran;
+    const diffBs    = diffUSD*tBcv;
+    const applyReb  = () => {
+      const ctasTraslado=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('TRASLADO'));
+      const ctasReb=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('REBANCAR')||c.nombre?.toUpperCase().includes('DIFERENC'));
+      setForm({...form,
+        lineasContra:[
+          {ctaId:ctasTraslado[0]?.id||'',ctaNom:ctasTraslado[0]?ctasTraslado[0].codigo+' · '+ctasTraslado[0].nombre:'Traslados de Fondos',debeBs:String(bsSalidos-diffBs),haberBs:'',debeUSD:String(usdEntran),haberUSD:''},
+          {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?ctasReb[0].codigo+' · '+ctasReb[0].nombre:'Diferencias en Compensación',debeBs:String(diffBs),haberBs:'',debeUSD:String(diffUSD),haberUSD:''},
+        ],
+        tasa:String(tBanco)
+      });
+    };
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+        <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">Asistente de Rebancarizacion</p>
+        <div className="grid grid-cols-2 gap-3">
+          <FG label="Tasa del Banco (a la que salio)">
+            <input type="number" step="0.01" className={inp} value={form.tasaBanco||form.tasa}
+              onChange={e=>setForm({...form,tasaBanco:e.target.value})} placeholder="Ej: 375.08"/>
+            <p className="text-[9px] text-slate-400 mt-1">Bs. que salieron del banco / USD</p>
+          </FG>
+          <FG label="Tasa BCV (a la que entra a caja)">
+            <input type="number" step="0.01" className={inp} value={form.tasaBcv||String(tasaActiva)}
+              onChange={e=>setForm({...form,tasaBcv:e.target.value})} placeholder={String(tasaActiva)}/>
+            <p className="text-[9px] text-slate-400 mt-1">USD que entran a caja</p>
+          </FG>
+        </div>
+        {form.tasaBanco && (
+          <div className="bg-white rounded-xl p-3 border border-amber-200 space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
+              <div className="bg-slate-50 rounded-lg p-2 text-center">
+                <p className="text-slate-400 font-medium">Salen del banco</p>
+                <p className="font-mono font-black text-slate-900">Bs.{fmt(bsSalidos)}</p>
+                <p className="text-slate-400">= USD{fmt(usdBanco)} (t.banco)</p>
+              </div>
+              <div className="bg-emerald-50 rounded-lg p-2 text-center">
+                <p className="text-emerald-600 font-black">Entran a caja</p>
+                <p className="font-mono font-black text-emerald-700">USD{fmt(usdEntran)}</p>
+                <p className="text-emerald-500">a tasa BCV</p>
+              </div>
+              <div className="bg-red-50 rounded-lg p-2 text-center">
+                <p className="text-red-600 font-black">Diferencial</p>
+                <p className="font-mono font-black text-red-600">USD{fmt(diffUSD)}</p>
+                <p className="text-red-400">Bs.{fmt(diffBs)}</p>
+              </div>
+            </div>
+            <button onClick={applyReb}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-colors">
+              <ArrowRight size={12}/> Aplicar Rebancarizacion Automatica
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const MovimientosView = () => {
-    const [modal, setModal]       = useState(false);
-    const [detalleId, setDetalle] = useState(null);
-    const [editId, setEditId]     = useState(null);
-    const [busy, setBusy]         = useState(false);
-    const [filtC,    setFiltC]    = useState('');
-    const [filtDesde,setFiltD]    = useState('');
-    const [filtHasta,setFiltH]    = useState('');
-    const [monedaVista,setMonedaVista] = useState('BS'); // BS o USD
-    // Búsqueda de cuentas para contrapartidas (indexadas por posición)
-    const [busqCtas, setBusqCtas] = useState({});
     const [searchTercero, setSearchTercero] = useState('');
     const [searchBanco,   setSearchBanco]   = useState('');
 
@@ -2300,30 +2388,20 @@ function BancoApp({ fbUser, onBack }) {
                     <div></div>
                   </div>
 
-                  {/* Línea del banco (pre-fija, no editable cuenta) */}
-                  {(() => {
-                    const bancoLbl = cuentaSel?.cuentaContableCod
-                      ? `${cuentaSel.cuentaContableCod} · ${cuentaSel.banco}`
-                      : `Banco ${cuentaSel.banco}`;
-                    const esDebito = (form.tipo==='Ingreso'); // Traslado: banco va al HABER
-                    const montoFuncional = bs?montoBs:montoUSD;
-                    const montoEquiv    = bs?montoUSD:montoBs;
-                    return (
-                      <div className="grid gap-2 px-1 py-2 bg-white rounded-xl border border-slate-200 items-center"
-                        style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
-                          <p className="text-[10px] font-black text-slate-800 truncate">{bancoLbl}</p>
-                          <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-black uppercase flex-shrink-0">Banco</span>
-                        </div>
-                        <p className={`text-right font-mono font-black text-xs ${esDebito?'text-emerald-700':'text-slate-300'}`}>{esDebito?(bs?`Bs.${fmt(montoBs)}`:`$${fmt(montoUSD)}`):''}</p>
-                        <p className={`text-right font-mono font-black text-xs ${!esDebito?'text-red-600':'text-slate-300'}`}>{!esDebito?(bs?`Bs.${fmt(montoBs)}`:`$${fmt(montoUSD)}`):''}</p>
-                        <p className={`text-right font-mono text-[10px] ${esDebito?'text-emerald-600':'text-slate-300'}`}>{esDebito?`$${fmt(montoUSD)}`:''}</p>
-                        <p className={`text-right font-mono text-[10px] ${!esDebito?'text-red-500':'text-slate-300'}`}>{!esDebito?`$${fmt(montoUSD)}`:''}</p>
-                        <div/>
-                      </div>
-                    );
-                  })()}
+                  {/* Línea del banco (pre-fija) */}
+                  <div className="grid gap-2 px-1 py-2 bg-white rounded-xl border border-slate-200 items-center"
+                    style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
+                      <p className="text-[10px] font-black text-slate-800 truncate">{cuentaSel?.cuentaContableCod?cuentaSel.cuentaContableCod+' · '+cuentaSel.banco:'Banco '+cuentaSel.banco}</p>
+                      <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-black uppercase flex-shrink-0">Banco</span>
+                    </div>
+                    <p className={`text-right font-mono font-black text-xs ${form.tipo==='Ingreso'?'text-emerald-700':'text-slate-300'}`}>{form.tipo==='Ingreso'?(bs?'Bs.'+fmt(montoBs):'$'+fmt(montoUSD)):''}</p>
+                    <p className={`text-right font-mono font-black text-xs ${form.tipo!=='Ingreso'?'text-red-600':'text-slate-300'}`}>{form.tipo!=='Ingreso'?(bs?'Bs.'+fmt(montoBs):'$'+fmt(montoUSD)):''}</p>
+                    <p className={`text-right font-mono text-[10px] ${form.tipo==='Ingreso'?'text-emerald-600':'text-slate-300'}`}>{form.tipo==='Ingreso'?'$'+fmt(montoUSD):''}</p>
+                    <p className={`text-right font-mono text-[10px] ${form.tipo!=='Ingreso'?'text-red-500':'text-slate-300'}`}>{form.tipo!=='Ingreso'?'$'+fmt(montoUSD):''}</p>
+                    <div/>
+                  </div>
 
                   {/* Líneas de contrapartida (editables, múltiples) */}
                   <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mt-1 mb-1">Contrapartidas</p>
@@ -2369,28 +2447,7 @@ function BancoApp({ fbUser, onBack }) {
                   })}
 
                   {/* Totales y cuadre */}
-                  {(() => {
-                    const totDebeBs=form.lineasContra.reduce((a,l)=>a+Number(l.debeBs||0),0);
-                    const totHaberBs=form.lineasContra.reduce((a,l)=>a+Number(l.haberBs||0),0);
-                    const totDebeUSD=form.lineasContra.reduce((a,l)=>a+Number(l.debeUSD||0),0);
-                    const totHaberUSD=form.lineasContra.reduce((a,l)=>a+Number(l.haberUSD||0),0);
-                    const bancoBs=bs?montoBs:montoUSD*tasa; const bancoUSD=bs?montoBs/tasa:montoUSD;
-                    const diff=Math.abs((form.tipo==='Ingreso'?totHaberBs:totDebeBs)-bancoBs);
-                    const cuadrado=diff<0.05;
-                    return (
-                      <div className="mt-1 space-y-2">
-                        <div className="grid gap-2 px-1 py-2 bg-slate-900 rounded-xl items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
-                          <p className="text-[9px] font-black uppercase text-slate-400">TOTALES CONTRAPARTIDA</p>
-                          <p className="text-right font-mono font-black text-[10px] text-emerald-400">Bs.{fmt(totDebeBs)}</p>
-                          <p className="text-right font-mono font-black text-[10px] text-red-400">Bs.{fmt(totHaberBs)}</p>
-                          <p className="text-right font-mono text-[10px] text-emerald-400">${fmt(totDebeUSD)}</p>
-                          <p className="text-right font-mono text-[10px] text-red-400">${fmt(totHaberUSD)}</p>
-                          <div className="flex justify-center">{cuadrado?<CheckCircle size={13} className="text-emerald-400"/>:<X size={13} className="text-amber-400"/>}</div>
-                        </div>
-                        {!cuadrado&&mNat>0&&<p className="text-[9px] text-amber-600 font-black">⚠ Diferencia Bs.: {fmt(diff)} — el asiento puede ser parcial</p>}
-                      </div>
-                    );
-                  })()}
+                  {cuentaSel&&AsientoTotales({form,bs,montoBs,montoUSD,tasa,mNat,fmt})}
 
                   </div>
                   )}
@@ -2402,68 +2459,16 @@ function BancoApp({ fbUser, onBack }) {
                   </button>
 
                   {/* Alerta de balance del asiento */}
-                  {form.tipo!=='Transferencia'&&cuentaSel&&mNat>0&&(()=>{
-                    const totContra=form.lineasContra.reduce((a,l)=>a+Number(l.debeBs||0)+Number(l.haberBs||0),0);
-                    const bancoAmt=bs?montoBs:montoUSD*tasa;
-                    const diff=Math.abs(totContra-bancoAmt);
-                    const cuadrado=diff<0.05&&totContra>0;
-                    return cuadrado
-                      ? <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border-2 border-emerald-400 rounded-xl"><CheckCircle size={16} className="text-emerald-600 flex-shrink-0"/><p className="text-[11px] font-black text-emerald-700 uppercase">✓ Asiento Cuadrado — Débitos = Créditos</p></div>
-                      : totContra>0
-                        ? <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border-2 border-red-400 rounded-xl"><AlertTriangle size={16} className="text-red-600 flex-shrink-0"/><div><p className="text-[11px] font-black text-red-700 uppercase">⚠ Asiento NO Cuadrado</p><p className="text-[10px] text-red-600">Diferencia: Bs.{fmt(diff)} — El asiento no puede ser registrado sin cuadrar.</p></div></div>
-                        : <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl"><AlertTriangle size={14} className="text-amber-600 flex-shrink-0"/><p className="text-[10px] font-black text-amber-700 uppercase">Complete las contrapartidas para cuadrar el asiento</p></div>;
-                  })()}
+                  {form.tipo!=='Transferencia'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
 
                   {/* Traslado automático: tasa banco vs tasa BCV + rebancarización */}
                   {form.tipo==='Traslado Banco→Caja'&&cuentaSel&&mNat>0&&(
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-                      <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">⚡ Asistente de Rebancarización</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <FG label="Tasa del Banco (a la que salió)">
-                          <input type="number" step="0.01" className={inp} value={form.tasaBanco||form.tasa}
-                            onChange={e=>setForm({...form,tasaBanco:e.target.value})} placeholder="Ej: 375.08"/>
-                          <p className="text-[9px] text-slate-400 mt-1">Bs. que salieron del banco ÷ USD</p>
-                        </FG>
-                        <FG label="Tasa BCV (a la que entra a caja)">
-                          <input type="number" step="0.01" className={inp} value={form.tasaBcv||tasaActiva}
-                            onChange={e=>setForm({...form,tasaBcv:e.target.value})} placeholder={String(tasaActiva)}/>
-                          <p className="text-[9px] text-slate-400 mt-1">USD que entran a caja</p>
-                        </FG>
-                      </div>
-                      {form.tasaBanco&&form.tasaBcv&&mNat>0&&(()=>{
-                        const tBanco=Number(form.tasaBanco)||tasa;
-                        const tBcv  =Number(form.tasaBcv)||tasa;
-                        const bsSalidos=bs?mNat:mNat*tBanco;     // Bs. que salen del banco
-                        const usdEntran=bsSalidos/tBcv;           // USD que entran a caja (a tasa BCV)
-                        const usdBanco =bs?mNat/tBanco:mNat;      // USD al precio del banco
-                        const diffUSD  =usdBanco-usdEntran;       // diferencia = rebancarización
-                        const diffBs   =diffUSD*tBcv;
-                        return(
-                          <div className="bg-white rounded-xl p-3 border border-amber-200 space-y-2">
-                            <div className="grid grid-cols-3 gap-2 text-[10px]">
-                              <div className="bg-slate-50 rounded-lg p-2 text-center"><p className="text-slate-400 font-medium">Salen del banco</p><p className="font-mono font-black text-slate-900">Bs.{fmt(bsSalidos)}</p><p className="text-slate-400">= ${fmt(usdBanco)} (t.banco)</p></div>
-                              <div className="bg-emerald-50 rounded-lg p-2 text-center"><p className="text-emerald-600 font-black">Entran a caja</p><p className="font-mono font-black text-emerald-700">${fmt(usdEntran)}</p><p className="text-emerald-500">a tasa BCV</p></div>
-                              <div className="bg-red-50 rounded-lg p-2 text-center"><p className="text-red-600 font-black">Diferencial</p><p className="font-mono font-black text-red-600">${fmt(diffUSD)}</p><p className="text-red-400">Bs.{fmt(diffBs)}</p></div>
-                            </div>
-                            <button onClick={()=>{
-                              // Auto-poblar las líneas contrapartida con Traslado y Rebancarización
-                              const ctasTraslado=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('TRASLADO'));
-                              const ctasReb=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('REBANCAR')||c.nombre?.toUpperCase().includes('DIFERENC'));
-                              const nl=[
-                                {ctaId:ctasTraslado[0]?.id||'',ctaNom:ctasTraslado[0]?`${ctasTraslado[0].codigo} · ${ctasTraslado[0].nombre}`:'Traslados de Fondos',debeBs:String(bsSalidos-diffBs),haberBs:'',debeUSD:String(usdEntran),haberUSD:''},
-                                {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?`${ctasReb[0].codigo} · ${ctasReb[0].nombre}`:'Diferencias en Compensación',debeBs:String(diffBs),haberBs:'',debeUSD:String(diffUSD),haberUSD:''},
-                              ];
-                              setForm({...form,lineasContra:nl,tasa:form.tasaBanco});
-                            }}
-                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-colors">
-                              <ArrowRight size={12}/> Aplicar Rebancarización Automática
-                            </button>
-                          </div>
-                        );
-                      })()}
-                </div>
-              </div>
-            )}
+                    <TrasladoRebancarizacion
+                      form={form} setForm={setForm}
+                      bs={bs} mNat={mNat} tasa={tasa} tasaActiva={tasaActiva}
+                      contCuentas={contCuentas} inp={inp} fmt={fmt} FG={FG}
+                    />
+                  )}
 
             {/* Terceros */}
             {form.tipo!=='Transferencia'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
