@@ -2245,36 +2245,37 @@ function BancoApp({ fbUser, onBack }) {
         )}
 
         {/* ── FILTROS + TABLA ── */}
-        <Card title="Movimientos Bancarios" subtitle="Ingresos · Egresos · Transferencias"
-          action={<div className="flex gap-2 flex-wrap items-center">
-            {/* Toggle moneda */}
-            <div className="flex rounded-xl overflow-hidden border-2 border-slate-200">
-              <button onClick={()=>setMonedaVista('BS')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='BS'?'bg-blue-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>Bs.</button>
-              <button onClick={()=>setMonedaVista('USD')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='USD'?'bg-emerald-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>USD $</button>
+        <Card title="Movimientos Bancarios" subtitle="Ingresos · Egresos · Traslados"
+          action={
+            <div className="flex gap-2 flex-wrap items-center">
+              <div className="flex rounded-xl overflow-hidden border-2 border-slate-200">
+                <button onClick={()=>setMonedaVista('BS')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='BS'?'bg-blue-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>Bs.</button>
+                <button onClick={()=>setMonedaVista('USD')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='USD'?'bg-emerald-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>USD $</button>
+              </div>
+              <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
+                <option value="">Todos los bancos</option>
+                {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').length>0&&<optgroup label="🇻🇪 Bolívares">
+                  {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
+                </optgroup>}
+                {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').length>0&&<optgroup label="💵 Moneda Extranjera">
+                  {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco} ({c.moneda})</option>)}
+                </optgroup>}
+              </select>
+              <div className="flex items-center gap-1.5">
+                <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtDesde} onChange={e=>setFiltD(e.target.value)} title="Desde"/>
+                <span className="text-slate-400 text-xs font-bold">—</span>
+                <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
+              </div>
+              {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
+              <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
+              <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
             </div>
-            <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
-              <option value="">Todos los bancos</option>
-              {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').length>0&&<optgroup label="🇻🇪 Bolívares">
-                {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
-              </optgroup>}
-              {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').length>0&&<optgroup label="💵 Moneda Extranjera">
-                {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco} ({c.moneda})</option>)}
-              </optgroup>}
-            </select>
-            <div className="flex items-center gap-1.5">
-              <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtDesde} onChange={e=>setFiltD(e.target.value)} title="Desde"/>
-              <span className="text-slate-400 text-xs font-bold">—</span>
-              <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
-            </div>
-            {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
-            <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
-            <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
-          </div>}>
+          }>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto / Tercero</Th><Th right>{monedaVista==='BS'?'Bs.':'USD'}</Th><Th right>Tasa</Th><Th>Estado</Th><Th></Th></tr></thead>
               <tbody>
-                {movFilt.length===0&&<tr><td colSpan={11}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
+                {movFilt.length===0&&<tr><td colSpan={8}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
                 {movFilt.map(m=><tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(m.id)}>
                   <Td>{dd(m.fecha)}</Td>
                   <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'gold':'blue'}>{(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'Traslado':m.tipo}</Badge></Td>
@@ -2296,6 +2297,11 @@ function BancoApp({ fbUser, onBack }) {
                   </Td>
                 </tr>)}
               </tbody>
+              {movFilt.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
+                <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400">TOTALES — {movFilt.length} mov.</td>
+                <td className="px-4 py-3 text-right font-mono font-black text-white">{monedaVista==='BS'?'Bs.'+fmt(movFilt.reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoBs||0),0)):'$'+fmt(movFilt.reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoUSD||0),0))}</td>
+                <td colSpan={3}></td>
+              </tr></tfoot>}
             </table>
           </div>
         </Card>
