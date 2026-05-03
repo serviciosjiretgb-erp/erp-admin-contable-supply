@@ -1695,6 +1695,7 @@ function BancoApp({ fbUser, onBack }) {
   };
 
   const MovimientosView = () => {
+    const [monedaVista, setMonedaVista] = useState('USD');
     const [searchTercero, setSearchTercero] = useState('');
     const [searchBanco,   setSearchBanco]   = useState('');
 
@@ -2944,7 +2945,7 @@ function BancoApp({ fbUser, onBack }) {
             </div>
             <div className="rounded-2xl p-5 flex justify-between items-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
               <p className="font-black text-white uppercase tracking-widest text-sm">Total Arqueo</p>
-              <p className="font-mono font-black text-2xl text-emerald-400">{moneda==='BS'?'Bs.':'$'} {fmt(totalArqueo)}</p>
+              <p className="font-mono font-black text-2xl text-emerald-400">$ {fmt(totalArqueo)}</p>
             </div>
           </div>
         </Modal>
