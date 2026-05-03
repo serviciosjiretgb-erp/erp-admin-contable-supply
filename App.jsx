@@ -1797,7 +1797,7 @@ function BancoApp({ fbUser, onBack }) {
       concepto:'',referencia:'',tasa:String(tasaActiva),montoNativo:'',
       aplicaTercero:false,tipoTercero:'Cliente',terceroId:'',
       cerrarCxC:false,facturaId:'',
-      ctaContraId:'',ctaContraNombre:'',
+      ctaContraId:'',ctaContraNombre:'',cuentaAjusteId:'',
       lineasContra:[{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}],
       tasaBanco:'',tasaBcv:String(tasaActiva)
     });
@@ -1830,11 +1830,12 @@ function BancoApp({ fbUser, onBack }) {
       if(!form.concepto) return alert('Ingrese el concepto');
       if((form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&!form.cuentaDestinoId) return alert('Seleccione cuenta destino');
       if(form.tipo==='Traslado de Fondo'&&form.cuentaDestinoId===form.cuentaId) return alert('El Banco Destino no puede ser el mismo que el Banco Origen');
+      if((form.tipo==='Nota de Débito'||form.tipo==='Nota de Crédito')&&!form.cuentaAjusteId) return alert('Seleccione la cuenta contable del ajuste (comisión, interés, etc.)');
       if(form.aplicaTercero&&!form.terceroId) return alert('Seleccione el tercero');
       setBusy(true);
       try {
         const cuenta=cuentas.find(c=>c.id===form.cuentaId);
-        const signo=form.tipo==='Ingreso'?1:-1;
+        const signo=(form.tipo==='Ingreso'||form.tipo==='Nota de Crédito')?1:-1;
         const nuevoSaldo=Number(cuenta.saldo)+signo*mNat;
         const id=gid(); const batch=writeBatch(db);
         const tercero=form.tipoTercero==='Cliente'?clientes.find(c=>c.id===form.terceroId):provs.find(p=>p.id===form.terceroId);
@@ -1854,13 +1855,33 @@ function BancoApp({ fbUser, onBack }) {
         const esMonedaLocal = cuenta.moneda === 'BS';
         const bancoBs=esMonedaLocal?montoBs:montoUSD*tasa;
         const bancoUSD=esMonedaLocal?montoBs/tasa:montoUSD;
-        const esIngreso=form.tipo==='Ingreso';
+        const esIngreso=form.tipo==='Ingreso'||form.tipo==='Nota de Crédito';
         const esTraslado=form.tipo==='Traslado Banco→Caja';
         const esTransferencia=form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo';
+        const esNotaAjuste=form.tipo==='Nota de Débito'||form.tipo==='Nota de Crédito';
 
         let todasLineas=[];
 
-        if(esTransferencia && cuentaDest) {
+        if(esNotaAjuste) {
+          // Nota de Débito: gasto/comisión → banco disminuye
+          // Nota de Crédito: ingreso/interés → banco aumenta
+          const ctaAjusteObj=contCuentas.find(c=>c.id===form.cuentaAjusteId)||{};
+          const ctaAjusteCod=String(ctaAjusteObj.codigo||'');
+          const ctaAjusteNom=ctaAjusteObj.nombre||'Cuenta Ajuste';
+          const ctaBCod=(cuentaSel?.cuentaContableCod||cuentaSel?.cuentaContable?.split('·')[0]||'').trim();
+          const ctaBNom=(cuentaSel?.cuentaContableNom||cuentaSel?.cuentaContable?.split('·')[1]||`Banco ${cuenta.banco}`).trim();
+          if(form.tipo==='Nota de Débito'){
+            todasLineas=[
+              {codigo:ctaAjusteCod,cuenta:ctaAjusteNom,tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:bancoBs,haberBs:0,debeUSD:bancoUSD,haberUSD:0},
+              {codigo:ctaBCod,cuenta:ctaBNom,tipoLinea:'H',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:0,haberBs:bancoBs,debeUSD:0,haberUSD:bancoUSD},
+            ];
+          } else {
+            todasLineas=[
+              {codigo:ctaBCod,cuenta:ctaBNom,tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:bancoBs,haberBs:0,debeUSD:bancoUSD,haberUSD:0},
+              {codigo:ctaAjusteCod,cuenta:ctaAjusteNom,tipoLinea:'H',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:0,haberBs:bancoBs,debeUSD:0,haberUSD:bancoUSD},
+            ];
+          }
+        } else if(esTransferencia && cuentaDest) {
           // Transferencia/Traslado de Fondo banco a banco: banco origen→Haber, banco destino→Debe
           const bsOrigen=esMonedaLocal?montoBs:montoUSD*tasa;
           const usdOrigen=esMonedaLocal?montoBs/tasa:montoUSD;
@@ -2345,7 +2366,7 @@ function BancoApp({ fbUser, onBack }) {
                 {movFilt.length===0&&<tr><td colSpan={8}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
                 {movFilt.map(m=><tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(m.id)}>
                   <Td>{dd(m.fecha)}</Td>
-                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'gold':'blue'}>{(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'Traslado':m.tipo}</Badge></Td>
+                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'gold':m.tipo==='Nota de Débito'?'red':m.tipo==='Nota de Crédito'?'green':'blue'}>{(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'Traslado':m.tipo==='Nota de Débito'?'N.Débito':m.tipo==='Nota de Crédito'?'N.Crédito':m.tipo}</Badge></Td>
                   <Td className="font-semibold text-[11px] max-w-[90px] truncate">{m.cuentaNombre}</Td>
                   <Td className="max-w-[200px]">
                     <p className="text-slate-800 text-[11px] font-medium truncate">{m.concepto}</p>
@@ -2368,8 +2389,8 @@ function BancoApp({ fbUser, onBack }) {
                 <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 text-left">BALANCE NETO (INGRESOS - EGRESOS)</td>
                 <td className="px-4 py-3 text-right font-mono font-black text-white">
                   {(monedaVista==='BS'?'Bs.':'$')+fmt(movFilt.reduce((a,m)=>{
-                    if(m.tipo==='Ingreso') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
-                    if(m.tipo==='Egreso')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
+                    if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
+                    if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
                     return a; // Traslados y otros: valor neutro
                   },0))}
                 </td>
@@ -2388,9 +2409,9 @@ function BancoApp({ fbUser, onBack }) {
               <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
               <FG label="Tipo de Movimiento">
                 <div className="flex gap-1 flex-wrap">
-                  {['Ingreso','Egreso','Traslado de Fondo','Traslado Banco→Caja'].map(t=>(
-                    <button key={t} onClick={()=>setForm({...form,tipo:t,cuentaDestinoId:''})}
-                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all min-w-[70px] ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':t==='Traslado de Fondo'?'bg-blue-500 text-white border-blue-500':'bg-amber-500 text-white border-amber-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                  {['Ingreso','Egreso','Traslado de Fondo','Traslado Banco→Caja','Nota de Débito','Nota de Crédito'].map(t=>(
+                    <button key={t} onClick={()=>setForm({...form,tipo:t,cuentaDestinoId:'',cuentaAjusteId:''})}
+                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all min-w-[70px] ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':t==='Traslado de Fondo'?'bg-blue-500 text-white border-blue-500':t==='Nota de Débito'?'bg-rose-600 text-white border-rose-600':t==='Nota de Crédito'?'bg-teal-600 text-white border-teal-600':'bg-amber-500 text-white border-amber-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
                   ))}
                 </div>
               </FG>
@@ -2451,8 +2472,32 @@ function BancoApp({ fbUser, onBack }) {
             {/* Concepto */}
             <FG label="Concepto / Descripción" full><input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} placeholder="Descripción del movimiento..."/></FG>
 
+            {/* Selector de cuenta contable para Notas de Débito / Crédito */}
+            {(form.tipo==='Nota de Débito'||form.tipo==='Nota de Crédito')&&(
+              <div className={`rounded-xl p-4 border-2 ${form.tipo==='Nota de Débito'?'bg-rose-50 border-rose-200':'bg-teal-50 border-teal-200'}`}>
+                <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${form.tipo==='Nota de Débito'?'text-rose-700':'text-teal-700'}`}>
+                  {form.tipo==='Nota de Débito'?'▼ Nota de Débito — Cuenta de Gasto / Comisión':'▲ Nota de Crédito — Cuenta de Ingreso / Interés'}
+                </p>
+                <FG label="Cuenta Contable del Ajuste">
+                  <div className="relative mb-1">
+                    <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                    <input value={busqCtas['ajuste']||''} onChange={e=>setBusqCtas(p=>({...p,ajuste:e.target.value}))}
+                      placeholder="Buscar cuenta por código o nombre..." className={`${inp} pl-8 text-[11px]`}/>
+                  </div>
+                  <select className={sel} value={form.cuentaAjusteId}
+                    onChange={e=>setForm({...form,cuentaAjusteId:e.target.value})}>
+                    <option value="">— Seleccione la cuenta contable —</option>
+                    {[...contCuentas]
+                      .filter(c=>!busqCtas['ajuste']||(c.codigo+' '+c.nombre).toUpperCase().includes((busqCtas['ajuste']||'').toUpperCase()))
+                      .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
+                      .map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                  </select>
+                </FG>
+              </div>
+            )}
+
             {/* ── ASIENTO CONTABLE COMPUESTO ── */}
-            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo' && cuentaSel && (
+            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito' && cuentaSel && (
               <div className="rounded-2xl overflow-hidden border border-blue-100">
                 <div className="px-5 py-3 bg-blue-600 flex items-center gap-2">
                   <BookOpen size={14} className="text-blue-200"/>
@@ -2540,7 +2585,7 @@ function BancoApp({ fbUser, onBack }) {
                   </button>
 
                   {/* Alerta de balance del asiento */}
-                  {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
+                  {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
 
                   {/* Traslado automático: tasa banco vs tasa BCV + rebancarización */}
                   {form.tipo==='Traslado Banco→Caja'&&cuentaSel&&mNat>0&&(
@@ -2556,7 +2601,7 @@ function BancoApp({ fbUser, onBack }) {
             )}
 
             {/* Terceros */}
-            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
+            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs font-black text-slate-700 uppercase tracking-wide">Vincular a Tercero</p><p className="text-[10px] text-slate-400">Asociar a cliente (CxC) o proveedor (CxP)</p></div>
                 <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:'',facturaId:'',cerrarCxC:false})}
