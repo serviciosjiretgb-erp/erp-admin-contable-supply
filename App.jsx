@@ -3068,6 +3068,10 @@ function BancoApp({ fbUser, onBack }) {
         <KPI label="Flujo Neto"   value={`$${fmt(iU-eU)}`} accent={iU-eU>=0?'green':'red'} Icon={ArrowLeftRight}/>
         <KPI label="Transacciones" value={filt.length} accent="blue" Icon={FileText}/>
       </div>
+      <Card title="Detalle de Movimientos" subtitle="Ingresos y Egresos del período seleccionado"
+        action={
+          <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
+        }>
         <div className="overflow-x-auto"><table className="w-full"><thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto</Th><Th>Tercero</Th><Th>Ref.</Th><Th right>USD</Th><Th right>Bs.</Th><Th right>Tasa</Th><Th>Estado</Th></tr></thead>
           <tbody>
             {filt.length===0&&<tr><td colSpan={10}><EmptyState icon={BarChart3} title="Sin datos" desc="Ajuste los filtros"/></td></tr>}
