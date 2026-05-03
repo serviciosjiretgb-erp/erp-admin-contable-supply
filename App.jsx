@@ -1461,8 +1461,8 @@ function BancoApp({ fbUser, onBack }) {
         </style></head><body>
         <h1>Servicios Jiret G&B, C.A. — Registro de Cuentas Bancarias</h1>
         <p class="sub">RIF: J-412309374 · Generado: ${dd(today())}</p>
-        <table><thead><tr><th>Tipo</th><th>Banco / Entidad</th><th>Número de Cuenta</th><th>Tipo de Cuenta</th><th>Titular</th><th>Moneda</th></tr></thead>
-        <tbody>${cuentas.map(c=>{const tb=TIPO_BANCO.find(t=>t.id===c.tipoBanco)||TIPO_BANCO[0];return`<tr><td><span class="flag">${tb.flag}</span> ${c.tipoBanco||'—'}</td><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta}</td><td>${c.titular||'—'}</td><td>${c.moneda}</td></tr>`;}).join('')}
+        <table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Titular</th></tr></thead>
+        <tbody>${cuentas.map(c=>`<tr><td style="font-weight:bold">${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta}</td><td>${c.moneda}</td><td>${c.titular||'Servicios Jiret G&B, C.A.'}</td></tr>`).join('')}
         </tbody></table>
         <footer>Supply ERP · ${cuentas.length} cuenta(s) registrada(s) · Servicios Jiret G&amp;B, C.A.</footer>
         </body></html>`);
@@ -1480,7 +1480,7 @@ function BancoApp({ fbUser, onBack }) {
           <td style="font-family:monospace">${c.numeroCuenta}</td>
           <td>${c.tipoCuenta||'—'}</td>
           <td>${c.moneda}</td>
-          <td>${c.titular||'—'}</td>
+          <td>${c.titular||'Servicios Jiret G&B, C.A.'}</td>
         </tr>`;
       }).join('');
       const thead=`<thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Titular</th></tr></thead>`;
@@ -1767,7 +1767,8 @@ function BancoApp({ fbUser, onBack }) {
       if(!form.cuentaId) return alert('Seleccione una cuenta bancaria');
       if(!form.montoNativo||mNat<=0) return alert('Ingrese un monto válido');
       if(!form.concepto) return alert('Ingrese el concepto');
-      if(form.tipo==='Transferencia'&&!form.cuentaDestinoId) return alert('Seleccione cuenta destino');
+      if((form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&!form.cuentaDestinoId) return alert('Seleccione cuenta destino');
+      if(form.tipo==='Traslado de Fondo'&&form.cuentaDestinoId===form.cuentaId) return alert('El Banco Destino no puede ser el mismo que el Banco Origen');
       if(form.aplicaTercero&&!form.terceroId) return alert('Seleccione el tercero');
       setBusy(true);
       try {
@@ -1794,7 +1795,7 @@ function BancoApp({ fbUser, onBack }) {
         const bancoUSD=esMonedaLocal?montoBs/tasa:montoUSD;
         const esIngreso=form.tipo==='Ingreso';
         const esTraslado=form.tipo==='Traslado Banco→Caja';
-        const esTransferencia=form.tipo==='Transferencia';
+        const esTransferencia=form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo';
 
         let todasLineas=[];
 
@@ -1831,7 +1832,7 @@ function BancoApp({ fbUser, onBack }) {
           numero: numComp,
           mes: mesLabel,
           fecha: form.fecha,
-          tipo: form.tipo==='Traslado Banco→Caja'?'Traslado':form.tipo==='Ingreso'?'Ingreso':'Egreso',
+          tipo: (form.tipo==='Traslado Banco→Caja'||form.tipo==='Traslado de Fondo')?'Traslado':form.tipo==='Ingreso'?'Ingreso':'Egreso',
           subTipo: form.tipo,
           nroDocumento: form.referencia||'',
           descripcion: form.concepto.toUpperCase(),
@@ -1865,7 +1866,7 @@ function BancoApp({ fbUser, onBack }) {
           estatus:'No Conciliado',ts:serverTimestamp()
         });
         batch.update(dref('banco_cuentas',cuenta.id),{saldo:nuevoSaldo});
-        if(form.tipo==='Transferencia'&&cuentaDest)
+        if((form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&cuentaDest)
           batch.update(dref('banco_cuentas',cuentaDest.id),{saldo:Number(cuentaDest.saldo)+mNat});
         if(factura&&form.cerrarCxC){
           const ns=Math.max(0,factura.saldoUSD-montoUSD);
@@ -2266,7 +2267,6 @@ function BancoApp({ fbUser, onBack }) {
               <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
             </div>
             {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
-            <button onClick={()=>exportarMovimientos('pdf')} className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><FileText size={12}/> PDF</button>
             <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
             <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
           </div>}>
@@ -2277,7 +2277,7 @@ function BancoApp({ fbUser, onBack }) {
                 {movFilt.length===0&&<tr><td colSpan={11}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
                 {movFilt.map(m=><tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(m.id)}>
                   <Td>{dd(m.fecha)}</Td>
-                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':m.tipo==='Traslado Banco→Caja'?'gold':'blue'}>{m.tipo==='Traslado Banco→Caja'?'Traslado':m.tipo}</Badge></Td>
+                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'gold':'blue'}>{(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'Traslado':m.tipo}</Badge></Td>
                   <Td className="font-semibold text-[11px] max-w-[90px] truncate">{m.cuentaNombre}</Td>
                   <Td className="max-w-[200px]">
                     <p className="text-slate-800 text-[11px] font-medium truncate">{m.concepto}</p>
@@ -2309,9 +2309,9 @@ function BancoApp({ fbUser, onBack }) {
               <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
               <FG label="Tipo de Movimiento">
                 <div className="flex gap-1 flex-wrap">
-                  {['Ingreso','Egreso','Transferencia','Traslado Banco→Caja'].map(t=>(
-                    <button key={t} onClick={()=>setForm({...form,tipo:t})}
-                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all min-w-[70px] ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':t==='Transferencia'?'bg-blue-500 text-white border-blue-500':'bg-amber-500 text-white border-amber-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                  {['Ingreso','Egreso','Traslado de Fondo','Traslado Banco→Caja'].map(t=>(
+                    <button key={t} onClick={()=>setForm({...form,tipo:t,cuentaDestinoId:''})}
+                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all min-w-[70px] ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':t==='Traslado de Fondo'?'bg-blue-500 text-white border-blue-500':'bg-amber-500 text-white border-amber-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
                   ))}
                 </div>
               </FG>
@@ -2333,11 +2333,16 @@ function BancoApp({ fbUser, onBack }) {
             </div>}
 
             {/* Cuenta(s) */}
-            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado Banco→Caja'
+            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado Banco→Caja'&&form.tipo!=='Traslado de Fondo'
               ? <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label={`Cuenta Bancaria (${cuentas.length} disponibles)`}/>
               : <div className="grid grid-cols-2 gap-4">
                   <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label={form.tipo==='Traslado Banco→Caja'?'🏦 Banco Origen (débito)':'🏦 Banco Origen'} excluirId={form.cuentaDestinoId}/>
-                  {form.tipo==='Transferencia'&&<CuentaSelector value={form.cuentaDestinoId} onChange={v=>setForm({...form,cuentaDestinoId:v})} label="🏦 Banco Destino" excluirId={form.cuentaId}/>}
+                  {(form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&(
+                    <div>
+                      <CuentaSelector value={form.cuentaDestinoId} onChange={v=>{if(v===form.cuentaId){alert('El Banco Destino no puede ser el mismo que el Banco Origen');return;}setForm({...form,cuentaDestinoId:v});}} label="🏦 Banco Destino" excluirId={form.cuentaId}/>
+                      {form.cuentaDestinoId&&form.cuentaDestinoId===form.cuentaId&&(<p className="text-[10px] text-red-500 font-black mt-1 uppercase">⚠ El banco destino no puede ser el mismo que el origen</p>)}
+                    </div>
+                  )}
                 </div>
             }
 
@@ -2368,7 +2373,7 @@ function BancoApp({ fbUser, onBack }) {
             <FG label="Concepto / Descripción" full><input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} placeholder="Descripción del movimiento..."/></FG>
 
             {/* ── ASIENTO CONTABLE COMPUESTO ── */}
-            {form.tipo!=='Transferencia' && cuentaSel && (
+            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo' && cuentaSel && (
               <div className="rounded-2xl overflow-hidden border border-blue-100">
                 <div className="px-5 py-3 bg-blue-600 flex items-center gap-2">
                   <BookOpen size={14} className="text-blue-200"/>
@@ -2456,7 +2461,7 @@ function BancoApp({ fbUser, onBack }) {
                   </button>
 
                   {/* Alerta de balance del asiento */}
-                  {form.tipo!=='Transferencia'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
+                  {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
 
                   {/* Traslado automático: tasa banco vs tasa BCV + rebancarización */}
                   {form.tipo==='Traslado Banco→Caja'&&cuentaSel&&mNat>0&&(
@@ -2471,7 +2476,7 @@ function BancoApp({ fbUser, onBack }) {
             )}
 
             {/* Terceros */}
-            {form.tipo!=='Transferencia'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
+            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div><p className="text-xs font-black text-slate-700 uppercase tracking-wide">Vincular a Tercero</p><p className="text-[10px] text-slate-400">Asociar a cliente (CxC) o proveedor (CxP)</p></div>
                 <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:'',facturaId:'',cerrarCxC:false})}
