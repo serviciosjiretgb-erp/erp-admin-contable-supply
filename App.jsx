@@ -2298,8 +2298,14 @@ function BancoApp({ fbUser, onBack }) {
                 </tr>)}
               </tbody>
               {movFilt.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
-                <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400">TOTALES — {movFilt.length} mov.</td>
-                <td className="px-4 py-3 text-right font-mono font-black text-white">{monedaVista==='BS'?'Bs.'+fmt(movFilt.reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoBs||0),0)):'$'+fmt(movFilt.reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoUSD||0),0))}</td>
+                <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 text-left">BALANCE NETO (INGRESOS - EGRESOS)</td>
+                <td className="px-4 py-3 text-right font-mono font-black text-white">
+                  {(monedaVista==='BS'?'Bs.':'$')+fmt(movFilt.reduce((a,m)=>{
+                    if(m.tipo==='Ingreso') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
+                    if(m.tipo==='Egreso')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
+                    return a; // Traslados y otros: valor neutro
+                  },0))}
+                </td>
                 <td colSpan={3}></td>
               </tr></tfoot>}
             </table>
@@ -2873,6 +2879,9 @@ function BancoApp({ fbUser, onBack }) {
     const [cantidades, setCants] = useState({});
     const denoms = DENOM_USD;
     const totalArqueo = denoms.reduce((a,d)=>a+(Number(cantidades[d]||0)*d),0);
+    // Saldo esperado en caja USD según movimientos registrados
+    const saldoCajaUSD = movCaja.filter(m=>m.moneda==='USD').reduce((a,m)=>m.tipo==='Ingreso'?a+Number(m.montoUSD||0):a-Number(m.montoUSD||0),0);
+    const diferencia = (arques[0]?.totalArqueo||0) - saldoCajaUSD;
 
     const save = async()=>{
       setBusy(true);
@@ -2899,10 +2908,14 @@ function BancoApp({ fbUser, onBack }) {
                 <Td right mono className="font-black text-slate-900">$ {fmt(a.totalArqueo)}</Td>
               </tr>)}</tbody>
               <tfoot><tr style={{background:'#0f172a'}}>
-                <td colSpan={2} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400">Último Arqueo Registrado</td>
-                <td className="px-4 py-3 text-right">
-                  <span className="block text-[9px] uppercase text-slate-500">Total Contado</span>
-                  <span className="font-mono font-black text-emerald-400">$ {fmt(arques[0]?.totalArqueo||0)}</span>
+                <td className="px-4 py-4 text-[10px] font-black uppercase text-slate-400 text-left">RESULTADO DEL ARQUEO</td>
+                <td className="px-4 py-4 text-center border-l border-slate-800 text-white">
+                  <span className="block text-[9px] uppercase text-slate-500">Total Físico</span>
+                  <span className="font-mono font-black text-sm">${fmt(arques[0]?.totalArqueo||0)}</span>
+                </td>
+                <td className="px-4 py-4 text-right border-l border-slate-800 text-white">
+                  <span className="block text-[9px] uppercase text-slate-500">Diferencia</span>
+                  <span className={`font-mono font-black text-sm ${diferencia===0?'text-emerald-400':diferencia>0?'text-blue-400':'text-red-400'}`}>{diferencia>0?'+':''}{fmt(diferencia)}</span>
                 </td>
               </tr></tfoot>
             </table></div>}
