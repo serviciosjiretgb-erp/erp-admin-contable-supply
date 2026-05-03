@@ -1484,7 +1484,7 @@ function BancoApp({ fbUser, onBack }) {
         </tr>`;
       }).join('');
       const thead=`<thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Titular</th></tr></thead>`;
-      const content=letterheadOpen('Reporte de Cuentas Bancarias',`Titular: Servicios Jiret G&B, C.A. · RIF: J-412309374 · ${dd(today())} · Tasa: ${tasaActiva} Bs/$`)+
+      const content=letterheadOpen('Reporte de Cuentas Bancarias',`Servicios Jiret G&B, C.A. · RIF: J-412309374 · ${dd(today())}`)+
         `<h3 style="color:#1e3a5f;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:16px 0 8px">🇻🇪 Cuentas Nacionales — Bolívares</h3>
         <table>${thead}<tbody>${mkRows(nacBs)}</tbody></table>
         <h3 style="color:#065f46;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin:20px 0 8px">💵 Cuentas Moneda Extranjera</h3>
@@ -1977,7 +1977,7 @@ function BancoApp({ fbUser, onBack }) {
         <td style="text-align:right;font-family:monospace;font-weight:bold;color:#4ade80">Ing: $${fmt(totI)}<br>Egr: $${fmt(totE)}</td>
         <td colspan="3"></td>
       </tr></tfoot></table>`+
-      letterheadClose(`Módulo: Tesorería & Bancos · Tasa ref: ${tasaActiva} Bs/$`);
+      letterheadClose(`Módulo: Tesorería & Bancos · ${dd(today())}`);
       if(formato==='pdf'){
         printWindow(html);
       } else {
@@ -2892,12 +2892,20 @@ function BancoApp({ fbUser, onBack }) {
         </div>
         <Card title="Historial de Arqueos" subtitle="Conteos físicos de caja USD" action={<Bg onClick={()=>{setCants({});setModal(true);}} sm><Plus size={12}/> Nuevo Arqueo</Bg>}>
           {arques.length===0?<EmptyState icon={Coins} title="Sin arqueos" desc="Realice el primer arqueo de caja"/>:
-            <table className="w-full"><thead><tr><Th>Fecha</Th><Th>Moneda</Th><Th right>Total Contado</Th></tr></thead>
+            <div className="overflow-x-auto"><table className="w-full">
+              <thead><tr><Th>Fecha</Th><Th>Moneda</Th><Th right>Total Contado</Th></tr></thead>
               <tbody>{arques.map(a=><tr key={a.id} className="hover:bg-slate-50">
                 <Td>{dd(a.fecha)}</Td><Td><Pill usd>USD</Pill></Td>
                 <Td right mono className="font-black text-slate-900">$ {fmt(a.totalArqueo)}</Td>
               </tr>)}</tbody>
-            </table>}
+              <tfoot><tr style={{background:'#0f172a'}}>
+                <td colSpan={2} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400">Último Arqueo Registrado</td>
+                <td className="px-4 py-3 text-right">
+                  <span className="block text-[9px] uppercase text-slate-500">Total Contado</span>
+                  <span className="font-mono font-black text-emerald-400">$ {fmt(arques[0]?.totalArqueo||0)}</span>
+                </td>
+              </tr></tfoot>
+            </table></div>}
         </Card>
 
         <Modal open={modal} onClose={()=>setModal(false)} title="Arqueo de Caja — Dólares (USD)" wide
@@ -3150,7 +3158,7 @@ function BancoApp({ fbUser, onBack }) {
         const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
         return `<tr><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta||'—'}</td><td>${c.moneda}</td><td style="text-align:right;font-family:monospace;font-weight:bold">Bs.${fmt(bsEq)}</td><td style="text-align:right;font-family:monospace;font-weight:bold;color:#16a34a">$${fmt(usd)}</td></tr>`;
       }).join('');
-      printWindow(letterheadOpen('Reporte General Bancario',`Tasa: ${tasaActiva} Bs/$ · ${dd(today())} · ${cuentas.length} cuentas`)+
+      printWindow(letterheadOpen('Reporte General Bancario',`Servicios Jiret G&B, C.A. · RIF: J-412309374 · ${dd(today())} · ${cuentas.length} cuentas`)+
         `<table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Saldo Bs.</th><th>Equiv. USD</th></tr></thead><tbody>${rows}</tbody>
         <tfoot><tr><td colspan="4" style="font-weight:bold">TOTAL CONSOLIDADO</td><td style="text-align:right;font-weight:bold">Bs.${fmt(totBsEq)}</td><td style="text-align:right;font-weight:bold;color:#16a34a">$${fmt(totBsEq/tasaActiva)}</td></tr></tfoot></table>`+
         letterheadClose(`${cuentas.length} cuenta(s) registrada(s)`));
