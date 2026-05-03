@@ -1631,7 +1631,7 @@ function BancoApp({ fbUser, onBack }) {
   };
 
   // ── Subcomponente para asistente de Traslado Banco→Caja (fuera del JSX anidado para evitar issues con esbuild)
-  const TrasladoRebancarizacion = ({form,setForm,bs,mNat,tasa,tasaActiva,contCuentas,inp,fmt,FG}) => {
+  const TrasladoRebancarizacion = ({form,setForm,bs,mNat,tasa,tasaActiva,contCuentas,inp,fmt,FG,cuentasSel,onSaveDone}) => {
     const tBanco = Number(form.tasaBanco||form.tasa)||tasa;
     const tBcv   = Number(form.tasaBcv||tasaActiva)||tasa;
     const bsSalidos = bs?mNat:mNat*tBanco;
@@ -1639,17 +1639,63 @@ function BancoApp({ fbUser, onBack }) {
     const usdEntran = bsSalidos/tBcv;
     const diffUSD   = usdBanco-usdEntran;
     const diffBs    = diffUSD*tBcv;
-    const applyReb  = () => {
+    const [rebBusy, setRebBusy] = useState(false);
+
+    // Pre-llena las líneas contables en el form para revisión antes de guardar
+    const previewReb = () => {
       const ctasTraslado=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('TRASLADO'));
       const ctasReb=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('REBANCAR')||c.nombre?.toUpperCase().includes('DIFERENC'));
       setForm({...form,
         lineasContra:[
           {ctaId:ctasTraslado[0]?.id||'',ctaNom:ctasTraslado[0]?ctasTraslado[0].codigo+' · '+ctasTraslado[0].nombre:'Traslados de Fondos',debeBs:String(bsSalidos-diffBs),haberBs:'',debeUSD:String(usdEntran),haberUSD:''},
-          {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?ctasReb[0].codigo+' · '+ctasReb[0].nombre:'Diferencias en Compensación',debeBs:String(diffBs),haberBs:'',debeUSD:String(diffUSD),haberUSD:''},
+          {ctaId:ctasReb[0]?.id||'',ctaNom:ctasReb[0]?ctasReb[0].codigo+' · '+ctasReb[0].nombre:'Diferencias en Compensación (Rebancarización)',debeBs:String(diffBs),haberBs:'',debeUSD:String(diffUSD),haberUSD:''},
         ],
         tasa:String(tBanco)
       });
     };
+
+    // Aplica y guarda directamente en Firebase con partida doble completa
+    const aplicarRebancarizacion = async () => {
+      if(!form.cuentaId) return alert('Seleccione el banco de origen');
+      const bOrigen = cuentasSel?.find(c=>c.id===form.cuentaId);
+      if(!bOrigen) return alert('Banco origen no encontrado');
+      if(!form.tasaBanco) return alert('Ingrese la tasa a la que salió del banco');
+      const ctasTraslado=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('TRASLADO'));
+      const ctasReb=contCuentas.filter(c=>c.nombre?.toUpperCase().includes('REBANCAR')||c.nombre?.toUpperCase().includes('DIFERENC'));
+      const ctaBancoOrig=(bOrigen.cuentaContableCod||bOrigen.cuentaContable?.split('·')[0]||'').trim();
+      const ctaBancoOrigNom=(bOrigen.cuentaContableNom||bOrigen.cuentaContable?.split('·')[1]||bOrigen.banco||'').trim();
+      if(!ctaBancoOrig) return alert('El banco origen no tiene cuenta contable. Configúrela en Cuentas Bancarias.');
+      setRebBusy(true);
+      try {
+        const batch=writeBatch(db); const id=gid();
+        const yyyymm=form.fecha.substring(0,7).replace('-','');
+        const numComp=`RB-${yyyymm}-${id.slice(0,4).toUpperCase()}`;
+        const todasLineas=[
+          {codigo:ctasTraslado[0]?.codigo||'',cuenta:ctasTraslado[0]?.nombre||'Traslados de Fondos',tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto||'Rebancarización',tasa:tBcv,debeBs:bsSalidos-diffBs,haberBs:0,debeUSD:usdEntran,haberUSD:0},
+          {codigo:ctasReb[0]?.codigo||'6.2.02.09.005',cuenta:ctasReb[0]?.nombre||'DIFERENCIAS EN COMPENSACIÓN (REBANCARIZACION)',tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto||'Rebancarización',tasa:tBcv,debeBs:diffBs,haberBs:0,debeUSD:diffUSD,haberUSD:0},
+          {codigo:ctaBancoOrig,cuenta:ctaBancoOrigNom,tipoLinea:'H',nroDoc:form.referencia||'',concepto:form.concepto||'Rebancarización',tasa:tBcv,debeBs:0,haberBs:bsSalidos,debeUSD:0,haberUSD:usdBanco},
+        ];
+        batch.set(dref('cont_asientos',id),{
+          id,comprobante:numComp,numero:numComp,mes:form.fecha.substring(5,7)+'/'+form.fecha.substring(0,4),
+          fecha:form.fecha,tipo:'Traslado',subTipo:'Rebancarización',
+          descripcion:`REBANCARIZACIÓN: ${bOrigen.banco} | ${form.concepto||'Traslado'}`.toUpperCase(),
+          nroDocumento:form.referencia||'',tasa:tBcv,niif:false,efectivo:false,modulo:'Bancos',
+          lineas:todasLineas,
+          totalDebeBs:todasLineas.reduce((a,l)=>a+l.debeBs,0),
+          totalHaberBs:todasLineas.reduce((a,l)=>a+l.haberBs,0),
+          totalDebeUSD:todasLineas.reduce((a,l)=>a+l.debeUSD,0),
+          totalHaberUSD:todasLineas.reduce((a,l)=>a+l.haberUSD,0),
+          ts:serverTimestamp()
+        });
+        // Actualiza saldo banco origen (resta lo que salió)
+        batch.update(dref('banco_cuentas',bOrigen.id),{saldo:Number(bOrigen.saldo)-mNat});
+        await batch.commit();
+        alert(`✅ Rebancarización aplicada. Asiento ${numComp} generado.`);
+        if(onSaveDone) onSaveDone();
+      } catch(e){ console.error(e); alert('Error al procesar la rebancarización: '+e.message); }
+      finally { setRebBusy(false); }
+    };
+    const applyReb = previewReb; // alias por compatibilidad
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
         <p className="text-[9px] font-black uppercase text-amber-700 tracking-widest">Asistente de Rebancarizacion</p>
@@ -1684,10 +1730,16 @@ function BancoApp({ fbUser, onBack }) {
                 <p className="text-red-400">Bs.{fmt(diffBs)}</p>
               </div>
             </div>
-            <button onClick={applyReb}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-amber-600 transition-colors">
-              <ArrowRight size={12}/> Aplicar Rebancarizacion Automatica
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={previewReb}
+                className="flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-700 text-white rounded-xl text-[9px] font-black uppercase hover:bg-slate-800 transition-colors">
+                <ArrowRight size={12}/> Pre-llenar Asiento
+              </button>
+              <button onClick={aplicarRebancarizacion} disabled={rebBusy}
+                className="flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500 text-white rounded-xl text-[9px] font-black uppercase hover:bg-amber-600 transition-colors disabled:opacity-50">
+                {rebBusy?<><RefreshCw size={11} className="animate-spin"/> Procesando...</>:<><CheckCircle size={12}/> Aplicar y Guardar</>}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1809,13 +1861,19 @@ function BancoApp({ fbUser, onBack }) {
         let todasLineas=[];
 
         if(esTransferencia && cuentaDest) {
-          // Transferencia banco a banco: banco origen→Haber, banco destino→Debe
-          const cuentaDestObj=cuentas.find(c=>c.id===form.cuentaDestinoId);
+          // Transferencia/Traslado de Fondo banco a banco: banco origen→Haber, banco destino→Debe
           const bsOrigen=esMonedaLocal?montoBs:montoUSD*tasa;
           const usdOrigen=esMonedaLocal?montoBs/tasa:montoUSD;
+          // Leer cuenta contable con fallback al campo unificado 'cuentaContable' (cod · nom)
+          const splitCta=(c)=>({cod:(c?.cuentaContableCod||c?.cuentaContable?.split('·')[0]||'').trim(),nom:(c?.cuentaContableNom||c?.cuentaContable?.split('·')[1]||c?.banco||'').trim()});
+          const ctaDest=splitCta(cuentaDest); const ctaOrig=splitCta(cuentaSel);
+          if(form.tipo==='Traslado de Fondo'&&(!ctaDest.cod||!ctaOrig.cod)){
+            alert('Error: El banco origen o destino no tiene cuenta contable asignada. Configúrela en Cuentas Bancarias.');
+            setBusy(false); return;
+          }
           todasLineas=[
-            {codigo:cuentaDest?.cuentaContableCod||'',cuenta:cuentaDest?.cuentaContableNom||`Banco ${cuentaDestObj?.banco||'Destino'}`,tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:bsOrigen,haberBs:0,debeUSD:usdOrigen,haberUSD:0},
-            {codigo:cuentaSel?.cuentaContableCod||'',cuenta:cuentaSel?.cuentaContableNom||`Banco ${cuenta.banco}`,tipoLinea:'H',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:0,haberBs:bsOrigen,debeUSD:0,haberUSD:usdOrigen},
+            {codigo:ctaDest.cod,cuenta:ctaDest.nom||`Banco ${cuentaDest.banco||'Destino'}`,tipoLinea:'D',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:bsOrigen,haberBs:0,debeUSD:usdOrigen,haberUSD:0},
+            {codigo:ctaOrig.cod,cuenta:ctaOrig.nom||`Banco ${cuenta.banco}`,tipoLinea:'H',nroDoc:form.referencia||'',concepto:form.concepto,tasa,debeBs:0,haberBs:bsOrigen,debeUSD:0,haberUSD:usdOrigen},
           ];
         } else {
           // Banco: Debe si Ingreso, Haber si Egreso o Traslado
@@ -2490,6 +2548,7 @@ function BancoApp({ fbUser, onBack }) {
                       form={form} setForm={setForm}
                       bs={bs} mNat={mNat} tasa={tasa} tasaActiva={tasaActiva}
                       contCuentas={contCuentas} inp={inp} fmt={fmt} FG={FG}
+                      cuentasSel={cuentas} onSaveDone={()=>{setModal(false);setForm(initF());}}
                     />
                   )}
                 </div>
@@ -2968,13 +3027,16 @@ function BancoApp({ fbUser, onBack }) {
     const [cuentaId,setCuentaId]=useState('');const [desde,setDesde]=useState(mesActual()+'-01');const [hasta,setHasta]=useState(today());
     const [saldoBanco,setSaldoBco]=useState('');const [marcados,setMarcados]=useState({});const [ajustes,setAjustes]=useState([]);const [busy,setBusy]=useState(false);
     const cuenta=cuentas.find(c=>c.id===cuentaId);
+    const esCuentaBs=cuenta?.tipoBanco==='Nacional-Bs'||cuenta?.moneda==='BS';
     const todos=movBanco.filter(m=>m.cuentaId===cuentaId&&m.estatus!=='Conciliado');
     const toggle=id=>setMarcados(p=>({...p,[id]:!p[id]}));
     const egTrans=todos.filter(m=>m.tipo==='Egreso' &&!marcados[m.id]).reduce((a,m)=>a+Number(m.montoUSD||0),0);
     const ingTrans=todos.filter(m=>m.tipo==='Ingreso'&&!marcados[m.id]).reduce((a,m)=>a+Number(m.montoUSD||0),0);
     const cargos=ajustes.filter(a=>a.tipo==='Cargo' ).reduce((a,x)=>a+Number(x.monto||0),0);
     const abonos=ajustes.filter(a=>a.tipo==='Abono' ).reduce((a,x)=>a+Number(x.monto||0),0);
-    const saldoLibros=cuenta?Number(cuenta.moneda==='BS'?Number(cuenta.saldo)/tasaActiva:cuenta.saldo):0;
+    const saldoLibrosUSD=cuenta?Number(cuenta.moneda==='BS'?Number(cuenta.saldo)/tasaActiva:cuenta.saldo):0;
+    const saldoLibrosBs =cuenta?Number(cuenta.moneda==='BS'?Number(cuenta.saldo):Number(cuenta.saldo)*tasaActiva):0;
+    const saldoLibros=saldoLibrosUSD; // alias para compatibilidad con lógica de cuadre
     const saldoConcil=saldoLibros+cargos-abonos+egTrans-ingTrans;
     const sbNum=Number(saldoBanco)||0;const diff=sbNum-saldoConcil;const OK=Math.abs(diff)<0.01&&sbNum>0;
     const aprobar=async()=>{
@@ -2993,7 +3055,7 @@ function BancoApp({ fbUser, onBack }) {
         </select></FG>
         <FG label="Desde"><input type="date" className={inp} value={desde} onChange={e=>setDesde(e.target.value)}/></FG>
         <FG label="Hasta"><input type="date" className={inp} value={hasta} onChange={e=>setHasta(e.target.value)}/></FG>
-        <FG label="Saldo según Banco ($)"><input type="number" step="0.01" className={`${inp} font-black ${OK?'border-emerald-400 bg-emerald-50':sbNum>0?'border-amber-300':''}`} value={saldoBanco} onChange={e=>setSaldoBco(e.target.value)} placeholder="0.00"/></FG>
+        <FG label={esCuentaBs?'Saldo según Banco (Bs.)':'Saldo según Banco ($)'}><input type="number" step="0.01" className={`${inp} font-black ${OK?'border-emerald-400 bg-emerald-50':sbNum>0?'border-amber-300':''}`} value={saldoBanco} onChange={e=>setSaldoBco(e.target.value)} placeholder={esCuentaBs?'0,00 Bs.':'0.00'}/></FG>
       </div></Card>
       {cuentaId&&<div className="grid lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-3">
@@ -3025,12 +3087,14 @@ function BancoApp({ fbUser, onBack }) {
           <div className="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden shadow-sm sticky top-4">
             <div className="px-5 py-4" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}><p className="font-black text-white text-sm uppercase tracking-widest">Panel de Cuadre</p></div>
             <div className="p-5 space-y-3">
-              {[{l:'Saldo en Libros (Sistema)',v:saldoLibros,c:'text-slate-900',b:true},{l:'(+) Cargos NC no contabilizados',v:cargos,c:'text-red-600'},{l:'(−) Abonos NC no contabilizados',v:abonos,c:'text-emerald-600'},{l:'(+) Egresos en Tránsito',v:egTrans,c:'text-red-500'},{l:'(−) Ingresos en Tránsito',v:ingTrans,c:'text-emerald-500'}].map(({l,v,c,b})=>(
-                <div key={l} className="flex items-center justify-between"><p className={`text-[10px] ${b?'font-black text-slate-700':'font-medium text-slate-500'} leading-tight max-w-[150px]`}>{l}</p><p className={`font-mono font-black text-sm ${c}`}>{'$'+fmt(v)}</p></div>
+              {[{l:'Saldo en Libros (Sistema)',v:saldoLibros,vbs:saldoLibrosBs,c:'text-slate-900',b:true},{l:'(+) Cargos NC',v:cargos,vbs:cargos*tasaActiva,c:'text-red-600'},{l:'(−) Abonos NC',v:abonos,vbs:abonos*tasaActiva,c:'text-emerald-600'},{l:'(+) Egresos Tránsito',v:egTrans,vbs:egTrans*tasaActiva,c:'text-red-500'},{l:'(−) Ingresos Tránsito',v:ingTrans,vbs:ingTrans*tasaActiva,c:'text-emerald-500'}].map(({l,v,vbs,c,b})=>(
+                <div key={l} className="flex items-center justify-between"><p className={`text-[10px] ${b?'font-black text-slate-700':'font-medium text-slate-500'} leading-tight max-w-[150px]`}>{l}</p>
+                  <div className="text-right"><p className={`font-mono font-black text-sm ${c}`}>{esCuentaBs?'Bs.'+fmt(vbs):'$'+fmt(v)}</p><p className="text-[9px] text-slate-400 font-mono">{esCuentaBs?'≈$'+fmt(v):'≈Bs.'+fmt(vbs)}</p></div>
+                </div>
               ))}
               <div className="border-t-2 border-slate-200 pt-3 space-y-1">
-                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-700 uppercase">= Saldo Conciliado</p><p className="font-mono font-black text-blue-600">{'$'+fmt(saldoConcil)}</p></div>
-                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-500 uppercase">Saldo según Banco</p><p className="font-mono font-black text-slate-900">{'$'+fmt(sbNum)}</p></div>
+                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-700 uppercase">= Saldo Conciliado</p><p className="font-mono font-black text-blue-600">{esCuentaBs?'Bs.'+fmt(saldoConcil*tasaActiva):'$'+fmt(saldoConcil)}</p></div>
+                <div className="flex items-center justify-between"><p className="text-[10px] font-black text-slate-500 uppercase">Saldo según Banco</p><p className="font-mono font-black text-slate-900">{esCuentaBs?'Bs.'+fmt(sbNum):'$'+fmt(sbNum)}</p></div>
               </div>
               <div className={`rounded-xl p-4 text-center border-2 ${OK?'border-emerald-400 bg-emerald-50':'border-amber-400 bg-amber-50'}`}>
                 <p className="text-[9px] font-black uppercase tracking-widest mb-1 text-slate-500">Diferencia</p>
