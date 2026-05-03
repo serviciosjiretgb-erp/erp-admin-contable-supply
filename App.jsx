@@ -1698,6 +1698,14 @@ function BancoApp({ fbUser, onBack }) {
     const [monedaVista, setMonedaVista] = useState('USD');
     const [searchTercero, setSearchTercero] = useState('');
     const [searchBanco,   setSearchBanco]   = useState('');
+    const [filtC,    setFiltC]   = useState('');
+    const [filtDesde,setFiltD]   = useState(mesActual()+'-01');
+    const [filtHasta,setFiltH]   = useState(today());
+    const [detalleId,setDetalle] = useState(null);
+    const [editId,   setEditId]  = useState(null);
+    const [modal,    setModal]   = useState(false);
+    const [busqCtas, setBusqCtas]= useState({});
+    const [busy,     setBusy]    = useState(false);
 
     // Helper: cuenta selector con grupos Bs/USD
     const CuentaSelector = ({value, onChange, label, excluirId}) => {
