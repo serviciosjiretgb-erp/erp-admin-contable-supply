@@ -11,7 +11,7 @@ import {
   Settings, Home, Factory, Lock, User, ArrowRight,
   Mail, CreditCard, CalendarDays, MapPin, Key, PieChart,
   Tag, Layers, ArrowUpCircle, ArrowDownCircle, RefreshCw,
-  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer, Activity} from 'lucide-react';
+  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer, Activity, AlignLeft, Filter} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
@@ -198,15 +198,15 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white w-full ${xwide ? 'max-w-[95vw] lg:max-w-[1200px] h-[90vh]' : wide ? 'max-w-[95vw] md:max-w-3xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
+      <div className={`bg-white w-full ${xwide ? 'max-w-[95vw] lg:max-w-[1300px] h-[95vh]' : wide ? 'max-w-[95vw] md:max-w-4xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
         {!noHeader && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
             <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
             <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
           </div>
         )}
-        <div className="flex-1 overflow-hidden flex flex-col relative">
-          {noHeader ? children : <div className="overflow-y-auto flex-1 p-7">{children}</div>}
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col relative w-full overflow-hidden">
+          {children}
         </div>
         {footer && <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0 bg-slate-50 rounded-b-2xl">{footer}</div>}
       </div>
@@ -1283,8 +1283,6 @@ function InventarioApp({ fbUser, onBack }) {
 /* CSS para impresión (oculta controles, muestra solo contenido) */
 const PRINT_STYLE = `@media print{.no-print{display:none!important}.print-only{display:block!important}body{background:#fff}@page{margin:1.5cm}}`;
 
-const EMERALD = '#10b981';
-
 const TIPO_BANCO = [
   { id:'Nacional-Bs',   label:'Banco Nacional — Bs.',         moneda:'BS',  flag:'🇻🇪' },
   { id:'Nacional-Ext',  label:'Banco Nacional — USD (ME)',     moneda:'USD', flag:'🏦' },
@@ -1298,12 +1296,12 @@ const DENOM_USD = [100,50,20,10,5,2,1];
 
 function BancoApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('rep_gral_banco');
-  const [cuentas,    setCuentas]  = useState([]);
-  const [cajas,      setCajas]    = useState([]);
-  const [movBanco,   setMovBanco] = useState([]);
-  const [movCaja,    setMovCaja]  = useState([]);
-  const [tasas,      setTasas]    = useState([]);
-  const [contCuentas,setContC]    = useState([]);
+  const [cuentas, setCuentas] = useState([]);
+  const [cajas, setCajas] = useState([]);
+  const [movBanco, setMovBanco] = useState([]);
+  const [movCaja, setMovCaja] = useState([]);
+  const [tasas, setTasas] = useState([]);
+  const [contCuentas, setContC] = useState([]);
 
   useEffect(() => {
     if (!fbUser) return;
@@ -1319,98 +1317,65 @@ function BancoApp({ fbUser, onBack }) {
   }, [fbUser]);
 
   const tasaActiva = tasas.find(t=>t.modulo==='Banco'||t.modulo==='Todos')?.tasaRef || tasas[0]?.tasaRef || 39.50;
+  const EMERALD = '#10b981';
 
-  // ══════════════════════════════════════════════════════════════════════
-  // PANELES GENERALES (DASHBOARDS)
-  // ══════════════════════════════════════════════════════════════════════
   const DashboardView = ({ tipo }) => {
     const isBanco = tipo === 'banco';
     const items = isBanco ? cuentas : cajas;
-    const itemsBs = items.filter(c => c.moneda === 'BS');
-    const itemsUSD = items.filter(c => c.moneda === 'USD');
-    const totBs = itemsBs.reduce((a, c) => a + Number(c.saldo || 0), 0);
-    const totUSD = itemsUSD.reduce((a, c) => a + Number(c.saldo || 0), 0);
+    const totBs = items.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo||0),0);
+    const totUSD = items.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo||0),0);
     const totConsolUSD = (totBs / tasaActiva) + totUSD;
-
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <div className={`rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between ${isBanco ? 'bg-slate-900' : 'bg-emerald-900'}`}>
+          <div className={`rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between ${isBanco?'bg-slate-900':'bg-emerald-900'}`}>
             <div className="relative z-10">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/70">{isBanco ? 'Liquidez Bancaria Total' : 'Efectivo Físico Total'}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/70">{isBanco?'Liquidez Bancaria Total':'Efectivo Físico Total'}</p>
               <h2 className="text-4xl font-black mt-2 tracking-tight text-white">${fmt(totConsolUSD)}</h2>
             </div>
             <div className="mt-8 relative z-10">
-              <p className="text-[11px] text-white/70 mb-3">Eq. Bs.: <span className="font-bold text-white">Bs. {fmt(totConsolUSD * tasaActiva)}</span></p>
-              <div className="w-full h-px bg-white/20" />
+              <p className="text-[11px] text-white/70 mb-3">Equivalente en Bs.: <span className="font-bold text-white">Bs. {fmt(totConsolUSD*tasaActiva)}</span></p>
+              <div className="w-full h-px bg-white/20"/>
             </div>
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-10 pointer-events-none">
-              {isBanco ? <LineChart size={80} /> : <Banknote size={80} />}
-            </div>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-10 pointer-events-none">{isBanco?<LineChart size={80}/>:<Banknote size={80}/>}</div>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
             <div>
               <div className="flex justify-between items-start mb-2">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Saldo en Bolívares (BS)</p>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isBanco?'bg-blue-50':'bg-emerald-50'}`}>
-                  {isBanco ? <Landmark size={14} className="text-blue-600" /> : <Coins size={14} className="text-emerald-600"/>}
-                </div>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isBanco?'bg-blue-50':'bg-emerald-50'}`}>{isBanco?<Landmark size={14} className="text-blue-600"/>:<Coins size={14} className="text-emerald-600"/>}</div>
               </div>
               <h2 className="text-3xl font-black text-slate-800 tracking-tight">Bs. {fmt(totBs)}</h2>
             </div>
-            <div className="mt-6 border-t border-slate-100 pt-4">
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Eq: <span className="text-slate-700">${fmt(totBs / tasaActiva)}</span></p>
-            </div>
+            <div className="mt-6 border-t border-slate-100 pt-4"><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Eq: <span className="text-slate-700">${fmt(totBs/tasaActiva)}</span></p></div>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
             <div>
               <div className="flex justify-between items-start mb-2">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Saldo en Divisas (USD)</p>
-                <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center">
-                  {isBanco ? <Building2 size={14} className="text-emerald-600" /> : <DollarSign size={14} className="text-emerald-600"/>}
-                </div>
+                <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center">{isBanco?<Building2 size={14} className="text-emerald-600"/>:<DollarSign size={14} className="text-emerald-600"/>}</div>
               </div>
               <h2 className="text-3xl font-black text-slate-800 tracking-tight">$ {fmt(totUSD)}</h2>
             </div>
-            <div className="mt-6 border-t border-slate-100 pt-4">
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Eq: <span className="text-slate-700">Bs. {fmt(totUSD * tasaActiva)}</span></p>
-            </div>
+            <div className="mt-6 border-t border-slate-100 pt-4"><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Eq: <span className="text-slate-700">Bs. {fmt(totUSD*tasaActiva)}</span></p></div>
           </div>
         </div>
-
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-100">
-            <h3 className="font-black text-slate-800 text-xs uppercase tracking-wide">Desglose de {isBanco ? 'Cuentas Bancarias' : 'Cajas Físicas'}</h3>
-          </div>
+          <div className="px-6 py-5 border-b border-slate-100"><h3 className="font-black text-slate-800 text-xs uppercase tracking-wide">Desglose de {isBanco?'Cuentas Bancarias':'Cajas Físicas'}</h3></div>
           <div className="overflow-x-auto w-full">
             <table className="w-full text-left min-w-[700px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <Th>Identificador</Th><Th>Moneda</Th><Th>Cuenta Contable</Th><Th right>Saldo Actual</Th><Th right>Equivalencia Ref.</Th>
-                </tr>
-              </thead>
+              <thead><tr className="bg-slate-50 border-b border-slate-100"><Th>Identificador</Th><Th>Moneda</Th><Th>Cuenta Contable</Th><Th right>Saldo Actual</Th><Th right>Equivalencia Ref.</Th></tr></thead>
               <tbody className="divide-y divide-slate-50">
-                {items.map(d => {
-                  const bs = d.moneda === 'BS';
-                  return (
-                    <tr key={d.id} className="hover:bg-slate-50 transition-colors">
-                      <Td>
-                        <div className="flex items-center gap-3">
-                          {isBanco ? <BankLogo banco={d.banco} logoUrl={d.logoUrl} className="w-8 h-8 border border-slate-200 shadow-sm rounded-lg object-contain p-0.5"/> : <div className="w-8 h-8 bg-emerald-50 rounded-lg border border-emerald-100 flex items-center justify-center"><PiggyBank size={16} className="text-emerald-600"/></div>}
-                          <div>
-                            <p className="font-bold text-[11px] text-slate-800 uppercase">{isBanco ? d.banco : d.nombre}</p>
-                            {isBanco && <p className="font-mono text-[9px] text-slate-500">{d.numeroCuenta}</p>}
-                          </div>
-                        </div>
-                      </Td>
-                      <Td><Pill usd={!bs}>{d.moneda}</Pill></Td>
-                      <Td mono className="text-[10px] font-bold text-slate-500">{d.cuentaContableCod || '—'}</Td>
-                      <Td right mono className={`font-black text-sm ${bs?'text-blue-600':'text-emerald-600'}`}>{bs?'Bs.':'$'} {fmt(d.saldo)}</Td>
-                      <Td right mono className="text-slate-400 text-xs">{bs?'$'+fmt(d.saldo/tasaActiva):'Bs.'+fmt(d.saldo*tasaActiva)}</Td>
-                    </tr>
-                  );
+                {items.map(d=>{const bs=d.moneda==='BS'; return(
+                  <tr key={d.id} className="hover:bg-slate-50 transition-colors">
+                    <Td><div className="flex items-center gap-3">{isBanco?<BankLogo banco={d.banco} logoUrl={d.logoUrl} className="w-8 h-8 border border-slate-200 shadow-sm rounded-lg object-contain p-0.5"/>:<div className="w-8 h-8 bg-emerald-50 rounded-lg border border-emerald-100 flex items-center justify-center"><PiggyBank size={16} className="text-emerald-600"/></div>}<div><p className="font-bold text-[11px] text-slate-800 uppercase">{isBanco?d.banco:d.nombre}</p>{isBanco&&<p className="font-mono text-[9px] text-slate-500">{d.numeroCuenta}</p>}</div></div></Td>
+                    <Td><Pill usd={!bs}>{d.moneda}</Pill></Td>
+                    <Td mono className="text-[10px] font-bold text-slate-500">{d.cuentaContableCod||'—'}</Td>
+                    <Td right mono className={`font-black text-sm ${bs?'text-blue-600':'text-emerald-600'}`}>{bs?'Bs.':'$'} {fmt(d.saldo)}</Td>
+                    <Td right mono className="text-slate-400 text-xs">{bs?'$'+fmt(d.saldo/tasaActiva):'Bs.'+fmt(d.saldo*tasaActiva)}</Td>
+                  </tr>);
                 })}
-                {items.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-400">No hay registros disponibles.</td></tr>}
+                {items.length===0&&<tr><td colSpan={5} className="py-8 text-center text-slate-400">No hay registros disponibles.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1419,225 +1384,142 @@ function BancoApp({ fbUser, onBack }) {
     );
   };
 
-  // ══════════════════════════════════════════════════════════════════════
-  // GESTIÓN OPERATIVA (Bancos y Cajas)
-  // ══════════════════════════════════════════════════════════════════════
   const AdminCuentasView = ({ tipo }) => {
-    const isBanco = tipo === 'banco';
-    const [modal, setModal] = useState(false);
-    const [editando, setEdit] = useState(null);
-    const initF = ()=>({banco:'',nombre:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',moneda:'BS',saldo:'0',titular:'',responsable:'',cuentaContableCod:'',logoUrl:''});
-    const [form, setForm] = useState(initF());
-    const data = isBanco ? cuentas : cajas;
-
-    const save = async () => {
-      try {
-        if(isBanco && (!form.banco||!form.numeroCuenta)) return alert('Datos incompletos');
-        if(!isBanco && !form.nombre) return alert('Nombre de caja requerido');
-        const payload = {...form, saldo:Number(form.saldo)};
-        if(isBanco) payload.moneda = TIPO_BANCO.find(t=>t.id===form.tipoBanco)?.moneda||'BS';
-        const colName = isBanco ? 'banco_cuentas' : 'caja_cuentas';
-        if(editando) {
-          await updateDoc(dref(colName, editando.id), payload);
-        } else {
-          const id = gid();
-          await setDoc(dref(colName, id), {...payload, id, ts:serverTimestamp()});
-        }
+    const isBanco = tipo==='banco';
+    const [modal,setModal]=useState(false);
+    const [editando,setEdit]=useState(null);
+    const initF=()=>({banco:'',nombre:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',moneda:'BS',saldo:'0',titular:'',responsable:'',cuentaContableCod:'',logoUrl:''});
+    const [form,setForm]=useState(initF());
+    const data=isBanco?cuentas:cajas;
+    const TIPO_BANCO_LOCAL=[{id:'Nacional-Bs',label:'Banco Nacional — Bs.',moneda:'BS',flag:'🇻🇪'},{id:'Nacional-Ext',label:'Banco Nacional — USD (ME)',moneda:'USD',flag:'🏦'},{id:'Internacional',label:'Banco Internacional — USD',moneda:'USD',flag:'🌐'}];
+    const save=async()=>{
+      try{
+        if(isBanco&&(!form.banco||!form.numeroCuenta)) return alert('Datos incompletos');
+        if(!isBanco&&!form.nombre) return alert('Nombre de caja requerido');
+        const payload={...form,saldo:Number(form.saldo)};
+        if(isBanco) payload.moneda=TIPO_BANCO_LOCAL.find(t=>t.id===form.tipoBanco)?.moneda||'BS';
+        const colName=isBanco?'banco_cuentas':'caja_cuentas';
+        if(editando){await updateDoc(dref(colName,editando.id),payload);}
+        else{const id=gid();await setDoc(dref(colName,id),{...payload,id,ts:serverTimestamp()});}
         setModal(false);
-      } catch(e) { console.error(e); alert('Error al guardar'); }
+      }catch(e){console.error(e);alert('Error al guardar');}
     };
-
     return (
       <div className="space-y-5">
-        <div className="flex justify-end"><Bg onClick={()=>{setEdit(null); setForm(initF()); setModal(true);}}><Plus size={12}/> Crear {isBanco?'Cuenta':'Caja'}</Bg></div>
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex justify-end"><Bg onClick={()=>{setEdit(null);setForm(initF());setModal(true);}}><Plus size={12}/> Crear {isBanco?'Cuenta':'Caja'}</Bg></div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-w-0">
           <div className="overflow-x-auto w-full">
             <table className="w-full text-left min-w-[700px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <Th>{isBanco ? 'Banco / Entidad' : 'Nombre de Caja'}</Th>
-                  <Th>{isBanco ? 'Nro. Cuenta' : 'Responsable'}</Th>
-                  <Th>Moneda</Th><Th right>Saldo Actual</Th><Th></Th>
-                </tr>
-              </thead>
+              <thead><tr className="bg-slate-50 border-b border-slate-200"><Th>{isBanco?'Banco / Entidad':'Nombre de Caja'}</Th><Th>{isBanco?'Nro. Cuenta':'Responsable'}</Th><Th>Moneda</Th><Th right>Saldo Actual</Th><Th></Th></tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {data.map(c=>(
-                  <tr key={c.id} className="hover:bg-slate-50">
-                    <Td className="font-black text-slate-800 uppercase">
-                      <div className="flex items-center gap-3">
-                        {isBanco ? <BankLogo banco={c.banco} logoUrl={c.logoUrl} className="w-7 h-7 rounded border border-slate-200 object-contain p-0.5" /> : <PiggyBank size={16} className="text-emerald-600"/>}
-                        {isBanco ? c.banco : c.nombre}
-                      </div>
-                    </Td>
-                    <Td mono className="text-[11px] text-slate-600">{isBanco ? c.numeroCuenta : c.responsable}</Td>
-                    <Td><Pill usd={c.moneda==='USD'}>{c.moneda}</Pill></Td>
-                    <Td right mono className="font-black">{c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</Td>
-                    <Td right>
-                      <button onClick={()=>{setEdit(c); setForm({...c, saldo:String(c.saldo)}); setModal(true);}} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"><Settings size={14}/></button>
-                      <button onClick={async()=>{if(window.confirm('¿Eliminar?')) await deleteDoc(dref(isBanco ? 'banco_cuentas' : 'caja_cuentas', c.id));}} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={14}/></button>
-                    </Td>
-                  </tr>
-                ))}
-                {data.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-400 text-xs">Sin registros.</td></tr>}
+                {data.map(c=>(<tr key={c.id} className="hover:bg-slate-50">
+                  <Td className="font-black text-slate-800 uppercase"><div className="flex items-center gap-3">{isBanco?<BankLogo banco={c.banco} logoUrl={c.logoUrl} className="w-7 h-7 rounded border border-slate-200 object-contain p-0.5"/>:<PiggyBank size={16} className="text-emerald-600"/>}{isBanco?c.banco:c.nombre}</div></Td>
+                  <Td mono className="text-[11px] text-slate-600">{isBanco?c.numeroCuenta:c.responsable}</Td>
+                  <Td><Pill usd={c.moneda==='USD'}>{c.moneda}</Pill></Td>
+                  <Td right mono className="font-black">{c.moneda==='BS'?'Bs.':'$'} {fmt(c.saldo)}</Td>
+                  <Td right>
+                    <button onClick={()=>{setEdit(c);setForm({...c,saldo:String(c.saldo)});setModal(true);}} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"><Settings size={14}/></button>
+                    <button onClick={async()=>{if(window.confirm('¿Eliminar registro?')) await deleteDoc(dref(isBanco?'banco_cuentas':'caja_cuentas',c.id));}} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={14}/></button>
+                  </Td>
+                </tr>))}
+                {data.length===0&&<tr><td colSpan={5} className="py-8 text-center text-slate-400 text-xs">Sin registros.</td></tr>}
               </tbody>
             </table>
           </div>
         </div>
-
         <Modal open={modal} onClose={()=>setModal(false)} title={editando?`Editar ${isBanco?'Cuenta':'Caja'}`:`Nueva ${isBanco?'Cuenta':'Caja'}`} wide footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save}>Guardar</Bg></>}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {isBanco ? (
-              <>
-                <FG label="Clasificación" full>
-                  <div className="grid grid-cols-3 gap-2">
-                    {TIPO_BANCO.map(t=>(
-                      <label key={t.id} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.tipoBanco===t.id?'border-blue-500 bg-blue-50':'border-slate-200'}`}>
-                        <input type="radio" name="tb" value={t.id} checked={form.tipoBanco===t.id} onChange={e=>setForm({...form,tipoBanco:e.target.value})} className="sr-only"/>
-                        <span className="text-2xl">{t.flag}</span>
-                        <p className="text-[9px] font-black text-slate-700 uppercase text-center">{t.id}</p>
-                      </label>
-                    ))}
-                  </div>
-                </FG>
-                <FG label="Logo del Banco (PNG/JPG)" full>
-                  <div className="flex items-center gap-4">
-                    {form.logoUrl ? (
-                      <div className="relative w-14 h-14 rounded-xl border border-slate-200 bg-white flex items-center justify-center">
-                        <img src={form.logoUrl} className="w-full h-full object-contain p-1 rounded-xl" alt="Logo" />
-                        <button onClick={() => setForm({...form, logoUrl: ''})} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><X size={10}/></button>
-                      </div>
-                    ) : (
-                      <div className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400"><Building2 size={18} /></div>
-                    )}
-                    <label className="flex-1 flex flex-col items-center justify-center gap-1 px-4 py-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl cursor-pointer">
-                      <div className="flex items-center gap-2 font-black uppercase text-[10px]"><Upload size={14} /> Seleccionar Imagen</div>
-                      <span className="text-[9px] text-blue-500">Max. 500KB</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                        const file = e.target.files[0]; if(!file) return;
-                        if(file.size > 500*1024) return alert('Máximo 500KB.');
-                        const reader = new FileReader();
-                        reader.onloadend = () => setForm({...form, logoUrl: reader.result});
-                        reader.readAsDataURL(file);
-                      }} />
-                    </label>
-                  </div>
-                </FG>
-                <FG label="Banco"><input className={inp} value={form.banco} onChange={e=>setForm({...form,banco:e.target.value.toUpperCase()})}/></FG>
-                <FG label="Número de Cuenta"><input className={inp} value={form.numeroCuenta} onChange={e=>setForm({...form,numeroCuenta:e.target.value})}/></FG>
-                <FG label="Titular"><input className={inp} value={form.titular} onChange={e=>setForm({...form,titular:e.target.value.toUpperCase()})}/></FG>
-              </>
-            ) : (
-              <>
-                <FG label="Nombre de Caja Física" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="EJ. CAJA CHICA ADMINISTRACIÓN"/></FG>
-                <FG label="Moneda">
-                  <select className={sel} value={form.moneda} onChange={e=>setForm({...form,moneda:e.target.value})}>
-                    <option value="BS">Bolívares (BS)</option><option value="USD">Dólares (USD)</option>
-                  </select>
-                </FG>
-                <FG label="Responsable Custodio"><input className={inp} value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value.toUpperCase()})}/></FG>
-              </>
-            )}
-            <FG label="Cuenta Contable (PUC)">
-              <select className={sel} value={form.cuentaContableCod} onChange={e=>setForm({...form,cuentaContableCod:e.target.value})}>
-                <option value="">— Sin vincular —</option>
-                {[...contCuentas].map(c=><option key={c.id} value={c.codigo}>{c.codigo} · {c.nombre}</option>)}
-              </select>
-            </FG>
-            <FG label={`Saldo Inicial`}><input type="number" step="0.01" className={inp} value={form.saldo} onChange={e=>setForm({...form,saldo:e.target.value})}/></FG>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
+            {isBanco?(<>
+              <FG label="Clasificación" full><div className="grid grid-cols-3 gap-2">{TIPO_BANCO_LOCAL.map(t=>(<label key={t.id} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.tipoBanco===t.id?'border-blue-500 bg-blue-50':'border-slate-200'}`}><input type="radio" name="tb" value={t.id} checked={form.tipoBanco===t.id} onChange={e=>setForm({...form,tipoBanco:e.target.value})} className="sr-only"/><span className="text-2xl">{t.flag}</span><p className="text-[9px] font-black text-slate-700 uppercase text-center leading-tight">{t.id}</p></label>))}</div></FG>
+              <FG label="Logo del Banco (PNG/JPG)" full>
+                <div className="flex items-center gap-4">
+                  {form.logoUrl?(<div className="relative w-14 h-14 rounded-xl border border-slate-200 bg-white flex items-center justify-center"><img src={form.logoUrl} className="w-full h-full object-contain p-1 rounded-xl" alt="Logo"/><button onClick={()=>setForm({...form,logoUrl:''})} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><X size={10}/></button></div>):(<div className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400"><Building2 size={18}/></div>)}
+                  <label className="flex-1 flex flex-col items-center justify-center gap-1 px-4 py-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl cursor-pointer">
+                    <div className="flex items-center gap-2 font-black uppercase text-[10px]"><Upload size={14}/> Seleccionar Imagen</div>
+                    <input type="file" accept="image/*" className="hidden" onChange={e=>{const file=e.target.files[0];if(!file)return;if(file.size>500*1024)return alert('Máximo 500KB.');const reader=new FileReader();reader.onloadend=()=>setForm({...form,logoUrl:reader.result});reader.readAsDataURL(file);}}/>
+                  </label>
+                </div>
+              </FG>
+              <FG label="Banco"><input className={inp} value={form.banco} onChange={e=>setForm({...form,banco:e.target.value.toUpperCase()})}/></FG>
+              <FG label="Número de Cuenta"><input className={inp} value={form.numeroCuenta} onChange={e=>setForm({...form,numeroCuenta:e.target.value})}/></FG>
+              <FG label="Titular"><input className={inp} value={form.titular} onChange={e=>setForm({...form,titular:e.target.value.toUpperCase()})}/></FG>
+            </>):(<>
+              <FG label="Nombre de Caja Física" full><input className={inp} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value.toUpperCase()})} placeholder="EJ. CAJA CHICA ADMINISTRACIÓN"/></FG>
+              <FG label="Moneda"><select className={sel} value={form.moneda} onChange={e=>setForm({...form,moneda:e.target.value})}><option value="BS">Bolívares (BS)</option><option value="USD">Dólares (USD)</option></select></FG>
+              <FG label="Responsable Custodio"><input className={inp} value={form.responsable} onChange={e=>setForm({...form,responsable:e.target.value.toUpperCase()})}/></FG>
+            </>)}
+            <FG label="Cuenta Contable (PUC)"><select className={sel} value={form.cuentaContableCod} onChange={e=>setForm({...form,cuentaContableCod:e.target.value})}><option value="">— Sin vincular —</option>{[...contCuentas].map(c=><option key={c.id} value={c.codigo}>{c.codigo} · {c.nombre}</option>)}</select></FG>
+            <FG label="Saldo Inicial"><input type="number" step="0.01" className={inp} value={form.saldo} onChange={e=>setForm({...form,saldo:e.target.value})}/></FG>
           </div>
         </Modal>
       </div>
     );
   };
 
-  // ══════════════════════════════════════════════════════════════════════
-  // COMPROBANTE CON SALDO CORRIENTE (RUNNING BALANCE)
-  // ══════════════════════════════════════════════════════════════════════
   const RepComprobanteView = ({ tipo }) => {
-    const isBanco = tipo === 'banco';
-    const [filtros, setFiltros] = useState({ idDoc: '', fDesde: '', fHasta: '' });
-    const ctasBase = isBanco ? cuentas : cajas;
-    const movsBase = isBanco ? movBanco : movCaja;
-
-    let entries = [];
-    if (filtros.idDoc) {
-      const ctaSel = ctasBase.find(c => c.id === filtros.idDoc);
-      if (ctaSel) {
-        movsBase.forEach((m) => {
-          if (isBanco && m.tipo === 'Traslado de Fondo') {
-            if (m.cuentaId === ctaSel.id) entries.push({...m, esIngreso: false, conceptoAux: `[TRF SALIDA] ${m.concepto}`, cAuxId: m.id+'-s'});
-            if (m.cuentaDestinoId === ctaSel.id) entries.push({...m, esIngreso: true, conceptoAux: `[TRF ENTRADA] ${m.concepto}`, cAuxId: m.id+'-e'});
-          } else if ((isBanco && m.cuentaId === ctaSel.id) || (!isBanco && m.cajaId === ctaSel.id)) {
-            entries.push({...m, esIngreso: m.tipo === 'Ingreso', conceptoAux: m.esVale ? `[VALE] ${m.concepto}` : m.concepto, cAuxId: m.id});
+    const isBanco=tipo==='banco';
+    const [filtros,setFiltros]=useState({idDoc:'',fDesde:'',fHasta:''});
+    const ctasBase=isBanco?cuentas:cajas;
+    const movsBase=isBanco?movBanco:movCaja;
+    let entries=[];
+    if(filtros.idDoc){
+      const ctaSel=ctasBase.find(c=>c.id===filtros.idDoc);
+      if(ctaSel){
+        movsBase.forEach(m=>{
+          if(isBanco&&m.tipo==='Traslado de Fondo'){
+            if(m.cuentaId===ctaSel.id) entries.push({...m,esIngreso:false,conceptoAux:`[TRF SALIDA] ${m.concepto}`,cAuxId:m.id+'-s'});
+            if(m.cuentaDestinoId===ctaSel.id) entries.push({...m,esIngreso:true,conceptoAux:`[TRF ENTRADA] ${m.concepto}`,cAuxId:m.id+'-e'});
+          } else if((isBanco&&m.cuentaId===ctaSel.id)||(!isBanco&&m.cajaId===ctaSel.id)){
+            entries.push({...m,esIngreso:m.tipo==='Ingreso',conceptoAux:m.esVale?`[VALE] ${m.concepto} (Resp: ${m.responsableVale})`:m.concepto,cAuxId:m.id});
           }
         });
-        if (filtros.fDesde) entries = entries.filter(e => e.fecha >= filtros.fDesde);
-        if (filtros.fHasta) entries = entries.filter(e => e.fecha <= filtros.fHasta);
-        entries.sort((a,b) => a.fecha.localeCompare(b.fecha));
-        let runBs = 0; let runUSD = 0;
-        entries = entries.map((e, idx) => {
-          const tasa = Number(e.tasa) || 1;
-          const mNat = Number(e.montoNativo) || 0;
-          const mBs = (ctaSel.moneda === 'BS') ? mNat : mNat * tasa;
-          const mUSD = (ctaSel.moneda === 'BS') ? mNat / tasa : mNat;
-          if (e.esIngreso) { runBs += mBs; runUSD += mUSD; } else { runBs -= mBs; runUSD -= mUSD; }
-          return {...e, compStr:`CP-${String(idx+1).padStart(4,'0')}`, mesStr:e.fecha.substring(5,7), codStr:ctaSel.cuentaContableCod||'—', ctaStr:isBanco?ctaSel.banco:ctaSel.nombre, tStr:e.esIngreso?'I':'E', valBs:mBs, valUSD:mUSD, saldoBs:runBs, saldoUSD:runUSD};
+        if(filtros.fDesde) entries=entries.filter(e=>e.fecha>=filtros.fDesde);
+        if(filtros.fHasta) entries=entries.filter(e=>e.fecha<=filtros.fHasta);
+        entries.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+        let runBs=0;let runUSD=0;
+        entries=entries.map((e,idx)=>{
+          const tasa=Number(e.tasa)||1;const mNat=Number(e.montoNativo)||0;
+          const mBs=ctaSel.moneda==='BS'?mNat:mNat*tasa;
+          const mUSD=ctaSel.moneda==='BS'?mNat/tasa:mNat;
+          if(e.esIngreso){runBs+=mBs;runUSD+=mUSD;}else{runBs-=mBs;runUSD-=mUSD;}
+          return{...e,compStr:`CP-${String(idx+1).padStart(4,'0')}`,mesStr:e.fecha.substring(5,7),codStr:ctaSel.cuentaContableCod||'—',ctaStr:isBanco?ctaSel.banco:ctaSel.nombre,tStr:e.esIngreso?'I':'E',valBs:mBs,valUSD:mUSD,saldoBs:runBs,saldoUSD:runUSD};
         });
       }
     }
-
-    return (
+    return(
       <div className="space-y-5">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-3"><Filter size={16} className="text-slate-400"/><h3 className="font-black text-slate-700 text-xs uppercase tracking-widest">Filtros de Comprobante {isBanco?'Bancario':'de Caja'}</h3></div>
           <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4 items-end">
-            <div className="col-span-1 md:col-span-2">
-              <FG label={`Seleccione ${isBanco?'Banco':'Caja'} (Requerido)`}>
-                <select className={sel} value={filtros.idDoc} onChange={e=>setFiltros({...filtros, idDoc: e.target.value})}>
-                  <option value="">— Elija una cuenta —</option>
-                  {ctasBase.map(c => <option key={c.id} value={c.id}>{isBanco ? c.banco : c.nombre} ({c.moneda})</option>)}
-                </select>
-              </FG>
-            </div>
-            <FG label="Fecha Desde"><input type="date" className={inp} value={filtros.fDesde} onChange={e=>setFiltros({...filtros, fDesde: e.target.value})} /></FG>
-            <FG label="Fecha Hasta"><input type="date" className={inp} value={filtros.fHasta} onChange={e=>setFiltros({...filtros, fHasta: e.target.value})} /></FG>
+            <div className="col-span-1 md:col-span-2"><FG label={`Seleccione ${isBanco?'Banco':'Caja'} (Requerido)`}><select className={sel} value={filtros.idDoc} onChange={e=>setFiltros({...filtros,idDoc:e.target.value})}><option value="">— Elija una cuenta —</option>{ctasBase.map(c=><option key={c.id} value={c.id}>{isBanco?c.banco:c.nombre} ({c.moneda})</option>)}</select></FG></div>
+            <FG label="Fecha Desde"><input type="date" className={inp} value={filtros.fDesde} onChange={e=>setFiltros({...filtros,fDesde:e.target.value})}/></FG>
+            <FG label="Fecha Hasta"><input type="date" className={inp} value={filtros.fHasta} onChange={e=>setFiltros({...filtros,fHasta:e.target.value})}/></FG>
           </div>
         </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className={`px-5 py-4 ${isBanco ? 'bg-slate-900' : 'bg-emerald-900'} flex justify-between items-center`}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/80">EXTRACTO Y SALDOS (RUNNING BALANCE)</p>
-          </div>
-          <div className="overflow-x-auto w-full">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-w-0">
+          <div className={`px-5 py-4 ${isBanco?'bg-slate-900':'bg-emerald-900'} flex justify-between items-center`}><p className="text-[10px] font-black uppercase tracking-widest text-white/80"><AlignLeft size={13} className="inline mr-2"/> EXTRACTO Y SALDOS (RUNNING BALANCE)</p></div>
+          <div className="overflow-x-auto w-full min-w-0">
             <table className="w-full text-left min-w-[1300px]">
-              <thead>
-                <tr className="bg-slate-100 border-b-2 border-slate-200">
-                  <Th>Comprobante</Th><Th>Mes</Th><Th>Fecha</Th><Th>Código</Th><Th>Cuenta</Th>
-                  <Th>T</Th><Th>Nro Doc</Th><Th>Concepto</Th><Th right>Tasa</Th>
-                  <Th right>Debe Bs.</Th><Th right>Haber Bs.</Th><Th right>Saldo Bs.</Th>
-                  <Th right>Debe $</Th><Th right>Haber $</Th><Th right>Saldo $</Th>
-                </tr>
-              </thead>
+              <thead><tr className="bg-slate-100 border-b-2 border-slate-200"><Th>Comprobante</Th><Th>Mes</Th><Th>Fecha</Th><Th>Código</Th><Th>Cuenta de Movimiento</Th><Th>T</Th><Th>Nro Doc</Th><Th>Concepto</Th><Th right>Tasa</Th><Th right>Debe Bs.</Th><Th right>Haber Bs.</Th><Th right>Saldo Bs.</Th><Th right>Debe $</Th><Th right>Haber $</Th><Th right>Saldo $</Th></tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {!filtros.idDoc ? (
-                  <tr><td colSpan={15} className="py-16 text-center text-slate-400 text-sm">Selecciona una cuenta para generar el comprobante.</td></tr>
-                ) : entries.length === 0 ? (
-                  <tr><td colSpan={15} className="py-16 text-center text-slate-400 text-sm">No se encontraron movimientos.</td></tr>
-                ) : entries.map(e => (
+                {!filtros.idDoc?(<tr><td colSpan={15} className="py-16 text-center text-slate-400 text-sm">Selecciona una cuenta para generar el comprobante.</td></tr>)
+                :entries.length===0?(<tr><td colSpan={15} className="py-16 text-center text-slate-400 text-sm">No se encontraron movimientos.</td></tr>)
+                :entries.map(e=>(
                   <tr key={e.cAuxId} className="hover:bg-slate-50 transition-colors">
                     <Td mono className="font-black text-slate-800 text-[10px]">{e.compStr}</Td>
                     <Td mono className="text-[10px] font-bold text-slate-400">{e.mesStr}</Td>
                     <Td mono className="text-[10px] text-slate-500">{dd(e.fecha)}</Td>
-                    <Td mono className={`text-[10px] font-black ${isBanco?'text-blue-600':'text-emerald-600'}`}>{e.codStr}</Td>
+                    <Td mono className={`text-[10px] font-black ${isBanco?'text-blue-600 bg-blue-50':'text-emerald-600 bg-emerald-50'}`}>{e.codStr}</Td>
                     <Td className="font-bold text-[10px] text-slate-700 uppercase truncate max-w-[120px]">{e.ctaStr}</Td>
                     <Td><span className={`px-1.5 py-0.5 rounded font-black text-[9px] ${e.tStr==='I'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{e.tStr}</span></Td>
                     <Td mono className="text-[10px] text-slate-600 font-bold">{e.referencia}</Td>
-                    <Td className="text-[10px] text-slate-600 truncate max-w-[180px]">{e.conceptoAux}</Td>
+                    <Td className="text-[10px] text-slate-600 truncate max-w-[180px]" title={e.conceptoAux}>{e.conceptoAux}</Td>
                     <Td right mono className="text-[9px] text-slate-400">{fmt(e.tasa)}</Td>
-                    <Td right mono className="font-black text-emerald-600">{e.esIngreso ? fmt(e.valBs) : ''}</Td>
-                    <Td right mono className="font-black text-red-600">{!e.esIngreso ? fmt(e.valBs) : ''}</Td>
+                    <Td right mono className="font-black text-emerald-600 bg-emerald-50/30">{e.esIngreso?fmt(e.valBs):''}</Td>
+                    <Td right mono className="font-black text-red-600 bg-red-50/30">{!e.esIngreso?fmt(e.valBs):''}</Td>
                     <Td right mono className="font-black text-slate-800 bg-slate-100">{fmt(e.saldoBs)}</Td>
-                    <Td right mono className="font-black text-emerald-600">{e.esIngreso ? fmt(e.valUSD) : ''}</Td>
-                    <Td right mono className="font-black text-red-600">{!e.esIngreso ? fmt(e.valUSD) : ''}</Td>
+                    <Td right mono className="font-black text-emerald-600 bg-emerald-50/30">{e.esIngreso?fmt(e.valUSD):''}</Td>
+                    <Td right mono className="font-black text-red-600 bg-red-50/30">{!e.esIngreso?fmt(e.valUSD):''}</Td>
                     <Td right mono className="font-black text-slate-800 bg-slate-100">{fmt(e.saldoUSD)}</Td>
                   </tr>
                 ))}
@@ -1649,114 +1531,67 @@ function BancoApp({ fbUser, onBack }) {
     );
   };
 
-  // ══════════════════════════════════════════════════════════════════════
-  // LIBRO DIARIO
-  // ══════════════════════════════════════════════════════════════════════
   const RepLibroDiarioView = () => {
-    const allMovs = [...movBanco.map(m=>({...m, origen:'Banco'})), ...movCaja.map(m=>({...m, origen:'Caja'}))];
-    allMovs.sort((a,b) => b.fecha.localeCompare(a.fecha));
-
-    return (
+    const allMovs=[...movBanco.map(m=>({...m,origen:'Banco'})),...movCaja.map(m=>({...m,origen:'Caja'}))];
+    allMovs.sort((a,b)=>b.fecha.localeCompare(a.fecha));
+    return(
       <div className="space-y-5">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <h2 className="text-lg font-black text-slate-800 uppercase tracking-wide">Libro Diario de Tesorería</h2>
-          <p className="text-xs text-slate-500 font-medium mt-1">Registro cronológico de operaciones con partida doble.</p>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div><h2 className="text-lg font-black text-slate-800 uppercase tracking-wide">Libro Diario de Tesorería</h2><p className="text-xs text-slate-500 font-medium mt-1">Registro cronológico de operaciones mostrando el cuadro de partida doble.</p></div>
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl flex items-start gap-3 w-full md:w-auto"><BookOpen size={20} className="flex-shrink-0 mt-0.5 text-amber-600"/><p className="text-[10px] font-bold">Este reporte es vital para contabilidad.<br/>Muestra cómo afecta cada transacción al PUC.</p></div>
         </div>
-        <div className="space-y-5">
-          {allMovs.map((m, idx) => {
-            const isBanco = m.origen === 'Banco';
-            const ctaPrincipal = isBanco ? cuentas.find(c=>c.id===m.cuentaId) : cajas.find(c=>c.id===m.cajaId);
-            if (!ctaPrincipal) return null;
-            const isIngreso = m.tipo === 'Ingreso';
-            const tasa = Number(m.tasa) || 1;
-            const mNat = Number(m.montoNativo) || 0;
-            const valBs = ctaPrincipal.moneda === 'BS' ? mNat : mNat * tasa;
-            const valUSD = ctaPrincipal.moneda === 'BS' ? mNat / tasa : mNat;
-            let lineas = [];
-            lineas.push({codigo:ctaPrincipal.cuentaContableCod||'—', nombre:isBanco?ctaPrincipal.banco:ctaPrincipal.nombre, dBs:isIngreso?valBs:0, hBs:isIngreso?0:valBs, dUSD:isIngreso?valUSD:0, hUSD:isIngreso?0:valUSD, isMain:true});
-            (m.lineasContra||[]).forEach(l=>{
-              const ci=contCuentas.find(c=>c.id===l.ctaId);
-              if(ci) lineas.push({codigo:ci.codigo, nombre:ci.nombre, dBs:Number(l.debeBs||0), hBs:Number(l.haberBs||0), dUSD:Number(l.debeUSD||0), hUSD:Number(l.haberUSD||0)});
-            });
-            if(m.tipo==='Traslado de Fondo'&&m.cuentaDestinoId){
-              const cDest=cuentas.find(c=>c.id===m.cuentaDestinoId);
-              if(cDest) lineas.push({codigo:cDest.cuentaContableCod||'—', nombre:cDest.banco, dBs:valBs, hBs:0, dUSD:valUSD, hUSD:0});
-            }
-            return (
-              <div key={m.id} className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden">
+        <div className="space-y-6">
+          {allMovs.map((m,idx)=>{
+            const isBanco=m.origen==='Banco';
+            const ctaP=isBanco?cuentas.find(c=>c.id===m.cuentaId):cajas.find(c=>c.id===m.cajaId);
+            if(!ctaP) return null;
+            const isIng=m.tipo==='Ingreso';const tasa=Number(m.tasa)||1;const mNat=Number(m.montoNativo)||0;
+            const valBs=ctaP.moneda==='BS'?mNat:mNat*tasa;
+            const valUSD=ctaP.moneda==='BS'?mNat/tasa:mNat;
+            let lineas=[{codigo:ctaP.cuentaContableCod||'—',nombre:isBanco?ctaP.banco:ctaP.nombre,dBs:isIng?valBs:0,hBs:isIng?0:valBs,dUSD:isIng?valUSD:0,hUSD:isIng?0:valUSD,isMain:true}];
+            (m.lineasContra||[]).forEach(l=>{const ci=contCuentas.find(c=>c.id===l.ctaId);if(ci)lineas.push({codigo:ci.codigo,nombre:ci.nombre,dBs:Number(l.debeBs||0),hBs:Number(l.haberBs||0),dUSD:Number(l.debeUSD||0),hUSD:Number(l.haberUSD||0)});});
+            if(m.tipo==='Traslado de Fondo'&&m.cuentaDestinoId){const cD=cuentas.find(c=>c.id===m.cuentaDestinoId);if(cD)lineas.push({codigo:cD.cuentaContableCod||'—',nombre:cD.banco,dBs:valBs,hBs:0,dUSD:valUSD,hUSD:0});}
+            return(
+              <div key={m.id} className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden flex flex-col min-w-0">
                 <div className="bg-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-black text-slate-900 bg-amber-400 px-2 py-1 rounded tracking-widest">ASIENTO N° {allMovs.length - idx}</span>
-                    <span className="text-[11px] text-white font-mono font-bold">{dd(m.fecha)}</span>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded ${isBanco?'bg-blue-500 text-white':'bg-emerald-500 text-white'}`}>{m.origen}</span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase border border-slate-600 px-2 py-1 rounded">Ref: {m.referencia}</span>
-                  </div>
+                  <div className="flex items-center gap-3"><span className="text-[10px] font-black text-slate-900 bg-amber-400 px-2 py-1 rounded tracking-widest shadow-sm">ASIENTO N° {allMovs.length-idx}</span><span className="text-[11px] text-white font-mono font-bold tracking-wider">{dd(m.fecha)}</span></div>
+                  <div className="flex gap-2 items-center"><span className={`text-[9px] font-black uppercase px-2 py-1 rounded ${isBanco?'bg-blue-500 text-white':'bg-emerald-500 text-white'}`}>{m.origen}</span><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest border border-slate-600 px-2 py-1 rounded">Ref: {m.referencia}</span></div>
                 </div>
-                <div className="p-4 border-b border-slate-200 bg-slate-50 text-xs text-slate-600 font-medium">
-                  Concepto: <span className="font-bold text-slate-800">{m.concepto}</span>
-                </div>
-                <div className="overflow-x-auto w-full">
-                  <table className="w-full text-left min-w-[600px]">
-                    <thead>
-                      <tr className="border-b-2 border-slate-200 text-slate-400 bg-white">
-                        <Th>Cuenta</Th><Th>Descripción</Th><Th right>Debe Bs.</Th><Th right>Haber Bs.</Th><Th right>Debe $</Th><Th right>Haber $</Th>
-                      </tr>
-                    </thead>
+                <div className="p-4 border-b border-slate-200 bg-slate-50 text-xs text-slate-600 font-medium">Concepto de Operación: <span className="font-bold text-slate-800">{m.esVale?`[VALE A: ${m.responsableVale}] ${m.concepto}`:m.concepto}</span></div>
+                <div className="overflow-x-auto w-full min-w-0">
+                  <table className="w-full text-left min-w-[700px]">
+                    <thead><tr className="border-b-2 border-slate-200 text-slate-400 bg-white"><Th>Cuenta</Th><Th>Descripción de la Cuenta</Th><Th right>Debe Bs.</Th><Th right>Haber Bs.</Th><Th right>Debe $</Th><Th right>Haber $</Th></tr></thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {lineas.map((l, i) => (
-                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                          <Td mono className="font-black text-blue-600 text-[11px]">{l.codigo}</Td>
-                          <Td className={`text-[10px] uppercase tracking-wide ${l.isMain?'font-black text-slate-900':'font-bold text-slate-500'}`}>{l.nombre}</Td>
-                          <Td right mono className="text-emerald-700 font-black">{l.dBs > 0 ? fmt(l.dBs) : ''}</Td>
-                          <Td right mono className="text-red-700 font-black">{l.hBs > 0 ? fmt(l.hBs) : ''}</Td>
-                          <Td right mono className="text-emerald-700 text-[10px] font-bold">{l.dUSD > 0 ? fmt(l.dUSD) : ''}</Td>
-                          <Td right mono className="text-red-700 text-[10px] font-bold">{l.hUSD > 0 ? fmt(l.hUSD) : ''}</Td>
-                        </tr>
-                      ))}
+                      {lineas.map((l,i)=>(<tr key={i} className="hover:bg-slate-50 transition-colors"><Td mono className="font-black text-blue-600 text-[11px]">{l.codigo}</Td><Td className={`text-[10px] uppercase tracking-wide ${l.isMain?'font-black text-slate-900':'font-bold text-slate-500'}`}>{l.nombre}</Td><Td right mono className="text-emerald-700 font-black bg-emerald-50/30">{l.dBs>0?fmt(l.dBs):''}</Td><Td right mono className="text-red-700 font-black bg-red-50/30">{l.hBs>0?fmt(l.hBs):''}</Td><Td right mono className="text-emerald-700 text-[10px] font-bold bg-emerald-50/10">{l.dUSD>0?fmt(l.dUSD):''}</Td><Td right mono className="text-red-700 text-[10px] font-bold bg-red-50/10">{l.hUSD>0?fmt(l.hUSD):''}</Td></tr>))}
                     </tbody>
                   </table>
                 </div>
               </div>
             );
           })}
-          {allMovs.length === 0 && <div className="bg-white rounded-xl p-10 text-center text-slate-400">Sin movimientos registrados.</div>}
+          {allMovs.length===0&&<div className="bg-white rounded-xl p-10 text-center text-slate-400">Sin movimientos registrados.</div>}
         </div>
       </div>
     );
   };
 
-  const navGroups = [
-    { group:'Bancos', color:'#3b82f6', items:[
-      {id:'rep_gral_banco',    label:'General de Banco',     icon:Building2},
-      {id:'admin_cuentas',     label:'Cuentas Bancarias',    icon:Wallet},
-    ]},
-    { group:'Cajas Físicas', color:'#10b981', items:[
-      {id:'rep_gral_caja',     label:'General de Caja',      icon:PiggyBank},
-      {id:'admin_cajas',       label:'Gestión de Cajas',     icon:Banknote},
-    ]},
-    { group:'Reportes Financieros', color:'#8b5cf6', items:[
-      {id:'rep_comp_bancario', label:'Comprobante Bancario',  icon:FileText},
-      {id:'rep_comp_caja',     label:'Comprobante de Caja',   icon:FileText},
-      {id:'rep_libro_diario',  label:'Libro Diario',          icon:BookOpen},
-    ]},
+  const navGroups=[
+    {group:'Bancos',color:'#3b82f6',items:[{id:'rep_gral_banco',label:'General de Banco',icon:Building2},{id:'admin_cuentas',label:'Cuentas Bancarias',icon:Wallet}]},
+    {group:'Cajas Físicas',color:'#10b981',items:[{id:'rep_gral_caja',label:'General de Caja',icon:PiggyBank},{id:'admin_cajas',label:'Gestión de Cajas',icon:Banknote}]},
+    {group:'Reportes Financieros',color:'#8b5cf6',items:[{id:'rep_comp_bancario',label:'Comprobante Bancario',icon:FileText},{id:'rep_comp_caja',label:'Comprobante de Caja',icon:FileText},{id:'rep_libro_diario',label:'Libro Diario (Asientos)',icon:BookOpen}]},
   ];
 
-  const views = {
-    rep_gral_banco:    <DashboardView tipo="banco"/>,
-    rep_gral_caja:     <DashboardView tipo="caja"/>,
-    admin_cuentas:     <AdminCuentasView tipo="banco"/>,
-    admin_cajas:       <AdminCuentasView tipo="caja"/>,
-    rep_comp_bancario: <RepComprobanteView tipo="banco"/>,
-    rep_comp_caja:     <RepComprobanteView tipo="caja"/>,
-    rep_libro_diario:  <RepLibroDiarioView />,
+  const views={
+    rep_gral_banco:<DashboardView tipo="banco"/>,rep_gral_caja:<DashboardView tipo="caja"/>,
+    admin_cuentas:<AdminCuentasView tipo="banco"/>,admin_cajas:<AdminCuentasView tipo="caja"/>,
+    rep_comp_bancario:<RepComprobanteView tipo="banco"/>,rep_comp_caja:<RepComprobanteView tipo="caja"/>,
+    rep_libro_diario:<RepLibroDiarioView/>,
   };
 
-  const curNav = navGroups.flatMap(g=>g.items).find(n=>n.id===sec) || {label:'Tesorería'};
+  const curNav=navGroups.flatMap(g=>g.items).find(n=>n.id===sec)||{label:'Tesorería'};
 
-  return (
-    <SidebarLayout brand="Supply G&B" brandSub="Tesorería" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor={sec.includes('caja') ? EMERALD : BLUE}
+  return(
+    <SidebarLayout brand="Supply G&B" brandSub="Tesorería" navGroups={navGroups} activeId={sec} onNav={setSec} onBack={onBack} accentColor={sec.includes('caja')?EMERALD:BLUE}
       headerContent={<>
         <div><h1 className="font-black text-slate-800 text-sm uppercase tracking-wide">{curNav.label}</h1><p className="text-[9px] text-slate-400 font-medium uppercase tracking-widest">Tesorería <ChevronRight size={8} className="inline"/> {curNav.label}</p></div>
         <div className="flex items-center gap-3">
@@ -1767,7 +1602,6 @@ function BancoApp({ fbUser, onBack }) {
     </SidebarLayout>
   );
 }
-
 
 // ============================================================================
 // MÓDULO CONTABILIDAD — PLAN DE CUENTAS + EXPORTAR/IMPORTAR
