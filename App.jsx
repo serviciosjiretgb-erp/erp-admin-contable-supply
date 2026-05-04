@@ -136,6 +136,31 @@ const letterheadClose = (extra='') => `
 
 const printWindow = (html) => { const w=window.open('','_blank'); w.document.write(html); w.document.close(); };
 
+
+// ── Bank Logo Fetcher (Clearbit) ────────────────────────────────────────────
+const BankLogo = ({ banco, className = "w-8 h-8 rounded-md" }) => {
+  const n = (banco || '').toLowerCase();
+  let domain = '';
+  if (n.includes('provincial') || n.includes('bbva')) domain = 'provincial.com';
+  else if (n.includes('banesco')) domain = 'banesco.com';
+  else if (n.includes('mercantil')) domain = 'mercantilbanco.com';
+  else if (n.includes('bancaribe')) domain = 'bancaribe.com.ve';
+  else if (n.includes('venezuela')) domain = 'bancodevenezuela.com';
+  else if (n.includes('bnc') || n.includes('nacional de credito')) domain = 'bncenlinea.com';
+  else if (n.includes('tesoro')) domain = 'bancodeltesoro.gob.ve';
+  else if (n.includes('amerant')) domain = 'amerantbank.com';
+  else if (n.includes('bancamiga')) domain = 'bancamiga.com';
+  else if (n.includes('plaza')) domain = 'bancoplaza.com';
+  else if (n.includes('caroni')) domain = 'bancocaroni.com.ve';
+  else if (n.includes('exterior')) domain = 'bancoexterior.com';
+  else if (n.includes('bicentenario')) domain = 'bancobicentenario.gob.ve';
+  const [err, setErr] = React.useState(false);
+  if (domain && !err) {
+    return <img src={`https://logo.clearbit.com/${domain}`} alt={banco} className={`${className} object-contain bg-white`} onError={() => setErr(true)} />;
+  }
+  return <div className={`flex items-center justify-center bg-indigo-50 border border-indigo-100 ${className}`}><Landmark size={14} className="text-indigo-600"/></div>;
+};
+
 const Badge = ({ children, v = 'green' }) => {
   const s = { green: 'bg-emerald-50 text-emerald-700 border border-emerald-200', red: 'bg-red-50 text-red-600 border border-red-200', gold: 'bg-amber-50 text-amber-700 border border-amber-200', blue: 'bg-blue-50 text-blue-700 border border-blue-200', gray: 'bg-slate-100 text-slate-500 border border-slate-200', purple: 'bg-purple-50 text-purple-700 border border-purple-200' };
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${s[v] || s.gray}`}>{children}</span>;
@@ -174,7 +199,7 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white w-full ${xwide ? 'fixed inset-0 rounded-none' : wide ? 'rounded-2xl max-w-3xl' : 'rounded-2xl max-w-lg'} flex flex-col shadow-2xl overflow-hidden`}>
+      <div className={`bg-white w-full ${xwide ? 'max-w-7xl h-[90vh]' : wide ? 'rounded-2xl max-w-3xl max-h-[90vh]' : 'rounded-2xl max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden`}>
         {!noHeader&&<div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
           <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
           <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
@@ -1309,227 +1334,200 @@ function BancoApp({ fbUser, onBack }) {
     const totBs   = cuentasNacBs.reduce((a,c)=>a+Number(c.saldo||0),0);
     const totUSD  = cuentasExt.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo||0),0);
     const totConsolUSD = totBs/tasaActiva + totUSD;
-    const cajaBs  = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0) - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0);
-    const cajaUSD = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0) - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0);
     const fmtC=(n)=>{const abs=Math.abs(Number(n)||0);if(abs>=1000000)return (n/1000000).toFixed(2)+'M';if(abs>=1000)return (n/1000).toFixed(1)+'K';return fmt(n);};
-    const totalVolBS  = movBanco.filter(m=>cuentasNacBs.find(c=>c.id===m.cuentaId)).reduce((a,m)=>a+Number(m.montoBs||0),0)||1;
-    const totalVolUSD = movBanco.filter(m=>cuentasExt.find(c=>c.id===m.cuentaId)).reduce((a,m)=>a+Number(m.montoUSD||0),0)||1;
+    const pctBs  = totConsolUSD>0?Math.round((totBs/tasaActiva)/totConsolUSD*100):0;
+    const pctUSD = totConsolUSD>0?100-pctBs:0;
+    const [tabExplorer, setTabExplorer] = useState('nacionales');
+    const [tabSub,      setTabSub]      = useState('All');
+    const cuentasMostrar = tabExplorer==='nacionales' ? cuentasNacBs : cuentasExt;
 
-    const CuentaCard=({c,isUSD})=>{
-      const bs=c.moneda==='BS';
-      const movsCta=movBanco.filter(m=>m.cuentaId===c.id);
-      const pendientes=movsCta.filter(m=>m.estatus!=='Conciliado').length;
-      const vol=isUSD?movsCta.reduce((a,m)=>a+Number(m.montoUSD||0),0):movsCta.reduce((a,m)=>a+Number(m.montoBs||0),0);
-      const tot=isUSD?totalVolUSD:totalVolBS;
-      const reciprocidad=tot>0?Math.min(Math.round(vol/tot*100),100):0;
-      const saldoNeg=Number(c.saldo||0)<0;
-      return(
-        <div onClick={()=>setSec('movimientos')} className={`group bg-white rounded-xl border p-5 hover:shadow-lg transition-all cursor-pointer relative overflow-hidden ${saldoNeg?'border-red-300':'border-slate-200'}`}>
-          {saldoNeg&&<div className="absolute top-0 left-0 w-1 h-full bg-red-500"/>}
-          <div className="flex justify-between items-start mb-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2.5 rounded-xl ${saldoNeg?'bg-red-50 border border-red-100':'bg-indigo-50 border border-indigo-100'}`}>
-                <Landmark size={18} className={saldoNeg?'text-red-500':'text-indigo-600'}/>
-              </div>
-              <div>
-                <p className="font-black text-slate-800 text-sm leading-tight">{c.banco}</p>
-                <p className="text-[10px] font-mono text-slate-400 mt-0.5">{c.numeroCuenta}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg" title="Reciprocidad">
-                <Activity size={11} className="text-indigo-500"/>
-                <span className="text-[9px] font-black text-slate-600">{reciprocidad}%</span>
-              </div>
-            </div>
-          </div>
-          <div className="mt-2 pt-3 border-t border-slate-100 flex justify-between items-end">
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Saldo Disponible</p>
-              <p className={`text-lg font-black tracking-tight ${saldoNeg?'text-red-600':'text-slate-900'}`}>{bs?'Bs.':'$'} {fmt(c.saldo)}</p>
-            </div>
-            <div className="text-right">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Equiv. {bs?'USD':'Bs.'}</span>
-              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${bs?'text-emerald-700 bg-emerald-50 border-emerald-100':'text-indigo-700 bg-indigo-50 border-indigo-100'}`}>
-                {bs?'$'+fmtC(Number(c.saldo)/tasaActiva):'Bs.'+fmtC(Number(c.saldo)*tasaActiva)}
-              </span>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center justify-between">
-            <div className="flex-1 bg-slate-100 h-1 rounded-full overflow-hidden mr-2">
-              <div className={`${isUSD?'bg-emerald-500':'bg-indigo-500'} h-full rounded-full`} style={{width:`${reciprocidad}%`}}/>
-            </div>
-            <div className="flex items-center gap-1">
-              {movsCta.length>0&&<span className="text-[9px] text-slate-400">{movsCta.length} mov</span>}
-              <div className={`w-1.5 h-1.5 rounded-full ml-1 ${pendientes>0?'bg-amber-400':'bg-emerald-400'}`}/>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
-    // Distribución porcentual para barras
-    const pctBs  = totConsolUSD>0?Math.round(totBs/tasaActiva/totConsolUSD*100):50;
-    const pctUSD = 100-pctBs;
-
-    const [tabCuentas, setTabCuentas] = useState('nacionales');
     return(
       <div className="space-y-6">
         {/* ── KPIs Hero ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Consolidado dark */}
-          <div className="rounded-2xl p-6 shadow-xl relative overflow-hidden border border-slate-800 group" style={{background:'linear-gradient(135deg,#0f172a,#1e1b4b,#0f172a)'}}>
-            <div className="absolute -right-8 -top-8 w-40 h-40 bg-indigo-500 rounded-full blur-3xl opacity-20 group-hover:opacity-30 transition-opacity"/>
-            <div className="relative z-10">
-              <p className="text-indigo-200 text-[9px] font-black uppercase tracking-widest">Liquidez Total Consolidada</p>
-              <h2 className="text-3xl font-black text-white mt-1 tracking-tight">{'$'+fmtC(totConsolUSD)}</h2>
-              <div className="mt-5 flex items-center gap-2">
-                <span className="text-xs text-slate-400">Equiv. Bs.:</span>
-                <span className="text-sm font-mono font-bold text-indigo-100">Bs.{fmtC(totConsolUSD*tasaActiva)}</span>
+          {/* Liquidez Total — dark card */}
+          <div className="rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between" style={{background:'#111827',color:'white'}}>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Liquidez Total Consolidada</p>
               </div>
-              {cajaUSD>0&&<div className="mt-2 flex items-center gap-2">
-                <span className="text-xs text-slate-400">Caja USD:</span>
-                <span className="text-sm font-mono font-bold text-emerald-400">{'$'+fmtC(cajaUSD)}</span>
-              </div>}
+              <h2 className="text-3xl font-black mt-1 tracking-tight">${fmt(totConsolUSD)}</h2>
+            </div>
+            <div className="mt-6">
+              <p className="text-[11px] text-slate-400 mb-2">Equiv. Bs.: <span className="font-bold text-white">Bs.{fmtC(totConsolUSD*tasaActiva)}</span></p>
+              <div className="w-full h-px bg-slate-700 mb-3"/>
+              <button onClick={()=>setSec('movimientos')} className="text-[10px] font-bold text-blue-400 hover:underline tracking-wide">Ver Movimientos →</button>
+            </div>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-20 pointer-events-none"><LineChart size={60}/></div>
+          </div>
+          {/* Bancos Nacionales */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Bancos Nacionales — Bs.</p>
+                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center"><Landmark size={14} className="text-blue-600"/></div>
+              </div>
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight">Bs.{fmtC(totBs)}</h2>
+            </div>
+            <div className="mt-4">
+              <p className="text-[10px] text-slate-400 mb-2">Equiv. USD: <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">${fmt(totBs/tasaActiva)}</span></p>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full"><div className="h-full bg-blue-600 rounded-full" style={{width:`${pctBs}%`}}/></div>
+              <p className="text-[9px] text-slate-400 mt-1 text-right">{pctBs}% del total</p>
             </div>
           </div>
-          {/* Nacionales */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest">Bancos Nacionales · Bs.</p>
-                <h2 className="text-3xl font-black text-slate-800 mt-1 tracking-tight">Bs.{fmtC(Math.max(0,totBs))}</h2>
+          {/* Bancos Extranjeros */}
+          <div className="bg-slate-50 rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Bancos Extranjeros — USD</p>
+                <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center"><Building2 size={14} className="text-emerald-600"/></div>
               </div>
-              <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100"><Landmark size={22} className="text-indigo-600"/></div>
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight">${fmtC(totUSD)}</h2>
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs text-slate-400">Equiv. USD:</span>
-              <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">{'$'+fmtC(Math.max(0,totBs)/tasaActiva)}</span>
+            <div className="mt-4">
+              <p className="text-[10px] text-slate-400 mb-2">Equiv. Bs.: <span className="font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Bs.{fmt(totUSD*tasaActiva)}</span></p>
+              <div className="w-full h-1.5 bg-slate-200 rounded-full"><div className="h-full bg-emerald-500 rounded-full" style={{width:`${pctUSD}%`}}/></div>
+              <p className="text-[9px] text-slate-400 mt-1 text-right">{pctUSD}% del total</p>
             </div>
-            <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-              <div className="bg-indigo-500 h-full rounded-full" style={{width:`${pctBs}%`}}/>
-            </div>
-            <p className="text-[9px] text-slate-400 mt-1 text-right">{pctBs}% del total</p>
-          </div>
-          {/* Internacionales */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest">Bancos Extranjeros · USD</p>
-                <h2 className="text-3xl font-black text-slate-800 mt-1 tracking-tight">{'$'+fmtC(Math.max(0,totUSD))}</h2>
-              </div>
-              <div className="p-3 bg-teal-50 rounded-xl border border-teal-100"><Building2 size={22} className="text-teal-600"/></div>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs text-slate-400">Equiv. Bs.:</span>
-              <span className="text-xs font-mono font-bold text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">Bs.{fmtC(Math.max(0,totUSD)*tasaActiva)}</span>
-            </div>
-            <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-              <div className="bg-teal-500 h-full rounded-full" style={{width:`${pctUSD}%`}}/>
-            </div>
-            <p className="text-[9px] text-slate-400 mt-1 text-right">{pctUSD}% del total</p>
           </div>
         </div>
 
-        {/* ── Layout bicolumna: Cuentas con tabs | Analítica ── */}
+        {/* ── Bank Explorer + Analytics ── */}
         <div className="flex flex-col xl:flex-row gap-6">
-          {/* CUENTAS con tabs Nacionales / ME */}
+          {/* Bank Explorer */}
           <div className="flex-1 space-y-4">
-            {/* Tab bar */}
-            <div className="flex items-end gap-6 border-b border-slate-200 pb-0">
-              {[{id:'nacionales',label:'Nacionales (Bs)',color:'#4f46e5'},{id:'extranjeras',label:'Moneda Extranjera (USD)',color:'#0d9488'}].map(tab=>(
-                <button key={tab.id} onClick={()=>setTabCuentas(tab.id)}
-                  className={`pb-3 -mb-px text-xs font-black uppercase tracking-wider transition-colors whitespace-nowrap border-b-2 ${tabCuentas===tab.id?'border-current':'border-transparent text-slate-400 hover:text-slate-600'}`}
-                  style={{color:tabCuentas===tab.id?tab.color:''}}>
-                  {tab.label}
-                </button>
-              ))}
+            {/* Tabs */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-0">
+              <div className="flex gap-6">
+                {[{id:'nacionales',label:'NACIONALES (BS)'},{id:'extranjeras',label:'MONEDA EXTRANJERA (USD)'}].map(t=>(
+                  <button key={t.id} onClick={()=>setTabExplorer(t.id)}
+                    className={`text-[11px] font-black uppercase pb-3 -mb-px border-b-2 transition-colors ${tabExplorer===t.id?'border-blue-600 text-blue-700':'border-transparent text-slate-500 hover:text-slate-800'}`}>{t.label}</button>
+                ))}
+              </div>
             </div>
 
-            {/* Tab Nacionales */}
-            {tabCuentas==='nacionales'&&(
-              cuentasNacBs.length>0
-                ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasNacBs.map(c=><CuentaCard key={c.id} c={c} isUSD={false}/>)}</div>
-                : <EmptyState icon={Building2} title="Sin cuentas nacionales" desc="Registre cuentas Bs."/>
-            )}
-            {/* Tab Extranjeras */}
-            {tabCuentas==='extranjeras'&&(
-              cuentasExt.length>0
-                ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasExt.map(c=><CuentaCard key={c.id} c={c} isUSD={true}/>)}</div>
-                : <EmptyState icon={Building2} title="Sin cuentas extranjeras" desc="Registre cuentas USD"/>
-            )}
-            {cuentas.length===0&&<EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas en Bancos"/>}
+            {/* Explorer Card */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-black text-slate-800">Bank Explorer</h3>
+                <button onClick={()=>setSec('cuentas')} className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold shadow-sm hover:bg-slate-50">Ver Todas las Cuentas →</button>
+              </div>
+              {/* Sub-tabs */}
+              <div className="flex gap-2 mb-4">
+                {['All','Active','Alerts'].map(t=>(
+                  <button key={t} onClick={()=>setTabSub(t)}
+                    className={`px-4 py-1 rounded-full text-[10px] font-bold border transition-all ${tabSub===t?(t==='Alerts'?'bg-red-100 text-red-700 border-red-200':'bg-white text-slate-800 border-slate-300 shadow-sm'):'bg-transparent border-transparent text-slate-500 hover:bg-slate-200'}`}>{t}</button>
+                ))}
+              </div>
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-3 font-bold uppercase tracking-wider text-[10px]">Banco</th>
+                      <th className="py-3 font-bold uppercase tracking-wider text-[10px]">Cuenta</th>
+                      <th className="py-3 font-bold uppercase tracking-wider text-[10px]">Moneda</th>
+                      <th className="py-3 font-bold uppercase tracking-wider text-[10px] text-right">Saldo</th>
+                      <th className="py-3 font-bold uppercase tracking-wider text-[10px] text-right">Equiv.</th>
+                      <th className="py-3 font-bold uppercase tracking-wider text-[10px] text-center">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {cuentasMostrar.filter(c=>tabSub==='All'||tabSub==='Active'||(tabSub==='Alerts'&&Number(c.saldo)<0)).length===0&&(
+                      <tr><td colSpan={6} className="py-8 text-center text-slate-400 text-xs font-semibold">Sin bancos en esta categoría</td></tr>
+                    )}
+                    {cuentasMostrar.filter(c=>tabSub==='All'||tabSub==='Active'||(tabSub==='Alerts'&&Number(c.saldo)<0)).map(c=>{
+                      const isNeg=Number(c.saldo)<0;
+                      const bs=c.moneda==='BS';
+                      return(
+                        <tr key={c.id} className={`hover:bg-blue-50/30 transition-colors ${isNeg?'bg-red-50/40':''}`}>
+                          <td className="py-3.5 pr-3">
+                            <div className="flex items-center gap-3">
+                              <BankLogo banco={c.banco} className="w-8 h-8 rounded-lg shadow-sm border border-slate-200 p-0.5 object-contain"/>
+                              <div>
+                                <p className="font-bold text-slate-800 leading-tight truncate max-w-[150px]">{c.banco}</p>
+                                <p className="text-[9px] text-slate-400 font-mono">{c.titular||'—'}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 font-mono text-[10px] text-slate-500 truncate max-w-[130px]">{c.numeroCuenta}</td>
+                          <td className="py-3.5"><Pill usd={!bs}>{c.moneda}</Pill></td>
+                          <td className="py-3.5 text-right">
+                            <p className={`font-black text-sm ${isNeg?'text-red-600':'text-slate-900'}`}>{bs?'Bs.':'$'} {fmt(c.saldo)}</p>
+                            {isNeg&&<p className="text-[9px] text-red-400 font-bold">⚠ Sobregiro</p>}
+                          </td>
+                          <td className="py-3.5 text-right">
+                            <p className="text-[10px] font-mono text-slate-400">{bs?'$'+fmt(Number(c.saldo)/tasaActiva):'Bs.'+fmt(Number(c.saldo)*tasaActiva)}</p>
+                          </td>
+                          <td className="py-3.5 text-center">
+                            <Badge v={isNeg?'red':movBanco.filter(m=>m.cuentaId===c.id).length>0?'green':'gray'}>{isNeg?'Alerta':movBanco.filter(m=>m.cuentaId===c.id).length>0?'Activa':'Sin mov.'}</Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
-          {/* ANALÍTICA (distribución + reciprocidad) */}
-          <div className="w-full xl:w-[340px] flex flex-col gap-5">
+          {/* Right pane: Analytics */}
+          <div className="w-full xl:w-[300px] flex flex-col gap-5 shrink-0">
             {/* Distribución */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-5">
-                <PieChart size={15} className="text-indigo-600"/>
-                <h3 className="font-black text-xs uppercase tracking-wider text-slate-800">Distribución de Saldos</h3>
+                <PieChart size={15} className="text-slate-500"/>
+                <h3 className="font-bold text-[11px] uppercase tracking-widest text-slate-700">Distribución de Saldos</h3>
               </div>
               <div className="space-y-4">
                 <div>
-                  <div className="flex justify-between items-end mb-1.5">
-                    <span className="text-xs font-bold text-slate-600">Nacionales Bs.</span>
-                    <span className="text-xs font-black font-mono text-slate-900">Bs.{fmtC(totBs)} <span className="text-indigo-600 text-[10px]">({pctBs}%)</span></span>
+                  <div className="flex justify-between items-end text-[10px] font-bold text-slate-700 mb-1.5">
+                    <span>Nacionales Bs.</span>
+                    <span className="font-mono text-slate-900">Bs.{fmtC(totBs)} <span className="text-blue-600 ml-1">({pctBs}%)</span></span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-indigo-500 h-full rounded-full" style={{width:`${pctBs}%`}}/>
-                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-blue-600 h-full rounded-full" style={{width:`${pctBs}%`}}/></div>
                 </div>
                 <div>
-                  <div className="flex justify-between items-end mb-1.5">
-                    <span className="text-xs font-bold text-slate-600">Bancos ME / USD</span>
-                    <span className="text-xs font-black font-mono text-slate-900">{'$'+fmtC(totUSD)} <span className="text-teal-600 text-[10px]">({pctUSD}%)</span></span>
+                  <div className="flex justify-between items-end text-[10px] font-bold text-slate-700 mb-1.5">
+                    <span>Bancos ME / USD</span>
+                    <span className="font-mono text-slate-900">${fmtC(totUSD)} <span className="text-emerald-600 ml-1">({pctUSD}%)</span></span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-teal-500 h-full rounded-full" style={{width:`${pctUSD}%`}}/>
-                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full rounded-full" style={{width:`${pctUSD}%`}}/></div>
                 </div>
-                {cajaUSD>0&&<div>
-                  <div className="flex justify-between items-end mb-1.5">
-                    <span className="text-xs font-bold text-slate-600">Caja USD</span>
-                    <span className="text-xs font-black font-mono text-emerald-700">{'$'+fmtC(cajaUSD)}</span>
-                  </div>
-                  <div className="w-full bg-emerald-50 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-400 h-full rounded-full" style={{width:`${Math.min(cajaUSD/Math.max(totConsolUSD,1)*100,100)}%`}}/>
-                  </div>
-                </div>}
               </div>
             </div>
-
             {/* Reciprocidad */}
-            {cuentas.length>0&&<div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Activity size={15} className="text-indigo-600"/>
-                <h3 className="font-black text-xs uppercase tracking-wider text-slate-800">Reciprocidad — Volumen</h3>
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5 shadow-sm flex-1">
+              <div className="flex items-center gap-2 mb-5">
+                <Activity size={15} className="text-slate-500"/>
+                <h3 className="font-bold text-[11px] uppercase tracking-widest text-slate-700">Reciprocidad — Volumen</h3>
               </div>
-              <div className="space-y-3">
-                {[...cuentasNacBs,...cuentasExt].map(c=>{
+              <div className="space-y-3.5">
+                {cuentas.map(c=>{
                   const vol=movBanco.filter(m=>m.cuentaId===c.id).reduce((a,m)=>a+Number(m.montoBs||m.montoUSD||0),0);
                   const totAll=movBanco.reduce((a,m)=>a+Number(m.montoBs||m.montoUSD||0),0)||1;
                   const pct=Math.min(Math.round(vol/totAll*100),100);
-                  const isBS=c.moneda==='BS';
-                  return(<div key={c.id}>
-                    <div className="flex justify-between text-[10px] font-bold mb-1">
-                      <span className="text-slate-600 truncate mr-2">{c.banco}</span>
-                      <span className="text-slate-900 font-mono">{pct}%</span>
+                  return(
+                    <div key={c.id}>
+                      <div className="flex justify-between items-end text-[9px] font-bold text-slate-600 mb-1">
+                        <span className="uppercase truncate max-w-[180px] flex items-center gap-1.5">
+                          <BankLogo banco={c.banco} className="w-4 h-4 rounded"/>{c.banco}
+                        </span>
+                        <span className="font-mono">{pct}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                        <div className={`${c.moneda==='BS'?'bg-blue-500':'bg-emerald-500'} h-full rounded-full`} style={{width:`${pct}%`}}/>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className={`${isBS?'bg-indigo-400':'bg-teal-400'} h-full rounded-full`} style={{width:`${pct}%`}}/>
-                    </div>
-                  </div>);
+                  );
                 })}
               </div>
-            </div>}
+            </div>
           </div>
         </div>
       </div>
     );
   };
-
   // ══════════════════════════════════════════════════════════════════════
   // 2. CUENTAS BANCARIAS
   // ══════════════════════════════════════════════════════════════════════
@@ -1685,7 +1683,12 @@ function BancoApp({ fbUser, onBack }) {
                       {lista.map(c=>{
                         const bs=c.moneda==='BS'; const usd=c.moneda==='USD'; const eur=c.moneda==='EUR';
                         return <tr key={c.id} className="hover:bg-blue-50/30 border-b border-slate-50">
-                          <Td className="font-black text-slate-900">{c.banco}</Td>
+                          <Td className="font-black text-slate-900">
+                            <div className="flex items-center gap-3">
+                              <BankLogo banco={c.banco} className="w-7 h-7 rounded shadow-sm object-contain border border-slate-200 p-0.5"/>
+                              {c.banco}
+                            </div>
+                          </Td>
                           <Td mono className="text-[11px] text-slate-600">{c.numeroCuenta}</Td>
                           <Td className="text-[10px] text-slate-500">{c.tipoCuenta||'—'}</Td>
                           <Td className="uppercase text-[10px] text-slate-400 max-w-[100px] truncate">{c.titular||'—'}</Td>
