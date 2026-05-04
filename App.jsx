@@ -11,7 +11,7 @@ import {
   Settings, Home, Factory, Lock, User, ArrowRight,
   Mail, CreditCard, CalendarDays, MapPin, Key, PieChart,
   Tag, Layers, ArrowUpCircle, ArrowDownCircle, RefreshCw,
-  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer} from 'lucide-react';
+  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer, Activity} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
@@ -174,7 +174,7 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-[95vw] h-[92vh]' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[92vh] flex flex-col shadow-2xl overflow-hidden`}>
+      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-5xl h-[85vh]' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[85vh] flex flex-col shadow-2xl overflow-hidden`}>
         {!noHeader&&<div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
           <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
           <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
@@ -1308,73 +1308,254 @@ function BancoApp({ fbUser, onBack }) {
     const cuentasExt   = cuentas.filter(c=>c.tipoBanco==='Nacional-Ext'||c.tipoBanco==='Internacional');
     const totBs   = cuentasNacBs.reduce((a,c)=>a+Number(c.saldo||0),0);
     const totUSD  = cuentasExt.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo||0),0);
-    const totEUR  = cuentasExt.filter(c=>c.moneda==='EUR').reduce((a,c)=>a+Number(c.saldo||0),0);
-    const totConsolUSD = Math.max(0,totBs/tasaActiva) + Math.max(0,totUSD);
-    const cajaBs  = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0)
-                  - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0);
-    const cajaUSD = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0)
-                  - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0);
-    // Format compacto (50.000 en vez de 50,000.00)
+    const totConsolUSD = totBs/tasaActiva + totUSD;
+    const cajaBs  = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0) - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='BS').reduce((a,m)=>a+Number(m.montoBs||0),0);
+    const cajaUSD = movCaja.filter(m=>m.tipo==='Ingreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0) - movCaja.filter(m=>m.tipo==='Egreso'&&m.moneda==='USD').reduce((a,m)=>a+Number(m.montoUSD||0),0);
     const fmtC=(n)=>{const abs=Math.abs(Number(n)||0);if(abs>=1000000)return (n/1000000).toFixed(2)+'M';if(abs>=1000)return (n/1000).toFixed(1)+'K';return fmt(n);};
-    const CuentaCard=({c})=>{
-      const bs=c.moneda==='BS';const eur=c.moneda==='EUR';
-      const usdEq=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);
-      const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
+    const totalVolBS  = movBanco.filter(m=>cuentasNacBs.find(c=>c.id===m.cuentaId)).reduce((a,m)=>a+Number(m.montoBs||0),0)||1;
+    const totalVolUSD = movBanco.filter(m=>cuentasExt.find(c=>c.id===m.cuentaId)).reduce((a,m)=>a+Number(m.montoUSD||0),0)||1;
+
+    const CuentaCard=({c,isUSD})=>{
+      const bs=c.moneda==='BS';
       const movsCta=movBanco.filter(m=>m.cuentaId===c.id);
       const pendientes=movsCta.filter(m=>m.estatus!=='Conciliado').length;
-      const colorBorde=bs?'#3b82f6':eur?'#f59e0b':'#10b981';
-      return(<div onClick={()=>setSec('movimientos')} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer overflow-hidden" style={{borderTop:`3px solid ${colorBorde}`}}>
-        <div className="px-4 pt-3 pb-2 flex items-start justify-between">
-          <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{background:colorBorde+'12'}}><Landmark size={12} style={{color:colorBorde}}/></div>
-            <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-400 leading-none">{c.tipoBanco}</p><p className="font-black text-slate-900 text-[11px] uppercase leading-tight mt-0.5">{c.banco}</p></div></div>
-          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md text-white" style={{background:bs?'#f97316':'#0f172a'}}>{c.moneda}</span>
-        </div>
-        <div className="px-4 py-2"><p className="font-black text-slate-900 text-base leading-none">{bs?'Bs.':(c.moneda==='USD'?'$':'€')} {fmt(c.saldo)}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">{bs?`≈ $${fmtC(usdEq)}`:c.moneda==='EUR'?`≈ $${fmtC(usdEq)} · Bs.${fmtC(bsEq)}`:`≈ Bs.${fmtC(bsEq)}`}</p></div>
-        <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-          <p className="font-mono text-[9px] text-slate-400 truncate max-w-[130px]">{c.numeroCuenta}</p>
-          <div className="flex items-center gap-1.5">{movsCta.length>0&&<span className="text-[9px] text-slate-400">{movsCta.length} mov</span>}<div className={`w-1.5 h-1.5 rounded-full ${pendientes>0?'bg-amber-400':'bg-emerald-400'}`}/></div>
-        </div></div>);
-    };
-    return(<div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KPI label="Bancos USD" value={`$${fmt(Math.max(0,totUSD))}`} accent="green" Icon={Building2} sub={`≈ Bs.${fmtC(Math.max(0,totUSD)*tasaActiva)}`}/>
-        <KPI label="Bancos Bs." value={`Bs.${fmtC(Math.max(0,totBs))}`} accent="blue" Icon={Landmark} sub={`≈ $${fmtC(Math.max(0,totBs)/tasaActiva)}`}/>
-        <KPI label="Caja USD" value={`$${fmt(Math.max(0,cajaUSD))}`} accent="purple" Icon={DollarSign} sub="Efectivo + Vales"/>
-      </div>
-      {cuentasNacBs.length>0&&<div>
-        <div className="flex items-center gap-2 mb-3"><div className="w-1 h-5 rounded-full bg-blue-500"/><p className="font-black text-[10px] uppercase tracking-widest text-slate-700">Cuentas Nacionales · Bolívares</p><div className="flex-1 h-px bg-slate-100"/><div className="bg-blue-50 px-3 py-1 rounded-lg"><span className="text-[9px] font-black text-blue-700 uppercase">Total: Bs.{fmtC(totBs)}</span></div></div>
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">{cuentasNacBs.map(c=><CuentaCard key={c.id} c={c}/>)}</div>
-      </div>}
-      {cuentasExt.length>0&&<div>
-        <div className="flex items-center gap-2 mb-3"><div className="w-1 h-5 rounded-full bg-emerald-500"/><p className="font-black text-[10px] uppercase tracking-widest text-slate-700">Moneda Extranjera</p><div className="flex-1 h-px bg-slate-100"/><div className="bg-emerald-50 px-3 py-1 rounded-lg"><span className="text-[9px] font-black text-emerald-700 uppercase">USD: ${fmtC(totUSD)} · EUR: €{fmtC(totEUR)}</span></div></div>
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">{cuentasExt.map(c=><CuentaCard key={c.id} c={c}/>)}</div>
-      </div>}
-      {cuentas.length===0&&<div className="py-12"><EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas en Bancos"/></div>}
-      <div className="grid lg:grid-cols-2 gap-4">
-        <Card title="Últimas Transacciones">
-          {movBanco.length===0?<EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc=""/>:
-            <div className="divide-y divide-slate-50">{movBanco.slice(0,8).map(m=>(
-              <div key={m.id} className="flex items-center gap-3 py-2 hover:bg-slate-50 rounded-lg px-2">
-                <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${m.tipo==='Ingreso'?'bg-emerald-100':'bg-red-100'}`}>{m.tipo==='Ingreso'?<ArrowUpCircle size={12} className="text-emerald-600"/>:<ArrowDownCircle size={12} className="text-red-500"/>}</div>
-                <div className="flex-1 min-w-0"><p className="text-[10px] font-semibold text-slate-800 truncate">{m.concepto}</p><p className="text-[9px] text-slate-400">{m.cuentaNombre} · {dd(m.fecha)}</p></div>
-                <div className="text-right flex-shrink-0"><p className={`font-mono font-black text-[11px] ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{'$'+fmt(m.montoUSD)}</p><p className="text-[9px] text-slate-400">Bs.{fmtC(m.montoBs)}</p></div>
+      const vol=isUSD?movsCta.reduce((a,m)=>a+Number(m.montoUSD||0),0):movsCta.reduce((a,m)=>a+Number(m.montoBs||0),0);
+      const tot=isUSD?totalVolUSD:totalVolBS;
+      const reciprocidad=tot>0?Math.min(Math.round(vol/tot*100),100):0;
+      const saldoNeg=Number(c.saldo||0)<0;
+      return(
+        <div onClick={()=>setSec('movimientos')} className={`group bg-white rounded-xl border p-5 hover:shadow-lg transition-all cursor-pointer relative overflow-hidden ${saldoNeg?'border-red-300':'border-slate-200'}`}>
+          {saldoNeg&&<div className="absolute top-0 left-0 w-1 h-full bg-red-500"/>}
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${saldoNeg?'bg-red-50 border border-red-100':'bg-indigo-50 border border-indigo-100'}`}>
+                <Landmark size={18} className={saldoNeg?'text-red-500':'text-indigo-600'}/>
               </div>
-            ))}</div>}
-        </Card>
-        <Card title="Consolidado">
-          <div className="space-y-3">
-            {cuentasNacBs.length>0&&<><p className="text-[8px] font-black uppercase tracking-widest text-blue-600">Bolívares</p>
-              {cuentasNacBs.map(c=>{const pct=totBs>0?Number(c.saldo)/totBs*100:0;return(<div key={c.id} className="space-y-0.5"><div className="flex justify-between"><span className="text-[10px] font-semibold text-slate-700 truncate max-w-[150px]">{c.banco}</span><span className="text-[10px] font-mono font-black text-slate-900">Bs.{fmtC(c.saldo)} <span className="text-slate-400">{pct.toFixed(0)}%</span></span></div><div className="w-full bg-blue-50 rounded-full h-1"><div className="h-1 rounded-full bg-blue-500" style={{width:`${Math.min(pct,100)}%`}}/></div></div>);})}
-              <div className="flex justify-between pt-1 border-t border-blue-50 text-[9px] font-black text-blue-600 uppercase"><span>Total Bs.</span><span>Bs.{fmtC(totBs)}</span></div></>}
-            {cuentasExt.length>0&&<><p className="text-[8px] font-black uppercase tracking-widest text-emerald-600 mt-2">Divisas</p>
-              {cuentasExt.map(c=>{const tot=cuentasExt.reduce((a,x)=>a+Number(x.saldo||0),0);const pct=tot>0?Number(c.saldo)/tot*100:0;return(<div key={c.id} className="space-y-0.5"><div className="flex justify-between"><span className="text-[10px] font-semibold text-slate-700 truncate max-w-[120px]">{c.banco} <span className="text-slate-400">({c.moneda})</span></span><span className="text-[10px] font-mono font-black text-slate-900">{c.moneda==='USD'?'$':'€'}{fmtC(c.saldo)} <span className="text-slate-400">{pct.toFixed(0)}%</span></span></div><div className="w-full bg-emerald-50 rounded-full h-1"><div className="h-1 rounded-full bg-emerald-500" style={{width:`${Math.min(pct,100)}%`}}/></div></div>);})}
-            </>}
-            {cuentas.length>0&&<div className="flex justify-between pt-2 border-t border-slate-200 text-[10px] font-black text-slate-900 uppercase"><span>Consolidado USD</span><span>${fmtC(totConsolUSD)}</span></div>}
+              <div>
+                <p className="font-black text-slate-800 text-sm leading-tight">{c.banco}</p>
+                <p className="text-[10px] font-mono text-slate-400 mt-0.5">{c.numeroCuenta}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg" title="Reciprocidad">
+                <Activity size={11} className="text-indigo-500"/>
+                <span className="text-[9px] font-black text-slate-600">{reciprocidad}%</span>
+              </div>
+            </div>
           </div>
-        </Card>
+          <div className="mt-2 pt-3 border-t border-slate-100 flex justify-between items-end">
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Saldo Disponible</p>
+              <p className={`text-lg font-black tracking-tight ${saldoNeg?'text-red-600':'text-slate-900'}`}>{bs?'Bs.':'$'} {fmt(c.saldo)}</p>
+            </div>
+            <div className="text-right">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-0.5">Equiv. {bs?'USD':'Bs.'}</span>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${bs?'text-emerald-700 bg-emerald-50 border-emerald-100':'text-indigo-700 bg-indigo-50 border-indigo-100'}`}>
+                {bs?'$'+fmtC(Number(c.saldo)/tasaActiva):'Bs.'+fmtC(Number(c.saldo)*tasaActiva)}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex-1 bg-slate-100 h-1 rounded-full overflow-hidden mr-2">
+              <div className={`${isUSD?'bg-emerald-500':'bg-indigo-500'} h-full rounded-full`} style={{width:`${reciprocidad}%`}}/>
+            </div>
+            <div className="flex items-center gap-1">
+              {movsCta.length>0&&<span className="text-[9px] text-slate-400">{movsCta.length} mov</span>}
+              <div className={`w-1.5 h-1.5 rounded-full ml-1 ${pendientes>0?'bg-amber-400':'bg-emerald-400'}`}/>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Distribución porcentual para barras
+    const pctBs  = totConsolUSD>0?Math.round(totBs/tasaActiva/totConsolUSD*100):50;
+    const pctUSD = 100-pctBs;
+
+    return(
+      <div className="space-y-6">
+        {/* ── KPIs Hero ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Consolidado dark */}
+          <div className="rounded-2xl p-6 shadow-xl relative overflow-hidden border border-slate-800 group" style={{background:'linear-gradient(135deg,#0f172a,#1e1b4b,#0f172a)'}}>
+            <div className="absolute -right-8 -top-8 w-40 h-40 bg-indigo-500 rounded-full blur-3xl opacity-20 group-hover:opacity-30 transition-opacity"/>
+            <div className="relative z-10">
+              <p className="text-indigo-200 text-[9px] font-black uppercase tracking-widest">Liquidez Total Consolidada</p>
+              <h2 className="text-3xl font-black text-white mt-1 tracking-tight">{'$'+fmtC(totConsolUSD)}</h2>
+              <div className="mt-5 flex items-center gap-2">
+                <span className="text-xs text-slate-400">Equiv. Bs.:</span>
+                <span className="text-sm font-mono font-bold text-indigo-100">Bs.{fmtC(totConsolUSD*tasaActiva)}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-slate-400">Caja USD:</span>
+                <span className="text-sm font-mono font-bold text-emerald-400">{'$'+fmtC(cajaUSD)}</span>
+              </div>
+            </div>
+          </div>
+          {/* Nacionales */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest">Bancos Nacionales · Bs.</p>
+                <h2 className="text-3xl font-black text-slate-800 mt-1 tracking-tight">Bs.{fmtC(Math.max(0,totBs))}</h2>
+              </div>
+              <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100"><Landmark size={22} className="text-indigo-600"/></div>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-slate-400">Equiv. USD:</span>
+              <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded">{'$'+fmtC(Math.max(0,totBs)/tasaActiva)}</span>
+            </div>
+            <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+              <div className="bg-indigo-500 h-full rounded-full" style={{width:`${pctBs}%`}}/>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-1 text-right">{pctBs}% del total</p>
+          </div>
+          {/* Internacionales */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest">Bancos Extranjeros · USD</p>
+                <h2 className="text-3xl font-black text-slate-800 mt-1 tracking-tight">{'$'+fmtC(Math.max(0,totUSD))}</h2>
+              </div>
+              <div className="p-3 bg-teal-50 rounded-xl border border-teal-100"><Building2 size={22} className="text-teal-600"/></div>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-slate-400">Equiv. Bs.:</span>
+              <span className="text-xs font-mono font-bold text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">Bs.{fmtC(Math.max(0,totUSD)*tasaActiva)}</span>
+            </div>
+            <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+              <div className="bg-teal-500 h-full rounded-full" style={{width:`${pctUSD}%`}}/>
+            </div>
+            <p className="text-[9px] text-slate-400 mt-1 text-right">{pctUSD}% del total</p>
+          </div>
+        </div>
+
+        {/* ── Layout bicolumna: Cuentas | Analítica + Recientes ── */}
+        <div className="flex flex-col xl:flex-row gap-6">
+          {/* CUENTAS */}
+          <div className="flex-1 space-y-5">
+            {cuentasNacBs.length>0&&<div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-5 rounded-full bg-indigo-500"/>
+                <p className="font-black text-[10px] uppercase tracking-widest text-slate-700">Cuentas Nacionales · Bolívares</p>
+                <div className="flex-1 h-px bg-slate-100"/>
+                <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg uppercase">Bs.{fmtC(totBs)}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasNacBs.map(c=><CuentaCard key={c.id} c={c} isUSD={false}/>)}</div>
+            </div>}
+            {cuentasExt.length>0&&<div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1 h-5 rounded-full bg-teal-500"/>
+                <p className="font-black text-[10px] uppercase tracking-widest text-slate-700">Bancos Internacionales & ME</p>
+                <div className="flex-1 h-px bg-slate-100"/>
+                <span className="text-[9px] font-black text-teal-700 bg-teal-50 px-3 py-1 rounded-lg uppercase">{'$'+fmtC(totUSD)}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasExt.map(c=><CuentaCard key={c.id} c={c} isUSD={true}/>)}</div>
+            </div>}
+            {cuentas.length===0&&<EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas en Bancos"/>}
+          </div>
+
+          {/* ANALÍTICA + RECIENTES */}
+          <div className="w-full xl:w-[380px] flex flex-col gap-5">
+            {/* Distribución */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-5">
+                <PieChart size={15} className="text-indigo-600"/>
+                <h3 className="font-black text-xs uppercase tracking-wider text-slate-800">Distribución de Saldos</h3>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-end mb-1.5">
+                    <span className="text-xs font-bold text-slate-600">Nacionales Bs.</span>
+                    <span className="text-xs font-black font-mono text-slate-900">Bs.{fmtC(totBs)} <span className="text-indigo-600 text-[10px]">({pctBs}%)</span></span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className="bg-indigo-500 h-full rounded-full" style={{width:`${pctBs}%`}}/>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between items-end mb-1.5">
+                    <span className="text-xs font-bold text-slate-600">Bancos ME / USD</span>
+                    <span className="text-xs font-black font-mono text-slate-900">{'$'+fmtC(totUSD)} <span className="text-teal-600 text-[10px]">({pctUSD}%)</span></span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className="bg-teal-500 h-full rounded-full" style={{width:`${pctUSD}%`}}/>
+                  </div>
+                </div>
+                {cajaUSD>0&&<div>
+                  <div className="flex justify-between items-end mb-1.5">
+                    <span className="text-xs font-bold text-slate-600">Caja USD</span>
+                    <span className="text-xs font-black font-mono text-emerald-700">{'$'+fmtC(cajaUSD)}</span>
+                  </div>
+                  <div className="w-full bg-emerald-50 h-2 rounded-full overflow-hidden">
+                    <div className="bg-emerald-400 h-full rounded-full" style={{width:`${Math.min(cajaUSD/totConsolUSD*100,100)}%`}}/>
+                  </div>
+                </div>}
+              </div>
+            </div>
+
+            {/* Reciprocidad */}
+            {cuentas.length>0&&<div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Activity size={15} className="text-indigo-600"/>
+                <h3 className="font-black text-xs uppercase tracking-wider text-slate-800">Reciprocidad — Volumen</h3>
+              </div>
+              <div className="space-y-3">
+                {[...cuentasNacBs,...cuentasExt].map(c=>{
+                  const vol=movBanco.filter(m=>m.cuentaId===c.id).reduce((a,m)=>a+Number(m.montoBs||m.montoUSD||0),0);
+                  const totAll=movBanco.reduce((a,m)=>a+Number(m.montoBs||m.montoUSD||0),0)||1;
+                  const pct=Math.min(Math.round(vol/totAll*100),100);
+                  const isBS=c.moneda==='BS';
+                  return(<div key={c.id}>
+                    <div className="flex justify-between text-[10px] font-bold mb-1">
+                      <span className="text-slate-600 truncate mr-2">{c.banco}</span>
+                      <span className="text-slate-900 font-mono">{pct}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div className={`${isBS?'bg-indigo-400':'bg-teal-400'} h-full rounded-full`} style={{width:`${pct}%`}}/>
+                    </div>
+                  </div>);
+                })}
+              </div>
+            </div>}
+
+            {/* Últimas operaciones */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex-1 flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-xs uppercase tracking-wider text-slate-800">Operaciones Recientes</h3>
+                <button onClick={()=>setSec('movimientos')} className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-1.5 rounded-lg hover:bg-indigo-100 uppercase tracking-widest">Ver Todas</button>
+              </div>
+              <div className="space-y-3 flex-1">
+                {movBanco.slice(0,6).map(m=>{
+                  const isIng=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
+                  const Icon=isIng?ArrowUpCircle:m.tipo?.includes('Traslado')?ArrowLeftRight:ArrowDownCircle;
+                  return(
+                    <div key={m.id} className="flex gap-3 items-center p-2 -mx-2 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                      <div className={`p-2 rounded-xl ${isIng?'bg-emerald-50 border border-emerald-100 text-emerald-600':m.tipo?.includes('Traslado')?'bg-indigo-50 border border-indigo-100 text-indigo-600':'bg-orange-50 border border-orange-100 text-orange-600'}`}>
+                        <Icon size={15} strokeWidth={2.5}/>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">{m.concepto}</p>
+                        <p className="text-[9px] text-slate-400">{m.cuentaNombre} · {dd(m.fecha)}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className={`text-xs font-black font-mono ${isIng?'text-emerald-600':'text-slate-800'}`}>{isIng?'+':'-'}{'$'+fmt(m.montoUSD)}</p>
+                        <p className="text-[9px] font-mono text-slate-400">Bs.{fmtC(m.montoBs)}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+                {movBanco.length===0&&<div className="flex-1 flex flex-col items-center justify-center py-6 text-center">
+                  <ArrowLeftRight size={28} className="text-slate-300 mb-2"/>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sin movimientos</p>
+                </div>}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>);
+    );
+  };
   };
 
   // ══════════════════════════════════════════════════════════════════════
@@ -3729,11 +3910,9 @@ function BancoApp({ fbUser, onBack }) {
 
     return (
       <div className="space-y-4">
-        {/* Filtros */}
-        <div className="bg-white rounded-2xl border-2 border-slate-100 p-4 space-y-3">
-          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Filtros de Búsqueda</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Banco */}
+        {/* Filtros compactos */}
+        <div className="bg-white rounded-2xl border border-slate-100 p-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
             <FG label="Banco">
               <select className={sel} value={filtBanco} onChange={e=>setFiltBanco(e.target.value)}>
                 <option value="">Todos los bancos</option>
@@ -3744,101 +3923,130 @@ function BancoApp({ fbUser, onBack }) {
                 ))}
               </select>
             </FG>
-            {/* Desde */}
-            <FG label="Desde">
-              <input type="date" className={inp} value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/>
-            </FG>
-            {/* Hasta */}
-            <FG label="Hasta">
-              <input type="date" className={inp} value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/>
-            </FG>
-            {/* Referencia */}
-            <FG label="Referencia / Concepto">
-              <div className="relative">
-                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                <input className={`${inp} pl-8`} value={filtRef} onChange={e=>setFiltRef(e.target.value)} placeholder="REF-00000 o concepto..."/>
-              </div>
-            </FG>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
+            <FG label="Desde"><input type="date" className={inp} value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/></FG>
+            <FG label="Hasta"><input type="date" className={inp} value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/></FG>
+            <div className="flex flex-col justify-end gap-2">
               {(filtBanco||filtRef||(filtDesde!==mesActual()+'-01')||(filtHasta!==today()))&&(
-                <button onClick={()=>{setFiltBanco('');setFiltRef('');setFiltDesde(mesActual()+'-01');setFiltHasta(today());}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">✕ Limpiar filtros</button>
+                <button onClick={()=>{setFiltBanco('');setFiltRef('');setFiltDesde(mesActual()+'-01');setFiltHasta(today());}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-red-50 border border-slate-200 transition-colors">✕ Limpiar</button>
               )}
-              <span className="text-[10px] text-slate-400 font-medium self-center">{rows.length} comprobante(s) encontrado(s)</span>
+              <button onClick={imprimir} className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase hover:bg-slate-700"><Download size={11}/> PDF</button>
             </div>
-            <button onClick={imprimir} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><Download size={12}/> PDF Membretado</button>
+          </div>
+          <div className="text-[9px] text-slate-400 font-medium">
+            {filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':'Todos los bancos'} · {dd(filtDesde)} al {dd(filtHasta)} · <strong className="text-slate-700">{rows.length} resultado(s)</strong>
           </div>
         </div>
 
-        <Card title={`Comprobante Contable Bancario`} subtitle={`${filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':'Todos los bancos'} · ${dd(filtDesde)} al ${dd(filtHasta)} · ${rows.length} resultado(s)`}>
-          {rows.length===0
-            ? <EmptyState icon={BookOpen} title="Sin asientos" desc="Los asientos se generan automáticamente al registrar movimientos bancarios"/>
-            : <div className="space-y-3">
-                {rows.map((r,idx)=>{
-                  const banco=getBancoNom(r);
-                  const lineas=(r.lineas||[]);
-                  const dBs=lineas.reduce((a,l)=>a+Number(l.debeBs||0),0);
-                  const hBs=lineas.reduce((a,l)=>a+Number(l.haberBs||0),0);
-                  const dUSD=lineas.reduce((a,l)=>a+Number(l.debeUSD||0),0);
-                  const hUSD=lineas.reduce((a,l)=>a+Number(l.haberUSD||0),0);
-                  return (
-                    <div key={r.id||idx} className="rounded-xl border border-slate-200 overflow-hidden">
-                      {/* Header del comprobante */}
-                      <div className="flex items-center justify-between px-5 py-3" style={{background:'#0f172a'}}>
-                        <div className="flex items-center gap-3">
-                          <p className="font-mono font-black text-blue-400 text-sm">{r.comprobante||r.numero||'CB-'+(idx+1).toString().padStart(4,'0')}</p>
-                          <span className="text-slate-600">·</span>
-                          <p className="text-white font-black text-xs uppercase">{banco}</p>
-                          <Badge v="blue">{r.tipo||r.subTipo||'Bancario'}</Badge>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-slate-400 text-[10px]">{dd(r.fecha)}{(r.nroDocumento||r.referencia)?<span className="ml-2 font-mono text-blue-400">{r.nroDocumento||r.referencia}</span>:''}</p>
-                          <p className="font-mono font-black text-emerald-400 text-sm">{'$'+fmt(dUSD)}</p>
-                        </div>
-                      </div>
-                      {/* Descripción */}
-                      <div className="px-5 py-2 bg-slate-50 border-b border-slate-100">
-                        <p className="text-[10px] text-slate-500 font-medium uppercase">{r.descripcion||r.concepto}</p>
-                      </div>
-                      {/* Líneas contables */}
-                      <div className="px-5 py-3">
-                        <div className="text-[8px] font-black uppercase text-slate-400 grid mb-2" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr'}}>
-                          <div className="col-span-3">Cuenta de Movimiento</div>
-                          <div className="text-center">T</div>
-                          <div className="text-right text-emerald-600">Debe Bs.</div>
-                          <div className="text-right text-red-500">Haber Bs.</div>
-                          <div className="text-right text-emerald-700">Debe USD</div>
-                          <div className="text-right text-red-600">Haber USD</div>
-                        </div>
-                        {lineas.map((l,li)=>(
-                          <div key={li} className="grid items-center py-1.5 border-b border-slate-50 last:border-0"
-                            style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr'}}>
-                            <p className="col-span-3 text-xs font-semibold text-slate-800 truncate" style={{paddingLeft:l.tipoLinea==='H'?'16px':'0'}}>{l.cuenta}</p>
-                            <p className={`text-center font-black text-xs ${l.tipoLinea==='D'?'text-emerald-600':'text-red-500'}`}>{l.tipoLinea}</p>
-                            <p className="text-right font-mono text-[11px] text-emerald-700">{Number(l.debeBs||0)>0?`Bs.${fmt(l.debeBs)}`:''}</p>
-                            <p className="text-right font-mono text-[11px] text-red-500">{Number(l.haberBs||0)>0?`Bs.${fmt(l.haberBs)}`:''}</p>
-                            <p className="text-right font-mono text-[11px] text-emerald-700">{Number(l.debeUSD||0)>0?`$${fmt(l.debeUSD)}`:''}</p>
-                            <p className="text-right font-mono text-[11px] text-red-500">{Number(l.haberUSD||0)>0?`$${fmt(l.haberUSD)}`:''}</p>
-                          </div>
-                        ))}
-                        {/* Totales */}
-                        <div className="grid mt-2 pt-2 border-t border-slate-200" style={{gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr'}}>
-                          <div className="col-span-4 text-[9px] font-black uppercase text-slate-500">TOTALES</div>
-                          <div className="text-right font-mono font-black text-[11px] text-emerald-700">Bs.{fmt(dBs)}</div>
-                          <div className="text-right font-mono font-black text-[11px] text-red-500">Bs.{fmt(hBs)}</div>
-                          <div className="text-right font-mono font-black text-[11px] text-emerald-700">{'$'+fmt(dUSD)}</div>
-                          <div className="text-right font-mono font-black text-[11px] text-red-500">{'$'+fmt(hUSD)}</div>
-                        </div>
-                      </div>
+        {/* Helper para renderizar tabla de un grupo */}
+        {(()=>{
+          const bancoIdsBs  = cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').map(c=>c.id);
+          const bancoIdsExt = cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').map(c=>c.id);
+
+          const getMovCuentaId = r => {
+            const mov=movBanco.find(m=>m.id===r.movimientoBancoId);
+            return mov?.cuentaId||null;
+          };
+          const isRowBS  = r => { const cid=getMovCuentaId(r); return !cid||bancoIdsBs.includes(cid); };
+          const isRowExt = r => { const cid=getMovCuentaId(r); return cid&&bancoIdsExt.includes(cid); };
+
+          const rowsBS  = filtBanco ? rows : rows.filter(isRowBS);
+          const rowsExt = filtBanco ? [] : rows.filter(isRowExt);
+
+          const TableSection = ({title, tableRows, accentColor}) => {
+            // Running balance
+            let saldoRunBs=0, saldoRunUSD=0;
+            return(
+              <Card title={title} subtitle={`${tableRows.length} asiento(s)`}>
+                {tableRows.length===0
+                  ? <EmptyState icon={BookOpen} title="Sin asientos" desc="Sin registros en el período"/>
+                  : <div className="overflow-x-auto">
+                      <table className="w-full text-[10px]">
+                        <thead>
+                          <tr style={{background:'#0f172a'}}>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Comprobante</th>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Mes</th>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Fecha</th>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Código</th>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300">Cuenta de Movimiento</th>
+                            <th className="px-3 py-2.5 text-center font-black uppercase tracking-widest text-slate-300">Tipo</th>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Nro Doc</th>
+                            <th className="px-3 py-2.5 text-left font-black uppercase tracking-widest text-slate-300">Concepto</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Tasa</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-emerald-400 whitespace-nowrap">Debe Bs.</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-red-400 whitespace-nowrap">Haber Bs.</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Saldo Bs.</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-emerald-300 whitespace-nowrap">Debe $</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-red-300 whitespace-nowrap">Haber $</th>
+                            <th className="px-3 py-2.5 text-right font-black uppercase tracking-widest text-slate-300 whitespace-nowrap">Saldo $</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableRows.flatMap((r,idx)=>{
+                            const lineas=r.lineas||[];
+                            const comp=r.comprobante||r.numero||'CB-'+(idx+1).toString().padStart(4,'0');
+                            const mesLabel=r.fecha?r.fecha.substring(5,7)+'/'+r.fecha.substring(0,4):'—';
+                            const nroDoc=r.nroDocumento||r.referencia||'—';
+                            const concepto=r.descripcion||r.concepto||'—';
+                            const tasa=r.tasa||tasaActiva;
+                            return lineas.map((l,li)=>{
+                              const dBs=Number(l.debeBs||0); const hBs=Number(l.haberBs||0);
+                              const dU=Number(l.debeUSD||0); const hU=Number(l.haberUSD||0);
+                              saldoRunBs+=dBs-hBs; saldoRunUSD+=dU-hU;
+                              const isD=l.tipoLinea==='D';
+                              return(
+                                <tr key={`${r.id||idx}-${li}`} className={`border-b border-slate-100 hover:bg-slate-50 ${li===0?'border-t-2 border-t-slate-200':''}`}>
+                                  {li===0&&<>
+                                    <td rowSpan={lineas.length} className="px-3 py-2 font-mono font-black text-blue-600 whitespace-nowrap align-middle border-r border-slate-100">{comp}</td>
+                                    <td rowSpan={lineas.length} className="px-3 py-2 text-slate-500 whitespace-nowrap align-middle border-r border-slate-100">{mesLabel}</td>
+                                    <td rowSpan={lineas.length} className="px-3 py-2 text-slate-500 whitespace-nowrap align-middle border-r border-slate-100">{dd(r.fecha)}</td>
+                                  </>}
+                                  {li!==0&&null}
+                                  <td className="px-3 py-1.5 font-mono text-blue-500 text-[9px] whitespace-nowrap">{l.codigo||'—'}</td>
+                                  <td className="px-3 py-1.5 font-semibold text-slate-800 max-w-[160px] truncate" style={{paddingLeft:isD?'12px':'24px'}}>{l.cuenta||'—'}</td>
+                                  <td className="px-3 py-1.5 text-center"><span className={`font-black text-[10px] ${isD?'text-emerald-600':'text-red-500'}`}>{l.tipoLinea}</span></td>
+                                  {li===0&&<>
+                                    <td rowSpan={lineas.length} className="px-3 py-2 font-mono text-slate-400 whitespace-nowrap align-middle border-x border-slate-100">{nroDoc}</td>
+                                    <td rowSpan={lineas.length} className="px-3 py-2 text-slate-600 max-w-[160px] align-middle border-r border-slate-100 truncate">{concepto}</td>
+                                    <td rowSpan={lineas.length} className="px-3 py-2 text-right font-mono text-slate-400 whitespace-nowrap align-middle border-r border-slate-100">{fmt(tasa)}</td>
+                                  </>}
+                                  <td className="px-3 py-1.5 text-right font-mono font-black text-emerald-700 whitespace-nowrap">{dBs>0?'Bs.'+fmt(dBs):''}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono font-black text-red-500 whitespace-nowrap">{hBs>0?'Bs.'+fmt(hBs):''}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-slate-500 whitespace-nowrap">{li===lineas.length-1?'Bs.'+fmt(saldoRunBs):''}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono font-black text-emerald-600 whitespace-nowrap">{dU>0?'$'+fmt(dU):''}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono font-black text-red-400 whitespace-nowrap">{hU>0?'$'+fmt(hU):''}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-slate-400 whitespace-nowrap">{li===lineas.length-1?'$'+fmt(saldoRunUSD):''}</td>
+                                </tr>
+                              );
+                            });
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{background:'#0f172a'}}>
+                            <td colSpan={9} className="px-3 py-2.5 text-[9px] font-black uppercase text-slate-400 tracking-widest">TOTALES — {tableRows.length} asiento(s)</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-black text-emerald-400 whitespace-nowrap">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-black text-red-400 whitespace-nowrap">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-slate-400 whitespace-nowrap"></td>
+                            <td className="px-3 py-2.5 text-right font-mono font-black text-emerald-300 whitespace-nowrap">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-black text-red-300 whitespace-nowrap">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td>
+                            <td className="px-3 py-2.5"></td>
+                          </tr>
+                        </tfoot>
+                      </table>
                     </div>
-                  );
-                })}
-              </div>
-          }
-        </Card>
+                }
+              </Card>
+            );
+          };
+
+          return(<>
+            {(filtBanco||rowsBS.length>0)&&<TableSection title="🇻🇪 Comprobantes — Cuentas Nacionales Bs." tableRows={filtBanco?rows:rowsBS} accentColor="#4f46e5"/>}
+            {!filtBanco&&rowsExt.length>0&&<TableSection title="🌐 Comprobantes — Bancos ME / Internacionales" tableRows={rowsExt} accentColor="#0d9488"/>}
+            {rows.length===0&&<Card title="Comprobante Contable Bancario"><EmptyState icon={BookOpen} title="Sin asientos" desc="Los asientos se generan automáticamente al registrar movimientos bancarios"/></Card>}
+          </>);
+        })()}
       </div>
     );
+
   };
 
   const views = {dashboard:<DashboardView/>,cuentas:<CuentasView/>,movimientos:<MovimientosView/>,conciliacion:<ConciliacionView/>,caja_op:<CajaOpView/>,vales:<ValesView/>,arqueo:<ArqueoCajaView/>,reportes:<ReportesView/>,rpt_gral:<ReportesGeneralView/>,rpt_conc:<ConciliacionView/>,rpt_concepto:<ReporteConceptoView/>,rpt_comp:<ComprobantesBancariosView/>,tasas:<TasasView/>};
