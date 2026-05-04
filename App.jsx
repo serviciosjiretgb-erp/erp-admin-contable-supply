@@ -11,8 +11,7 @@ import {
   Settings, Home, Factory, Lock, User, ArrowRight,
   Mail, CreditCard, CalendarDays, MapPin, Key, PieChart,
   Tag, Layers, ArrowUpCircle, ArrowDownCircle, RefreshCw,
-  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff
-} from 'lucide-react';
+  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
@@ -171,16 +170,16 @@ const Card = ({ title, subtitle, action, children, noPad }) => (
   </div>
 );
 
-const Modal = ({ open, onClose, title, children, footer, wide, xwide }) => {
+const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }) => {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-6xl' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[95vh] flex flex-col shadow-2xl`}>
-        <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
+      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-6xl' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[95vh] flex flex-col shadow-2xl overflow-hidden`}>
+        {!noHeader&&<div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
           <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
           <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
-        </div>
-        <div className="overflow-y-auto flex-1 p-7">{children}</div>
+        </div>}
+        <div className={noHeader?'flex-1 overflow-hidden':'overflow-y-auto flex-1 p-7'}>{children}</div>
         {footer && <div className="px-7 py-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0 bg-slate-50 rounded-b-2xl">{footer}</div>}
       </div>
     </div>
@@ -1758,6 +1757,7 @@ function BancoApp({ fbUser, onBack }) {
     const [modal,    setModal]   = useState(false);
     const [busqCtas, setBusqCtas]= useState({});
     const [busy,     setBusy]    = useState(false);
+    const [comprobante, setComprobante] = useState(null); // modal de comprobante imprimible
 
     // Helper: cuenta selector con grupos Bs/USD
     const CuentaSelector = ({value, onChange, label, excluirId}) => {
@@ -1961,7 +1961,20 @@ function BancoApp({ fbUser, onBack }) {
           batch.update(dref('facturacion_facturas',factura.id),{saldoUSD:ns,estado:ns<0.01?'Pagada':'Pendiente'});
         }
         await batch.commit();
+        // Armar datos del comprobante imprimible
+        const comp={
+          id,numComp,fecha:form.fecha,concepto:form.concepto,referencia:form.referencia,
+          tipo:form.tipo,banco:cuentaSel?.banco||'',moneda:cuentaSel?.moneda||'',
+          montoBs,montoUSD,tasa,
+          lineas:todasLineas,
+          totDebeBs:todasLineas.reduce((a,l)=>a+l.debeBs,0),
+          totHaberBs:todasLineas.reduce((a,l)=>a+l.haberBs,0),
+          totDebeUSD:todasLineas.reduce((a,l)=>a+l.debeUSD,0),
+          totHaberUSD:todasLineas.reduce((a,l)=>a+l.haberUSD,0),
+          terceroNombre:tercero?.nombre||'',
+        };
         setModal(false); setForm(initF()); setBusqCtas({});
+        setComprobante(comp);
       } finally { setBusy(false); }
     };
 
@@ -2400,264 +2413,431 @@ function BancoApp({ fbUser, onBack }) {
           </div>
         </Card>
 
-        {/* ── MODAL NUEVO MOVIMIENTO ── */}
-        <Modal open={modal} onClose={()=>setModal(false)} title="Registrar Movimiento Bancario" xwide
-          footer={<><Bo onClick={()=>setModal(false)}>Cancelar</Bo><Bg onClick={save} disabled={busy}>{busy?'Registrando...':'Registrar'}</Bg></>}>
-          <div className="space-y-5">
-            {/* Tipo + Fecha + Ref */}
-            <div className="grid grid-cols-3 gap-4">
-              <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
-              <FG label="Tipo de Movimiento">
-                <div className="flex gap-1 flex-wrap">
-                  {['Ingreso','Egreso','Traslado de Fondo','Traslado Banco→Caja','Nota de Débito','Nota de Crédito'].map(t=>(
-                    <button key={t} onClick={()=>setForm({...form,tipo:t,cuentaDestinoId:'',cuentaAjusteId:''})}
-                      className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all min-w-[70px] ${form.tipo===t?t==='Ingreso'?'bg-emerald-500 text-white border-emerald-500':t==='Egreso'?'bg-red-500 text-white border-red-500':t==='Traslado de Fondo'?'bg-blue-500 text-white border-blue-500':t==='Nota de Débito'?'bg-rose-600 text-white border-rose-600':t==='Nota de Crédito'?'bg-teal-600 text-white border-teal-600':'bg-amber-500 text-white border-amber-500':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+        {/* ── COMPROBANTE IMPRIMIBLE ── */}
+        {comprobante&&(
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 print:p-0 print:bg-white">
+            <style>{`@media print{body *{visibility:hidden;}#comp-print,#comp-print *{visibility:visible;}#comp-print{position:absolute;left:0;top:0;width:100%;padding:20px;box-shadow:none!important;border:none!important;background:white!important;}.no-print{display:none!important;}}`}</style>
+            <div id="comp-print" className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] print:max-h-none print:shadow-none print:rounded-none">
+              {/* Cabecera */}
+              <div className="p-8 border-b border-slate-200 flex justify-between items-start bg-white">
+                <div>
+                  <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Servicios Jiret G&B, C.A.</h1>
+                  <p className="text-sm text-slate-500 font-bold mt-1">RIF: J-412309374</p>
+                  <p className="text-xs text-slate-400 mt-1">Tesorería & Bancos</p>
+                </div>
+                <div className="text-right">
+                  <h2 className="text-xl font-black text-blue-600 uppercase tracking-widest">Comprobante de Diario</h2>
+                  <p className="text-slate-500 font-mono mt-1 font-bold">Registro: {comprobante.numComp}</p>
+                  <p className="text-slate-500 font-bold mt-1">{dd(comprobante.fecha)}</p>
+                  <span className={`inline-block mt-1 px-3 py-0.5 rounded-full text-[10px] font-black uppercase ${comprobante.tipo==='Ingreso'?'bg-emerald-100 text-emerald-700':comprobante.tipo==='Egreso'?'bg-red-100 text-red-700':'bg-blue-100 text-blue-700'}`}>{comprobante.tipo}</span>
+                </div>
+              </div>
+              {/* Cuerpo */}
+              <div className="p-8 overflow-y-auto flex-1 bg-white">
+                <div className="mb-8 flex flex-col md:flex-row justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Concepto de la Operación</p>
+                    <p className="text-base font-bold text-slate-800">{comprobante.concepto}</p>
+                    {comprobante.banco&&<p className="text-[11px] text-blue-600 font-black mt-0.5">{comprobante.banco} · {comprobante.moneda}</p>}
+                    {comprobante.terceroNombre&&<p className="text-[11px] text-orange-600 font-bold mt-0.5">↳ {comprobante.terceroNombre}</p>}
+                  </div>
+                  {comprobante.referencia&&(
+                    <div className="md:text-right">
+                      <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">N° Referencia</p>
+                      <p className="text-base font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded inline-block">{comprobante.referencia}</p>
+                    </div>
+                  )}
+                </div>
+                {/* Tabla asiento */}
+                <div className="border border-slate-300 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm font-mono border-collapse bg-white">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-widest border-b border-slate-300">
+                        <th className="p-3 text-left border-r border-slate-300">Cuenta Contable</th>
+                        <th className="p-3 text-right border-r border-slate-300 w-28">Debe Bs.</th>
+                        <th className="p-3 text-right border-r border-slate-300 w-28">Haber Bs.</th>
+                        <th className="p-3 text-right border-r border-slate-300 w-28 text-emerald-700">Debe $</th>
+                        <th className="p-3 text-right w-28 text-emerald-700">Haber $</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(comprobante.lineas||[]).map((l,i)=>(
+                        <tr key={i} className="border-b border-slate-200">
+                          <td className="p-3 border-r border-slate-200 text-slate-800">
+                            <span className={`text-[9px] font-black uppercase mr-2 px-1.5 py-0.5 rounded ${l.tipoLinea==='D'?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{l.tipoLinea==='D'?'Debe':'Haber'}</span>
+                            {l.codigo&&<span className="text-blue-600 font-black mr-1">{l.codigo}</span>}{l.cuenta}
+                          </td>
+                          <td className="p-3 text-right border-r border-slate-200 text-slate-700">{l.debeBs>0?l.debeBs.toLocaleString('es-VE',{minimumFractionDigits:2}):''}</td>
+                          <td className="p-3 text-right border-r border-slate-200 text-slate-700">{l.haberBs>0?l.haberBs.toLocaleString('es-VE',{minimumFractionDigits:2}):''}</td>
+                          <td className="p-3 text-right border-r border-slate-200 text-emerald-600">{l.debeUSD>0?l.debeUSD.toLocaleString('en-US',{minimumFractionDigits:2}):''}</td>
+                          <td className="p-3 text-right text-emerald-600">{l.haberUSD>0?l.haberUSD.toLocaleString('en-US',{minimumFractionDigits:2}):''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-black text-slate-800 border-t-2 border-slate-400">
+                        <td className="p-3 text-right uppercase tracking-widest text-[11px] border-r border-slate-300">Sumas Iguales</td>
+                        <td className="p-3 text-right border-r border-slate-300">{(comprobante.totDebeBs||0).toLocaleString('es-VE',{minimumFractionDigits:2})}</td>
+                        <td className="p-3 text-right border-r border-slate-300">{(comprobante.totHaberBs||0).toLocaleString('es-VE',{minimumFractionDigits:2})}</td>
+                        <td className="p-3 text-right border-r border-slate-300 text-emerald-700">{(comprobante.totDebeUSD||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+                        <td className="p-3 text-right text-emerald-700">{(comprobante.totHaberUSD||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                {Math.abs((comprobante.totDebeUSD||0)-(comprobante.totHaberUSD||0))>0.01&&(
+                  <p className="mt-2 text-xs italic text-orange-600 font-semibold text-right">* Variación cambiaria: ${Math.abs((comprobante.totDebeUSD||0)-(comprobante.totHaberUSD||0)).toFixed(2)} USD</p>
+                )}
+                {/* Firmas */}
+                <div className="grid grid-cols-3 gap-8 mt-20 pt-6 border-t border-slate-300 text-center">
+                  {['Elaborado Por','Revisado Por','Autorizado Por'].map(f=>(
+                    <div key={f}><div className="h-10 border-b border-slate-400 mb-2 mx-4"/><p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">{f}</p></div>
                   ))}
                 </div>
-              </FG>
-              <FG label="N° Referencia"><input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="REF-0000000"/></FG>
-            </div>
-
-            {/* Sub-tipo contextual */}
-            {form.tipo==='Ingreso'&&<div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
-              <p className="text-[9px] font-black uppercase text-emerald-700 mb-2 tracking-widest">Origen del Ingreso</p>
-              <div className="flex gap-2 flex-wrap">{['Venta','Préstamo de Terceros','Depósito','Otros'].map(o=>(
-                <button key={o} onClick={()=>setForm({...form,origenIngreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.origenIngreso===o?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
-              ))}</div>
-            </div>}
-            {form.tipo==='Egreso'&&<div className="bg-red-50 rounded-xl p-3 border border-red-100">
-              <p className="text-[9px] font-black uppercase text-red-700 mb-2 tracking-widest">Motivo del Egreso</p>
-              <div className="flex gap-2 flex-wrap">{['Pago Proveedor','Nómina','Gastos Operativos','Impuestos','Préstamo','Otros'].map(o=>(
-                <button key={o} onClick={()=>setForm({...form,motivoEgreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.motivoEgreso===o?'bg-red-600 text-white border-red-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
-              ))}</div>
-            </div>}
-
-            {/* Cuenta(s) */}
-            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado Banco→Caja'&&form.tipo!=='Traslado de Fondo'
-              ? <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label={`Cuenta Bancaria (${cuentas.length} disponibles)`}/>
-              : <div className="grid grid-cols-2 gap-4">
-                  <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label={form.tipo==='Traslado Banco→Caja'?'🏦 Banco Origen (débito)':'🏦 Banco Origen'} excluirId={form.cuentaDestinoId}/>
-                  {(form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&(
-                    <div>
-                      <CuentaSelector value={form.cuentaDestinoId} onChange={v=>{if(v===form.cuentaId){alert('El Banco Destino no puede ser el mismo que el Banco Origen');return;}setForm({...form,cuentaDestinoId:v});}} label="🏦 Banco Destino" excluirId={form.cuentaId}/>
-                      {form.cuentaDestinoId&&form.cuentaDestinoId===form.cuentaId&&(<p className="text-[10px] text-red-500 font-black mt-1 uppercase">⚠ El banco destino no puede ser el mismo que el origen</p>)}
-                    </div>
-                  )}
-                </div>
-            }
-
-            {/* Panel informativo del banco seleccionado */}
-            {form.cuentaId && <BancoInfoPanel cuentaId={form.cuentaId}/>}
-
-            {/* Monto + Tasa + Conversión */}
-            {cuentaSel&&<div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
-              <div className="grid grid-cols-3 gap-4">
-                <FG label={`Monto (${cuentaSel.moneda})`}>
-                  <input type="number" step="0.01" min="0.01" className={`${inp} font-black text-lg`} value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/>
-                </FG>
-                <FG label="Tasa de Cambio Bs/$">
-                  <input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/>
-                </FG>
-                <div className="flex flex-col justify-end pb-0.5">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Equivalencia</p>
-                  <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
-                    <p className="text-emerald-400 font-mono font-black text-lg leading-none">{'$'+fmt(montoUSD)}</p>
-                    <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
-                  </div>
-                </div>
               </div>
-              <p className="text-[9px] text-slate-400 font-bold mt-2">{bs?`${fmt(mNat)} Bs ÷ ${tasa} = $${fmt(montoUSD)}`:`$${fmt(mNat)} × ${tasa} = Bs.${fmt(montoBs)}`}</p>
-            </div>}
-
-            {/* Concepto */}
-            <FG label="Concepto / Descripción" full><input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} placeholder="Descripción del movimiento..."/></FG>
-
-            {/* Selector de cuenta contable para Notas de Débito / Crédito */}
-            {(form.tipo==='Nota de Débito'||form.tipo==='Nota de Crédito')&&(
-              <div className={`rounded-xl p-4 border-2 ${form.tipo==='Nota de Débito'?'bg-rose-50 border-rose-200':'bg-teal-50 border-teal-200'}`}>
-                <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${form.tipo==='Nota de Débito'?'text-rose-700':'text-teal-700'}`}>
-                  {form.tipo==='Nota de Débito'?'▼ Nota de Débito — Cuenta de Gasto / Comisión':'▲ Nota de Crédito — Cuenta de Ingreso / Interés'}
-                </p>
-                <FG label="Cuenta Contable del Ajuste">
-                  <div className="relative mb-1">
-                    <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                    <input value={busqCtas['ajuste']||''} onChange={e=>setBusqCtas(p=>({...p,ajuste:e.target.value}))}
-                      placeholder="Buscar cuenta por código o nombre..." className={`${inp} pl-8 text-[11px]`}/>
-                  </div>
-                  <select className={sel} value={form.cuentaAjusteId}
-                    onChange={e=>setForm({...form,cuentaAjusteId:e.target.value})}>
-                    <option value="">— Seleccione la cuenta contable —</option>
-                    {[...contCuentas]
-                      .filter(c=>!busqCtas['ajuste']||(c.codigo+' '+c.nombre).toUpperCase().includes((busqCtas['ajuste']||'').toUpperCase()))
-                      .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
-                      .map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
-                  </select>
-                </FG>
-              </div>
-            )}
-
-            {/* ── ASIENTO CONTABLE COMPUESTO ── */}
-            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito' && cuentaSel && (
-              <div className="rounded-2xl overflow-hidden border border-blue-100">
-                <div className="px-5 py-3 bg-blue-600 flex items-center gap-2">
-                  <BookOpen size={14} className="text-blue-200"/>
-                  <p className="text-[10px] font-black uppercase text-white tracking-widest">
-                    Asiento Contable — {bs?'Bs. (moneda funcional) + equiv. USD':'USD (moneda funcional) + equiv. Bs.'}
-                  </p>
-                </div>
-                <div className="p-4 bg-blue-50 space-y-3">
-                  {/* Cabecera de columnas */}
-                  <div className="grid gap-1 text-[8px] font-black uppercase text-slate-500 tracking-widest px-1"
-                    style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
-                    <div>Cuenta Contable</div>
-                    <div className="text-right text-emerald-600">Debe Bs.</div>
-                    <div className="text-right text-red-500">Haber Bs.</div>
-                    <div className="text-right text-emerald-700">Debe USD</div>
-                    <div className="text-right text-red-600">Haber USD</div>
-                    <div></div>
-                  </div>
-
-                  {/* Línea del banco (pre-fija) */}
-                  <div className="grid gap-2 px-1 py-2 bg-white rounded-xl border border-slate-200 items-center"
-                    style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
-                      <p className="text-[10px] font-black text-slate-800 truncate">{cuentaSel?.cuentaContableCod?cuentaSel.cuentaContableCod+' · '+cuentaSel.banco:'Banco '+cuentaSel.banco}</p>
-                      <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-black uppercase flex-shrink-0">Banco</span>
-                    </div>
-                    <p className={`text-right font-mono font-black text-xs ${form.tipo==='Ingreso'?'text-emerald-700':'text-slate-300'}`}>{form.tipo==='Ingreso'?(bs?'Bs.'+fmt(montoBs):'$'+fmt(montoUSD)):''}</p>
-                    <p className={`text-right font-mono font-black text-xs ${form.tipo!=='Ingreso'?'text-red-600':'text-slate-300'}`}>{form.tipo!=='Ingreso'?(bs?'Bs.'+fmt(montoBs):'$'+fmt(montoUSD)):''}</p>
-                    <p className={`text-right font-mono text-[10px] ${form.tipo==='Ingreso'?'text-emerald-600':'text-slate-300'}`}>{form.tipo==='Ingreso'?'$'+fmt(montoUSD):''}</p>
-                    <p className={`text-right font-mono text-[10px] ${form.tipo!=='Ingreso'?'text-red-500':'text-slate-300'}`}>{form.tipo!=='Ingreso'?'$'+fmt(montoUSD):''}</p>
-                    <div/>
-                  </div>
-
-                  {/* Líneas de contrapartida (editables, múltiples) */}
-                  <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mt-1 mb-1">Contrapartidas</p>
-                  {form.lineasContra.map((l,i)=>{
-                    const busqCta = busqCtas[i]||'';
-                    const setBusqCta = (v) => setBusqCtas(prev=>({...prev,[i]:v}));
-                    const ctasFiltradas=[...contCuentas]
-                      .filter(c=>!busqCta||(c.codigo+' '+c.nombre).toUpperCase().includes(busqCta.toUpperCase()))
-                      .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
-                    return (
-                      <div key={i} className="bg-white rounded-xl border border-slate-200 p-3 space-y-2">
-                        {/* Buscador de cuenta */}
-                        <div className="relative">
-                          <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/>
-                          <input value={busqCta} onChange={e=>setBusqCta(e.target.value)}
-                            placeholder="Buscar cuenta por código o nombre..." className="w-full text-[10px] border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 outline-none focus:border-blue-400"/>
-                        </div>
-                        <div className="grid gap-2 items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
-                          <select className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-blue-400 bg-white font-medium"
-                            value={l.ctaId} onChange={e=>{
-                              const c=contCuentas.find(x=>x.id===e.target.value);
-                              const nl=[...form.lineasContra];nl[i]={...nl[i],ctaId:e.target.value,ctaNom:c?`${c.codigo} · ${c.nombre}`:''};
-                              setForm({...form,lineasContra:nl});setBusqCta('');
-                            }}>
-                            <option value="">— Seleccione cuenta —</option>
-                            {ctasFiltradas.slice(0,80).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
-                            {ctasFiltradas.length>80&&<option disabled>...escribe más para filtrar ({ctasFiltradas.length} resultados)</option>}
-                          </select>
-                          <input type="number" step="0.01" className="text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 font-mono"
-                            value={l.debeBs||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],debeBs:e.target.value,debeUSD:e.target.value&&tasa?String((Number(e.target.value)/tasa).toFixed(2)):nl[i].debeUSD};setForm({...form,lineasContra:nl});}} placeholder="Debe Bs."/>
-                          <input type="number" step="0.01" className="text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-red-400 font-mono"
-                            value={l.haberBs||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],haberBs:e.target.value,haberUSD:e.target.value&&tasa?String((Number(e.target.value)/tasa).toFixed(2)):nl[i].haberUSD};setForm({...form,lineasContra:nl});}} placeholder="Haber Bs."/>
-                          <input type="number" step="0.01" className="text-right text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 font-mono"
-                            value={l.debeUSD||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],debeUSD:e.target.value,debeBs:e.target.value&&tasa?String((Number(e.target.value)*tasa).toFixed(2)):nl[i].debeBs};setForm({...form,lineasContra:nl});}} placeholder="Debe $"/>
-                          <input type="number" step="0.01" className="text-right text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-red-400 font-mono"
-                            value={l.haberUSD||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],haberUSD:e.target.value,haberBs:e.target.value&&tasa?String((Number(e.target.value)*tasa).toFixed(2)):nl[i].haberBs};setForm({...form,lineasContra:nl});}} placeholder="Haber $"/>
-                          <button onClick={()=>{if(form.lineasContra.length<=1)return;const nl=[...form.lineasContra];nl.splice(i,1);setForm({...form,lineasContra:nl});}}
-                            className="text-red-400 hover:text-red-600 flex justify-center"><X size={12}/></button>
-                        </div>
-                        {l.ctaId&&<p className="text-[9px] text-blue-600 font-black">✓ {l.ctaNom}</p>}
-                      </div>
-                    );
-                  })}
-
-                  {/* Totales y cuadre */}
-{cuentaSel&&AsientoTotales({form,bs,montoBs,montoUSD,tasa,mNat,fmt})}
-
-                  {/* Botón agregar línea */}
-                  <button onClick={()=>setForm({...form,lineasContra:[...form.lineasContra,{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]})}
-                    className="flex items-center gap-1.5 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
-                    <Plus size={12}/> Agregar Cuenta Contrapartida
-                  </button>
-
-                  {/* Alerta de balance del asiento */}
-                  {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
-
-                  {/* Traslado automático: tasa banco vs tasa BCV + rebancarización */}
-                  {form.tipo==='Traslado Banco→Caja'&&cuentaSel&&mNat>0&&(
-                    <TrasladoRebancarizacion
-                      form={form} setForm={setForm}
-                      bs={bs} mNat={mNat} tasa={tasa} tasaActiva={tasaActiva}
-                      contCuentas={contCuentas} inp={inp} fmt={fmt} FG={FG}
-                      cuentasSel={cuentas} onSaveDone={()=>{setModal(false);setForm(initF());}}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Terceros */}
-            {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div><p className="text-xs font-black text-slate-700 uppercase tracking-wide">Vincular a Tercero</p><p className="text-[10px] text-slate-400">Asociar a cliente (CxC) o proveedor (CxP)</p></div>
-                <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:'',facturaId:'',cerrarCxC:false})}
-                  className={`w-12 h-6 rounded-full transition-all relative ${form.aplicaTercero?'bg-orange-500':'bg-slate-200'}`}>
-                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${form.aplicaTercero?'left-6':'left-0.5'}`}/>
+              {/* Acciones */}
+              <div className="p-5 bg-slate-50 border-t border-slate-200 flex justify-end gap-3 no-print">
+                <button onClick={()=>setComprobante(null)} className="px-5 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors">Cerrar</button>
+                <button onClick={()=>window.print()} className="px-6 py-2.5 rounded-xl font-black text-white bg-blue-600 hover:bg-blue-700 flex items-center gap-2 shadow-lg shadow-blue-600/30">
+                  <Printer size={16}/> Imprimir Comprobante
                 </button>
               </div>
-              {form.aplicaTercero&&<div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <FG label="Tipo">
-                    <div className="flex gap-1">{['Cliente','Proveedor'].map(t=>(
-                      <button key={t} onClick={()=>setForm({...form,tipoTercero:t,terceroId:'',facturaId:''})}
-                        className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${form.tipoTercero===t?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
-                    ))}</div>
-                  </FG>
-                  <FG label={form.tipoTercero==='Cliente'?`Clientes (${clientes.length})`:`Proveedores (${provs.length})`}>
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                        <input value={searchTercero} onChange={e=>setSearchTercero(e.target.value)}
-                          placeholder={`Buscar ${form.tipoTercero.toLowerCase()} por RIF o nombre...`} className={`${inp} pl-8`}/>
-                      </div>
-                      <select className={sel} value={form.terceroId} onChange={e=>{setForm({...form,terceroId:e.target.value,facturaId:''});setSearchTercero('');}}>
-                        <option value="">— Seleccione —</option>
-                        {(form.tipoTercero==='Cliente'
-                          ? clientes.filter(c=>!searchTercero||(c.rif+' '+c.nombre).toUpperCase().includes(searchTercero.toUpperCase()))
-                          : provs.filter(p=>!searchTercero||((p.rif||'')+' '+(p.nombre||'')).toUpperCase().includes(searchTercero.toUpperCase()))
-                        ).map(x=><option key={x.id} value={x.id}>{x.rif} · {x.nombre}</option>)}
-                      </select>
-                    </div>
-                  </FG>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODAL NUEVO MOVIMIENTO — DISEÑO BICOLUMNA ── */}
+        <Modal open={modal} onClose={()=>{setModal(false);setForm(initF());}} title="" xwide noHeader>
+          <div className="flex -m-6 min-h-[640px] overflow-hidden rounded-2xl">
+
+            {/* ══ COLUMNA IZQUIERDA: FORMULARIO ══ */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="px-6 py-4 flex justify-between items-center flex-shrink-0" style={{background:'#0f172a'}}>
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-600/30 p-2 rounded-lg border border-blue-500/30"><ArrowLeftRight size={16} className="text-blue-400"/></div>
+                  <p className="font-black text-white text-sm uppercase tracking-wide">Registro Operativo Bimonetario</p>
                 </div>
-                {form.tipoTercero==='Cliente'&&form.terceroId&&(
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-black uppercase text-slate-600">Cerrar Cuenta por Cobrar</p>
-                      <button onClick={()=>setForm({...form,cerrarCxC:!form.cerrarCxC,facturaId:''})}
-                        className={`w-10 h-5 rounded-full transition-all relative ${form.cerrarCxC?'bg-blue-500':'bg-slate-200'}`}>
-                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.cerrarCxC?'left-5':'left-0.5'}`}/>
-                      </button>
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-[9px] font-black tracking-widest border border-emerald-500/30 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block animate-pulse"/>MULTIMONEDA
+                  </div>
+                  <button onClick={()=>{setModal(false);setForm(initF());}} className="text-slate-400 hover:text-white transition-colors"><X size={18}/></button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                {/* ── Fila 1: Banco + Tipo + Ref + Fecha ── */}
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div>
+                    <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label="Banco / Cuenta de Origen"/>
+                  </div>
+                  <div className="space-y-3">
+                    <FG label="Tipo de Operación">
+                      <select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value,cuentaDestinoId:'',cuentaAjusteId:''})}>
+                        <option value="Ingreso">Ingreso / Cobro</option>
+                        <option value="Egreso">Egreso / Pago</option>
+                        <option value="Traslado de Fondo">Traslado de Fondo (Banco→Banco)</option>
+                        <option value="Traslado Banco→Caja">Traslado Banco→Caja</option>
+                        <option value="Nota de Débito">Nota de Débito (Comisión/Gasto)</option>
+                        <option value="Nota de Crédito">Nota de Crédito (Interés/Ingreso)</option>
+                      </select>
+                    </FG>
+                    <div className="grid grid-cols-2 gap-3">
+                      <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
+                      <FG label="N° Referencia"><input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="REF-00000"/></FG>
                     </div>
-                    {form.cerrarCxC&&(factPend.length>0
-                      ?factPend.map(f=>(
-                        <label key={f.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.facturaId===f.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-100'}`}>
-                          <input type="radio" name="fid" value={f.id} checked={form.facturaId===f.id} onChange={()=>setForm({...form,facturaId:f.id})} className="accent-blue-500"/>
-                          <div className="flex-1"><p className="font-black text-xs text-slate-900">{f.numero} · {dd(f.fechaVencimiento)}</p></div>
-                          <p className="font-mono font-black text-orange-500">{'$'+fmt(f.saldoUSD)}</p>
-                          {f.fechaVencimiento<today()&&<Badge v="red">Vencida</Badge>}
-                        </label>
-                      ))
-                      :<div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-500"/><p className="text-[10px] font-black text-emerald-700">Sin facturas pendientes.</p></div>
-                    )}
+                  </div>
+                </div>
+
+                {/* ── Sub-tipo contextual ── */}
+                {form.tipo==='Ingreso'&&<div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                  <p className="text-[9px] font-black uppercase text-emerald-700 mb-2 tracking-widest">Origen del Ingreso</p>
+                  <div className="flex gap-2 flex-wrap">{['Venta','Préstamo de Terceros','Depósito','Otros'].map(o=>(
+                    <button key={o} onClick={()=>setForm({...form,origenIngreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.origenIngreso===o?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+                  ))}</div>
+                </div>}
+                {form.tipo==='Egreso'&&<div className="bg-red-50 rounded-xl p-3 border border-red-100">
+                  <p className="text-[9px] font-black uppercase text-red-700 mb-2 tracking-widest">Motivo del Egreso</p>
+                  <div className="flex gap-2 flex-wrap">{['Pago Proveedor','Nómina','Gastos Operativos','Impuestos','Préstamo','Otros'].map(o=>(
+                    <button key={o} onClick={()=>setForm({...form,motivoEgreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.motivoEgreso===o?'bg-red-600 text-white border-red-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+                  ))}</div>
+                </div>}
+
+                {/* ── Banco Destino (Traslado de Fondo) ── */}
+                {(form.tipo==='Traslado de Fondo')&&(
+                  <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200">
+                    <p className="text-[9px] font-black uppercase text-blue-700 mb-2 tracking-widest flex items-center gap-1.5"><ArrowLeftRight size={12}/> Banco Destino (Receptor)</p>
+                    <CuentaSelector value={form.cuentaDestinoId} onChange={v=>{if(v===form.cuentaId){alert('El Banco Destino no puede ser el mismo que el Banco Origen');return;}setForm({...form,cuentaDestinoId:v});}} label="Banco Destino" excluirId={form.cuentaId}/>
+                    {form.cuentaDestinoId&&form.cuentaDestinoId===form.cuentaId&&<p className="text-[10px] text-red-500 font-black mt-1 uppercase">⚠ El banco destino no puede ser el mismo que el origen</p>}
                   </div>
                 )}
-              </div>}
-            </div>}
+
+                {/* ── Monto + Tasa ── */}
+                {cuentaSel&&<div className="grid grid-cols-3 gap-4 bg-blue-50/60 p-4 rounded-2xl border border-blue-100">
+                  <FG label={`Monto (${cuentaSel.moneda})`}>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-slate-400 font-bold text-xs">{bs?'Bs.':'$'}</span>
+                      <input type="number" step="0.01" min="0.01" className={`${inp} pl-8 font-black text-lg`} value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/>
+                    </div>
+                  </FG>
+                  <FG label="Tasa Bs/$">
+                    <div className="relative">
+                      <input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/>
+                      <RefreshCw size={14} className="absolute right-3 top-3 text-blue-400"/>
+                    </div>
+                    <p className="text-[9px] text-blue-600 font-bold mt-1">{bs?`${fmt(mNat)} ÷ ${tasa} = $${fmt(montoUSD)}`:`$${fmt(mNat)} × ${tasa} = Bs.${fmt(montoBs)}`}</p>
+                  </FG>
+                  <div className="flex flex-col justify-end pb-0.5">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Equivalencia</p>
+                    <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
+                      <p className="text-emerald-400 font-mono font-black text-lg leading-none">{'$'+fmt(montoUSD)}</p>
+                      <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
+                    </div>
+                  </div>
+                </div>}
+
+                {/* ── Concepto ── */}
+                <FG label="Concepto / Descripción" full>
+                  <input className={inp} value={form.concepto} onChange={e=>setForm({...form,concepto:e.target.value})} placeholder="Describa el motivo del movimiento..."/>
+                </FG>
+
+                {/* ── Selector ND/NC ── */}
+                {(form.tipo==='Nota de Débito'||form.tipo==='Nota de Crédito')&&(
+                  <div className={`rounded-xl p-4 border-2 ${form.tipo==='Nota de Débito'?'bg-rose-50 border-rose-200':'bg-teal-50 border-teal-200'}`}>
+                    <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${form.tipo==='Nota de Débito'?'text-rose-700':'text-teal-700'}`}>
+                      {form.tipo==='Nota de Débito'?'▼ Nota de Débito — Cuenta de Gasto / Comisión':'▲ Nota de Crédito — Cuenta de Ingreso / Interés'}
+                    </p>
+                    <FG label="Cuenta Contable del Ajuste">
+                      <div className="relative mb-1">
+                        <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                        <input value={busqCtas['ajuste']||''} onChange={e=>setBusqCtas(p=>({...p,ajuste:e.target.value}))}
+                          placeholder="Buscar cuenta por código o nombre..." className={`${inp} pl-8 text-[11px]`}/>
+                      </div>
+                      <select className={sel} value={form.cuentaAjusteId} onChange={e=>setForm({...form,cuentaAjusteId:e.target.value})}>
+                        <option value="">— Seleccione la cuenta contable —</option>
+                        {[...contCuentas]
+                          .filter(c=>!busqCtas['ajuste']||(c.codigo+' '+c.nombre).toUpperCase().includes((busqCtas['ajuste']||'').toUpperCase()))
+                          .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)))
+                          .map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                      </select>
+                    </FG>
+                  </div>
+                )}
+
+                {/* ── Asiento Contable Compuesto (Ingreso/Egreso) ── */}
+                {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito' && cuentaSel && (
+                  <div className="rounded-2xl overflow-hidden border border-blue-100">
+                    <div className="px-4 py-3 bg-blue-600 flex items-center gap-2">
+                      <BookOpen size={13} className="text-blue-200"/>
+                      <p className="text-[10px] font-black uppercase text-white tracking-widest">Distribución Contable — Contrapartidas</p>
+                      <button onClick={()=>{const sugs=sugerirContra();if(sugs.length>0){const nl=[...form.lineasContra];nl[0]={...nl[0],ctaId:sugs[0].id,ctaNom:`${sugs[0].codigo} · ${sugs[0].nombre}`};setForm({...form,lineasContra:nl});}}} className="ml-auto text-[9px] font-black uppercase bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded text-white transition-colors">
+                        ✦ Sugerir
+                      </button>
+                    </div>
+                    <div className="p-4 bg-blue-50 space-y-3">
+                      <div className="grid gap-1 text-[8px] font-black uppercase text-slate-500 tracking-widest px-1" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                        <div>Cuenta Contable</div><div className="text-right text-emerald-600">Debe Bs.</div><div className="text-right text-red-500">Haber Bs.</div><div className="text-right text-emerald-700">Debe $</div><div className="text-right text-red-600">Haber $</div><div/>
+                      </div>
+                      <div className="grid gap-2 px-1 py-2 bg-white rounded-xl border border-slate-200 items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
+                          <p className="text-[10px] font-black text-slate-800 truncate">{cuentaSel?.cuentaContableCod?cuentaSel.cuentaContableCod+' · '+cuentaSel.banco:'Banco '+cuentaSel.banco}</p>
+                          <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-black uppercase flex-shrink-0">Banco</span>
+                        </div>
+                        <p className={`text-right font-mono font-black text-xs ${form.tipo==='Ingreso'?'text-emerald-700':'text-slate-300'}`}>{form.tipo==='Ingreso'?(bs?'Bs.'+fmt(montoBs):'$'+fmt(montoUSD)):''}</p>
+                        <p className={`text-right font-mono font-black text-xs ${form.tipo!=='Ingreso'?'text-red-600':'text-slate-300'}`}>{form.tipo!=='Ingreso'?(bs?'Bs.'+fmt(montoBs):'$'+fmt(montoUSD)):''}</p>
+                        <p className={`text-right font-mono text-[10px] ${form.tipo==='Ingreso'?'text-emerald-600':'text-slate-300'}`}>{form.tipo==='Ingreso'?'$'+fmt(montoUSD):''}</p>
+                        <p className={`text-right font-mono text-[10px] ${form.tipo!=='Ingreso'?'text-red-500':'text-slate-300'}`}>{form.tipo!=='Ingreso'?'$'+fmt(montoUSD):''}</p>
+                        <div/>
+                      </div>
+                      <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest mt-1 mb-1">Contrapartidas</p>
+                      {form.lineasContra.map((l,i)=>{
+                        const busqCta=busqCtas[i]||'';
+                        const setBusqCta=(v)=>setBusqCtas(prev=>({...prev,[i]:v}));
+                        const ctasFiltradas=[...contCuentas].filter(c=>!busqCta||(c.codigo+' '+c.nombre).toUpperCase().includes(busqCta.toUpperCase())).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo)));
+                        return (
+                          <div key={i} className="bg-white rounded-xl border border-slate-200 p-3 space-y-2">
+                            <div className="relative">
+                              <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                              <input value={busqCta} onChange={e=>setBusqCta(e.target.value)} placeholder="Buscar cuenta contable..." className={`${inp} pl-8 text-[11px]`}/>
+                            </div>
+                            <div className="grid gap-2 items-center" style={{gridTemplateColumns:'2.5fr 1fr 1fr 1fr 1fr 28px'}}>
+                              <select className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-blue-400 bg-white font-medium"
+                                value={l.ctaId} onChange={e=>{const c=contCuentas.find(x=>x.id===e.target.value);const nl=[...form.lineasContra];nl[i]={...nl[i],ctaId:e.target.value,ctaNom:c?`${c.codigo} · ${c.nombre}`:''};setForm({...form,lineasContra:nl});setBusqCta('');}}>
+                                <option value="">— Seleccione cuenta —</option>
+                                {ctasFiltradas.slice(0,80).map(c=><option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}
+                                {ctasFiltradas.length>80&&<option disabled>...escribe para filtrar ({ctasFiltradas.length})</option>}
+                              </select>
+                              <input type="number" step="0.01" className="text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 font-mono"
+                                value={l.debeBs||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],debeBs:e.target.value,debeUSD:e.target.value&&tasa?String((Number(e.target.value)/tasa).toFixed(2)):nl[i].debeUSD};setForm({...form,lineasContra:nl});}} placeholder="Debe Bs."/>
+                              <input type="number" step="0.01" className="text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-red-400 font-mono"
+                                value={l.haberBs||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],haberBs:e.target.value,haberUSD:e.target.value&&tasa?String((Number(e.target.value)/tasa).toFixed(2)):nl[i].haberUSD};setForm({...form,lineasContra:nl});}} placeholder="Haber Bs."/>
+                              <input type="number" step="0.01" className="text-right text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-emerald-400 font-mono"
+                                value={l.debeUSD||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],debeUSD:e.target.value,debeBs:e.target.value&&tasa?String((Number(e.target.value)*tasa).toFixed(2)):nl[i].debeBs};setForm({...form,lineasContra:nl});}} placeholder="Debe $"/>
+                              <input type="number" step="0.01" className="text-right text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-red-400 font-mono"
+                                value={l.haberUSD||''} onChange={e=>{const nl=[...form.lineasContra];nl[i]={...nl[i],haberUSD:e.target.value,haberBs:e.target.value&&tasa?String((Number(e.target.value)*tasa).toFixed(2)):nl[i].haberBs};setForm({...form,lineasContra:nl});}} placeholder="Haber $"/>
+                              <button onClick={()=>{if(form.lineasContra.length<=1)return;const nl=[...form.lineasContra];nl.splice(i,1);setForm({...form,lineasContra:nl});}} className="text-red-400 hover:text-red-600 flex justify-center"><X size={12}/></button>
+                            </div>
+                            {l.ctaId&&<p className="text-[9px] text-blue-600 font-black">✓ {l.ctaNom}</p>}
+                          </div>
+                        );
+                      })}
+                      {cuentaSel&&AsientoTotales({form,bs,montoBs,montoUSD,tasa,mNat,fmt})}
+                      <button onClick={()=>setForm({...form,lineasContra:[...form.lineasContra,{ctaId:'',ctaNom:'',debeBs:'',haberBs:'',debeUSD:'',haberUSD:''}]})}
+                        className="flex items-center gap-1.5 text-[10px] font-black uppercase text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+                        <Plus size={12}/> Agregar Cuenta Contrapartida
+                      </button>
+                      {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito'&&cuentaSel&&mNat>0&&AsientoAlerta({form,bs,montoBs,montoUSD,tasa,fmt})}
+                      {form.tipo==='Traslado Banco→Caja'&&cuentaSel&&mNat>0&&(
+                        <TrasladoRebancarizacion form={form} setForm={setForm} bs={bs} mNat={mNat} tasa={tasa} tasaActiva={tasaActiva} contCuentas={contCuentas} inp={inp} fmt={fmt} FG={FG} cuentasSel={cuentas} onSaveDone={()=>{setModal(false);setForm(initF());}}/>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Terceros ── */}
+                {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito'&&<div className="border-2 border-slate-100 rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div><p className="text-xs font-black text-slate-700 uppercase tracking-wide">Vincular a Tercero</p><p className="text-[10px] text-slate-400">Asociar a cliente (CxC) o proveedor (CxP)</p></div>
+                    <button onClick={()=>setForm({...form,aplicaTercero:!form.aplicaTercero,terceroId:'',facturaId:'',cerrarCxC:false})} className={`w-12 h-6 rounded-full transition-all relative ${form.aplicaTercero?'bg-orange-500':'bg-slate-200'}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${form.aplicaTercero?'left-6':'left-0.5'}`}/>
+                    </button>
+                  </div>
+                  {form.aplicaTercero&&<div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <FG label="Tipo">
+                        <div className="flex gap-1">{['Cliente','Proveedor'].map(t=>(
+                          <button key={t} onClick={()=>setForm({...form,tipoTercero:t,terceroId:'',facturaId:''})} className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase border-2 transition-all ${form.tipoTercero===t?'bg-slate-900 text-white border-slate-900':'bg-white text-slate-500 border-slate-200'}`}>{t}</button>
+                        ))}</div>
+                      </FG>
+                      <FG label={form.tipoTercero==='Cliente'?`Clientes (${clientes.length})`:`Proveedores (${provs.length})`}>
+                        <div className="space-y-2">
+                          <div className="relative"><Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={searchTercero} onChange={e=>setSearchTercero(e.target.value)} placeholder={`Buscar ${form.tipoTercero.toLowerCase()}...`} className={`${inp} pl-8`}/></div>
+                          <select className={sel} value={form.terceroId} onChange={e=>{setForm({...form,terceroId:e.target.value,facturaId:''});setSearchTercero('');}}>
+                            <option value="">— Seleccione —</option>
+                            {(form.tipoTercero==='Cliente'?clientes.filter(c=>!searchTercero||(c.rif+' '+c.nombre).toUpperCase().includes(searchTercero.toUpperCase())):provs.filter(p=>!searchTercero||((p.rif||'')+' '+(p.nombre||'')).toUpperCase().includes(searchTercero.toUpperCase()))).map(x=><option key={x.id} value={x.id}>{x.rif} · {x.nombre}</option>)}
+                          </select>
+                        </div>
+                      </FG>
+                    </div>
+                    {form.tipoTercero==='Cliente'&&form.terceroId&&(
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-black uppercase text-slate-600">Cerrar Cuenta por Cobrar</p>
+                          <button onClick={()=>setForm({...form,cerrarCxC:!form.cerrarCxC,facturaId:''})} className={`w-10 h-5 rounded-full transition-all relative ${form.cerrarCxC?'bg-blue-500':'bg-slate-200'}`}>
+                            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.cerrarCxC?'left-5':'left-0.5'}`}/>
+                          </button>
+                        </div>
+                        {form.cerrarCxC&&(factPend.length>0
+                          ?factPend.map(f=>(<label key={f.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${form.facturaId===f.id?'border-blue-500 bg-blue-50':'border-slate-200 hover:border-slate-100'}`}><input type="radio" name="fid" value={f.id} checked={form.facturaId===f.id} onChange={()=>setForm({...form,facturaId:f.id})} className="accent-blue-500"/><div className="flex-1"><p className="font-black text-xs text-slate-900">{f.numero} · {dd(f.fechaVencimiento)}</p></div><p className="font-mono font-black text-orange-500">{'$'+fmt(f.saldoUSD)}</p>{f.fechaVencimiento<today()&&<Badge v="red">Vencida</Badge>}</label>))
+                          :<div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-500"/><p className="text-[10px] font-black text-emerald-700">Sin facturas pendientes.</p></div>
+                        )}
+                      </div>
+                    )}
+                  </div>}
+                </div>}
+              </div>
+            </div>
+
+            {/* ══ COLUMNA DERECHA: RESUMEN BANCO + PREVIEW ASIENTO ══ */}
+            <div className="w-80 flex-shrink-0 flex flex-col bg-slate-50 border-l border-slate-200 overflow-y-auto">
+              {/* Header columna derecha */}
+              <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Estado Operativo</p>
+              </div>
+
+              <div className="p-5 space-y-5 flex-1">
+                {/* Bank summary */}
+                {form.cuentaId&&<BancoInfoPanel cuentaId={form.cuentaId}/>}
+                {!form.cuentaId&&<div className="flex flex-col items-center justify-center text-center p-8 bg-white rounded-2xl border-2 border-dashed border-slate-200 min-h-[180px]">
+                  <Building2 size={28} className="text-slate-300 mb-3"/>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-relaxed">Seleccione un banco para visualizar su estado</p>
+                </div>}
+
+                {/* Live accounting preview */}
+                {cuentaSel&&mNat>0&&<div className="rounded-xl overflow-hidden border border-slate-800">
+                  <div className="px-4 py-3 flex items-center gap-2" style={{background:'#0b1120'}}>
+                    <FileText size={13} className="text-blue-500"/>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">Comprobante Contable</p>
+                  </div>
+                  <div className="p-3 overflow-x-auto" style={{background:'#0f172a'}}>
+                    <p className="text-[9px] font-mono text-slate-500 italic mb-3 truncate">{form.concepto||'...'}</p>
+                    <table className="w-full text-[9px] font-mono min-w-[420px]">
+                      <thead>
+                        <tr className="text-slate-500">
+                          <th className="text-left pb-2 font-semibold">CUENTA</th>
+                          <th className="text-right pb-2 font-semibold px-1">DEBE Bs.</th>
+                          <th className="text-right pb-2 font-semibold px-1">HABER Bs.</th>
+                          <th className="text-right pb-2 font-semibold text-emerald-400/80 px-1">DEBE $</th>
+                          <th className="text-right pb-2 font-semibold text-emerald-400/80 px-1">HABER $</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-300">
+                        {(()=>{
+                          const lines=[];
+                          const bsV=bs?mNat:mNat*tasa; const usdV=bs?mNat/tasa:mNat;
+                          const bancoCod=(cuentaSel?.cuentaContableCod||cuentaSel?.cuentaContable?.split('·')[0]||'').trim();
+                          const bancoNom=cuentaSel.banco;
+                          if(form.tipo==='Traslado de Fondo'&&cuentaDest){
+                            const dCod=(cuentaDest?.cuentaContableCod||cuentaDest?.cuentaContable?.split('·')[0]||'').trim();
+                            lines.push({cod:dCod,nom:cuentaDest.banco,dBs:bsV,hBs:0,dU:usdV,hU:0,color:'text-amber-400'});
+                            lines.push({cod:bancoCod,nom:bancoNom,dBs:0,hBs:bsV,dU:0,hU:usdV,color:'text-red-400'});
+                          } else if(form.tipo==='Nota de Débito'){
+                            const aj=contCuentas.find(c=>c.id===form.cuentaAjusteId);
+                            if(aj)lines.push({cod:String(aj.codigo),nom:aj.nombre,dBs:bsV,hBs:0,dU:usdV,hU:0,color:'text-orange-400'});
+                            lines.push({cod:bancoCod,nom:bancoNom,dBs:0,hBs:bsV,dU:0,hU:usdV,color:'text-red-400'});
+                          } else if(form.tipo==='Nota de Crédito'){
+                            const aj=contCuentas.find(c=>c.id===form.cuentaAjusteId);
+                            lines.push({cod:bancoCod,nom:bancoNom,dBs:bsV,hBs:0,dU:usdV,hU:0,color:'text-emerald-400'});
+                            if(aj)lines.push({cod:String(aj.codigo),nom:aj.nombre,dBs:0,hBs:bsV,dU:0,hU:usdV,color:'text-blue-400'});
+                          } else {
+                            const isIng=form.tipo==='Ingreso';
+                            lines.push({cod:bancoCod,nom:bancoNom,dBs:isIng?bsV:0,hBs:isIng?0:bsV,dU:isIng?usdV:0,hU:isIng?0:usdV,color:isIng?'text-emerald-400':'text-red-400'});
+                            (form.lineasContra||[]).filter(l=>l.ctaId).forEach(l=>{
+                              const ci=contCuentas.find(c=>c.id===l.ctaId);
+                              const db=Number(l.debeBs||0),hb=Number(l.haberBs||0),du=Number(l.debeUSD||0),hu=Number(l.haberUSD||0);
+                              if(ci&&(db||hb||du||hu))lines.push({cod:String(ci.codigo),nom:ci.nombre,dBs:db,hBs:hb,dU:du,hU:hu,color:'text-slate-300'});
+                            });
+                          }
+                          return lines.map((l,i)=>(
+                            <tr key={i} className="border-b border-slate-800/50">
+                              <td className="py-2">
+                                <span className={`${l.color} block truncate max-w-[120px]`}>{l.cod&&<span className="text-blue-400 mr-1">{l.cod}</span>}{l.nom}</span>
+                              </td>
+                              <td className="text-right px-1 font-bold">{l.dBs>0?l.dBs.toFixed(2):''}</td>
+                              <td className="text-right px-1 text-slate-500">{l.hBs>0?l.hBs.toFixed(2):''}</td>
+                              <td className="text-right px-1 font-bold text-emerald-400">{l.dU>0?l.dU.toFixed(2):''}</td>
+                              <td className="text-right px-1 text-emerald-800">{l.hU>0?l.hU.toFixed(2):''}</td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                      <tfoot className="border-t border-slate-700">
+                        <tr className="text-slate-400 font-bold">
+                          <td className="py-2 text-right text-[8px] uppercase tracking-wider pr-2">Totales</td>
+                          <td className="text-right px-1 text-white">{(bs?mNat:mNat*tasa).toFixed(2)}</td>
+                          <td className="text-right px-1 text-white">{(bs?mNat:mNat*tasa).toFixed(2)}</td>
+                          <td className="text-right px-1 text-emerald-400">{(bs?mNat/tasa:mNat).toFixed(2)}</td>
+                          <td className="text-right px-1 text-emerald-400">{(bs?mNat/tasa:mNat).toFixed(2)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>}
+              </div>
+
+              {/* Action bar */}
+              <div className="p-5 border-t border-slate-200 bg-white flex-shrink-0 space-y-3">
+                <button onClick={save} disabled={busy}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none">
+                  {busy?<><RefreshCw size={15} className="animate-spin"/> Procesando...</>:<><Save size={16}/> Procesar y Ver Comprobante</>}
+                </button>
+                <button onClick={()=>{setModal(false);setForm(initF());}} className="w-full py-2 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
           </div>
         </Modal>
       </div>
@@ -2666,6 +2846,7 @@ function BancoApp({ fbUser, onBack }) {
 
   // ══════════════════════════════════════════════════════════════════════
   // 4. CAJA — OPERACIONES DE EFECTIVO
+
   // ══════════════════════════════════════════════════════════════════════
   const CajaOpView = () => {
     const [modal, setModal] = useState(false);
