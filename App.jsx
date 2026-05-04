@@ -413,11 +413,11 @@ function MainSelector({ onSelect }) {
 // ============================================================================
 function AdminDash({ onSelectModule, onBack }) {
   const mods = [
-    { id: 'facturacion',   name: 'Ventas & Facturación',   icon: Receipt,      color: '#f97316', border:'#f97316', desc: 'Clientes, facturas y cuentas por cobrar' },
-    { id: 'compras',       name: 'Compras & Proveedores',  icon: ShoppingCart, color: '#10b981', border:'#10b981', desc: 'Proveedores, órdenes de compra e importación' },
-    { id: 'inventario',    name: 'Control de Inventario',  icon: Package,      color: '#3b82f6', border:'#3b82f6', desc: 'Catálogo, stock y movimientos' },
-    { id: 'banco',         name: 'Bancos & Tesorería',     icon: Building2,    color: '#8b5cf6', border:'#8b5cf6', desc: 'Cuentas, movimientos y conciliación' },
-    { id: 'configuracion', name: 'Configuración',          icon: Settings,     color: '#64748b', border:'#64748b', desc: 'Empresa, usuarios y tasas de cambio' },
+    { id: 'facturacion',   name: 'Ventas & Facturación',   icon: Receipt,      color: '#f97316', border:'#f97316', bg:'#fff7ed', desc: 'Clientes, facturas y cuentas por cobrar' },
+    { id: 'compras',       name: 'Compras & Proveedores',  icon: ShoppingCart, color: '#10b981', border:'#10b981', bg:'#ecfdf5', desc: 'Proveedores, órdenes de compra e importación' },
+    { id: 'inventario',    name: 'Control de Inventario',  icon: Package,      color: '#3b82f6', border:'#3b82f6', bg:'#eff6ff', desc: 'Catálogo, stock y movimientos' },
+    { id: 'banco',         name: 'Bancos & Tesorería',     icon: Building2,    color: '#8b5cf6', border:'#8b5cf6', bg:'#f5f3ff', desc: 'Cuentas, movimientos y conciliación' },
+    { id: 'configuracion', name: 'Configuración',          icon: Settings,     color: '#64748b', border:'#64748b', bg:'#f8fafc', desc: 'Empresa, usuarios y tasas de cambio' },
   ];
   return (
     <div className="min-h-screen flex flex-col" style={{background:'#ffffff'}}>
@@ -447,8 +447,8 @@ function AdminDash({ onSelectModule, onBack }) {
               className="group text-left rounded-xl p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg bg-white border border-slate-100"
               style={{borderBottom:`3px solid ${mod.border}`,boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
               <div className="mb-4">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{background:mod.color+'12'}}>
-                  <mod.icon size={18} style={{color:mod.color}}/>
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm" style={{background:mod.bg,border:`1.5px solid ${mod.color}30`}}>
+                  <mod.icon size={22} strokeWidth={2} style={{color:mod.color}}/>
                 </div>
               </div>
               <h3 className="font-black text-[11px] uppercase tracking-wider text-slate-900 mb-1" style={{fontFamily:"'Inter','Segoe UI',system-ui,sans-serif"}}>{mod.name}</h3>
@@ -1372,6 +1372,7 @@ function BancoApp({ fbUser, onBack }) {
     const pctBs  = totConsolUSD>0?Math.round(totBs/tasaActiva/totConsolUSD*100):50;
     const pctUSD = 100-pctBs;
 
+    const [tabCuentas, setTabCuentas] = useState('nacionales');
     return(
       <div className="space-y-6">
         {/* ── KPIs Hero ── */}
@@ -1386,10 +1387,10 @@ function BancoApp({ fbUser, onBack }) {
                 <span className="text-xs text-slate-400">Equiv. Bs.:</span>
                 <span className="text-sm font-mono font-bold text-indigo-100">Bs.{fmtC(totConsolUSD*tasaActiva)}</span>
               </div>
-              <div className="mt-2 flex items-center gap-2">
+              {cajaUSD>0&&<div className="mt-2 flex items-center gap-2">
                 <span className="text-xs text-slate-400">Caja USD:</span>
                 <span className="text-sm font-mono font-bold text-emerald-400">{'$'+fmtC(cajaUSD)}</span>
-              </div>
+              </div>}
             </div>
           </div>
           {/* Nacionales */}
@@ -1430,33 +1431,38 @@ function BancoApp({ fbUser, onBack }) {
           </div>
         </div>
 
-        {/* ── Layout bicolumna: Cuentas | Analítica + Recientes ── */}
+        {/* ── Layout bicolumna: Cuentas con tabs | Analítica ── */}
         <div className="flex flex-col xl:flex-row gap-6">
-          {/* CUENTAS */}
-          <div className="flex-1 space-y-5">
-            {cuentasNacBs.length>0&&<div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-1 h-5 rounded-full bg-indigo-500"/>
-                <p className="font-black text-[10px] uppercase tracking-widest text-slate-700">Cuentas Nacionales · Bolívares</p>
-                <div className="flex-1 h-px bg-slate-100"/>
-                <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg uppercase">Bs.{fmtC(totBs)}</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasNacBs.map(c=><CuentaCard key={c.id} c={c} isUSD={false}/>)}</div>
-            </div>}
-            {cuentasExt.length>0&&<div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-1 h-5 rounded-full bg-teal-500"/>
-                <p className="font-black text-[10px] uppercase tracking-widest text-slate-700">Bancos Internacionales & ME</p>
-                <div className="flex-1 h-px bg-slate-100"/>
-                <span className="text-[9px] font-black text-teal-700 bg-teal-50 px-3 py-1 rounded-lg uppercase">{'$'+fmtC(totUSD)}</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasExt.map(c=><CuentaCard key={c.id} c={c} isUSD={true}/>)}</div>
-            </div>}
+          {/* CUENTAS con tabs Nacionales / ME */}
+          <div className="flex-1 space-y-4">
+            {/* Tab bar */}
+            <div className="flex items-end gap-6 border-b border-slate-200 pb-0">
+              {[{id:'nacionales',label:'Nacionales (Bs)',color:'#4f46e5'},{id:'extranjeras',label:'Moneda Extranjera (USD)',color:'#0d9488'}].map(tab=>(
+                <button key={tab.id} onClick={()=>setTabCuentas(tab.id)}
+                  className={`pb-3 -mb-px text-xs font-black uppercase tracking-wider transition-colors whitespace-nowrap border-b-2 ${tabCuentas===tab.id?'border-current':'border-transparent text-slate-400 hover:text-slate-600'}`}
+                  style={{color:tabCuentas===tab.id?tab.color:''}}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab Nacionales */}
+            {tabCuentas==='nacionales'&&(
+              cuentasNacBs.length>0
+                ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasNacBs.map(c=><CuentaCard key={c.id} c={c} isUSD={false}/>)}</div>
+                : <EmptyState icon={Building2} title="Sin cuentas nacionales" desc="Registre cuentas Bs."/>
+            )}
+            {/* Tab Extranjeras */}
+            {tabCuentas==='extranjeras'&&(
+              cuentasExt.length>0
+                ? <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{cuentasExt.map(c=><CuentaCard key={c.id} c={c} isUSD={true}/>)}</div>
+                : <EmptyState icon={Building2} title="Sin cuentas extranjeras" desc="Registre cuentas USD"/>
+            )}
             {cuentas.length===0&&<EmptyState icon={Building2} title="Sin cuentas" desc="Registre cuentas en Bancos"/>}
           </div>
 
-          {/* ANALÍTICA + RECIENTES */}
-          <div className="w-full xl:w-[380px] flex flex-col gap-5">
+          {/* ANALÍTICA (distribución + reciprocidad) */}
+          <div className="w-full xl:w-[340px] flex flex-col gap-5">
             {/* Distribución */}
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-5">
@@ -1488,7 +1494,7 @@ function BancoApp({ fbUser, onBack }) {
                     <span className="text-xs font-black font-mono text-emerald-700">{'$'+fmtC(cajaUSD)}</span>
                   </div>
                   <div className="w-full bg-emerald-50 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-400 h-full rounded-full" style={{width:`${Math.min(cajaUSD/totConsolUSD*100,100)}%`}}/>
+                    <div className="bg-emerald-400 h-full rounded-full" style={{width:`${Math.min(cajaUSD/Math.max(totConsolUSD,1)*100,100)}%`}}/>
                   </div>
                 </div>}
               </div>
@@ -1518,42 +1524,11 @@ function BancoApp({ fbUser, onBack }) {
                 })}
               </div>
             </div>}
-
-            {/* Últimas operaciones */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex-1 flex flex-col">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-black text-xs uppercase tracking-wider text-slate-800">Operaciones Recientes</h3>
-                <button onClick={()=>setSec('movimientos')} className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-1.5 rounded-lg hover:bg-indigo-100 uppercase tracking-widest">Ver Todas</button>
-              </div>
-              <div className="space-y-3 flex-1">
-                {movBanco.slice(0,6).map(m=>{
-                  const isIng=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
-                  const Icon=isIng?ArrowUpCircle:m.tipo?.includes('Traslado')?ArrowLeftRight:ArrowDownCircle;
-                  return(
-                    <div key={m.id} className="flex gap-3 items-center p-2 -mx-2 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
-                      <div className={`p-2 rounded-xl ${isIng?'bg-emerald-50 border border-emerald-100 text-emerald-600':m.tipo?.includes('Traslado')?'bg-indigo-50 border border-indigo-100 text-indigo-600':'bg-orange-50 border border-orange-100 text-orange-600'}`}>
-                        <Icon size={15} strokeWidth={2.5}/>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">{m.concepto}</p>
-                        <p className="text-[9px] text-slate-400">{m.cuentaNombre} · {dd(m.fecha)}</p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className={`text-xs font-black font-mono ${isIng?'text-emerald-600':'text-slate-800'}`}>{isIng?'+':'-'}{'$'+fmt(m.montoUSD)}</p>
-                        <p className="text-[9px] font-mono text-slate-400">Bs.{fmtC(m.montoBs)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-                {movBanco.length===0&&<div className="flex-1 flex flex-col items-center justify-center py-6 text-center">
-                  <ArrowLeftRight size={28} className="text-slate-300 mb-2"/>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sin movimientos</p>
-                </div>}
-              </div>
-            </div>
           </div>
         </div>
       </div>
+    );
+
     );
   };
 
@@ -2354,7 +2329,7 @@ function BancoApp({ fbUser, onBack }) {
       <div>
         {/* ── MODAL DETALLE / EDICIÓN ── */}
         {movDetalle && (
-          <Modal open={!!movDetalle} onClose={()=>{setDetalle(null);setEditId(null);setForm(initF());}} title={editId?`✏ Editando — ${movDetalle.concepto}`:`Movimiento — ${movDetalle.concepto}`} wide
+          <Modal open={!!movDetalle} onClose={()=>{setDetalle(null);setEditId(null);setForm(initF());}} title={editId?`✏ Editando — ${movDetalle.concepto}`:`Movimiento — ${movDetalle.concepto}`} xwide
             footer={
               editId
                 ? <><Bo onClick={()=>{setEditId(null);setForm(initF());}}>Cancelar</Bo><Bg onClick={saveEdit} disabled={busy}>{busy?'Guardando...':'Guardar Cambios'}</Bg></>
@@ -2607,6 +2582,7 @@ function BancoApp({ fbUser, onBack }) {
           <div className="flex rounded-xl overflow-hidden border-2 border-slate-200">
             <button onClick={()=>setMonedaVista('BS')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='BS'?'bg-blue-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>Bs.</button>
             <button onClick={()=>setMonedaVista('USD')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='USD'?'bg-emerald-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>USD $</button>
+            <button onClick={()=>setMonedaVista('AMBAS')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='AMBAS'?'bg-purple-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>Ambas</button>
           </div>
           <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
             <option value="">Todos los bancos</option>
@@ -2644,7 +2620,7 @@ function BancoApp({ fbUser, onBack }) {
                     {m.aplicaTercero&&m.terceroNombre&&<p className="text-[10px] text-blue-600 font-black truncate">{m.terceroNombre}{m.referencia?` · ${m.referencia}`:''}</p>}
                     {(!m.aplicaTercero||!m.terceroNombre)&&m.referencia&&<p className="text-[10px] text-slate-400 font-mono">{m.referencia}</p>}
                   </Td>
-                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{monedaVista==='BS'?`Bs.${fmt(m.montoBs)}`:`$${fmt(m.montoUSD)}`}</Td>
+                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{monedaVista==='AMBAS'?`$${fmt(m.montoUSD)} / Bs.${fmt(m.montoBs)}`:monedaVista==='BS'?`Bs.${fmt(m.montoBs)}`:`$${fmt(m.montoUSD)}`}</Td>
                   <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
                   <Td><Badge v={m.estatus==='Conciliado'?'green':'gray'}>{m.estatus==='Conciliado'?'✓ Conc.':'Pend.'}</Badge></Td>
                   <Td>
@@ -2659,7 +2635,9 @@ function BancoApp({ fbUser, onBack }) {
                               {movRows.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
                 <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 text-left">BALANCE NETO (INGRESOS - EGRESOS)</td>
                 <td className="px-4 py-3 text-right font-mono font-black text-white">
-                  {(monedaVista==='BS'?'Bs.':'$')+fmt(movRows.reduce((a,m)=>{
+                  {monedaVista==='AMBAS'?(
+                    <span><span className='text-emerald-300'>${fmt(movRows.reduce((a,m)=>{if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito')return a+Number(m.montoUSD);if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')return a-Number(m.montoUSD);return a;},0))}</span> / Bs.{fmt(movRows.reduce((a,m)=>{if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito')return a+Number(m.montoBs);if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')return a-Number(m.montoBs);return a;},0))}</span>
+                  ):(monedaVista==='BS'?'Bs.':'$')+fmt(movRows.reduce((a,m)=>{
                     if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
                     if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
                     return a;
@@ -2689,7 +2667,7 @@ function BancoApp({ fbUser, onBack }) {
                     {m.aplicaTercero&&m.terceroNombre&&<p className="text-[10px] text-blue-600 font-black truncate">{m.terceroNombre}{m.referencia?` · ${m.referencia}`:''}</p>}
                     {(!m.aplicaTercero||!m.terceroNombre)&&m.referencia&&<p className="text-[10px] text-slate-400 font-mono">{m.referencia}</p>}
                   </Td>
-                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{monedaVista==='BS'?`Bs.${fmt(m.montoBs)}`:`$${fmt(m.montoUSD)}`}</Td>
+                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{monedaVista==='AMBAS'?`$${fmt(m.montoUSD)} / Bs.${fmt(m.montoBs)}`:monedaVista==='BS'?`Bs.${fmt(m.montoBs)}`:`$${fmt(m.montoUSD)}`}</Td>
                   <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
                   <Td><Badge v={m.estatus==='Conciliado'?'green':'gray'}>{m.estatus==='Conciliado'?'✓ Conc.':'Pend.'}</Badge></Td>
                   <Td>
@@ -2704,7 +2682,9 @@ function BancoApp({ fbUser, onBack }) {
                               {movRows.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
                 <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 text-left">BALANCE NETO (INGRESOS - EGRESOS)</td>
                 <td className="px-4 py-3 text-right font-mono font-black text-white">
-                  {(monedaVista==='BS'?'Bs.':'$')+fmt(movRows.reduce((a,m)=>{
+                  {monedaVista==='AMBAS'?(
+                    <span><span className='text-emerald-300'>${fmt(movRows.reduce((a,m)=>{if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito')return a+Number(m.montoUSD);if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')return a-Number(m.montoUSD);return a;},0))}</span> / Bs.{fmt(movRows.reduce((a,m)=>{if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito')return a+Number(m.montoBs);if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')return a-Number(m.montoBs);return a;},0))}</span>
+                  ):(monedaVista==='BS'?'Bs.':'$')+fmt(movRows.reduce((a,m)=>{
                     if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
                     if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
                     return a;
