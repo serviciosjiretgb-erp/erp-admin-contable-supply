@@ -174,12 +174,12 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-6xl' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[95vh] flex flex-col shadow-2xl overflow-hidden`}>
+      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-[98vw] h-[96vh]' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[96vh] flex flex-col shadow-2xl overflow-hidden`}>
         {!noHeader&&<div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
           <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
           <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
         </div>}
-        <div className={noHeader?'flex-1 overflow-hidden':'overflow-y-auto flex-1 p-7'}>{children}</div>
+        <div className={noHeader?'flex-1 overflow-hidden min-h-0':'overflow-y-auto flex-1 p-7'}>{children}</div>
         {footer && <div className="px-7 py-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0 bg-slate-50 rounded-b-2xl">{footer}</div>}
       </div>
     </div>
@@ -2508,7 +2508,7 @@ function BancoApp({ fbUser, onBack }) {
 
         {/* ── MODAL NUEVO MOVIMIENTO — DISEÑO BICOLUMNA ── */}
         <Modal open={modal} onClose={()=>{setModal(false);setForm(initF());}} title="" xwide noHeader>
-          <div className="flex -m-6 min-h-[640px] overflow-hidden rounded-2xl">
+          <div className="flex -m-6 h-full overflow-hidden rounded-2xl">
 
             {/* ══ COLUMNA IZQUIERDA: FORMULARIO ══ */}
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -3528,22 +3528,34 @@ function BancoApp({ fbUser, onBack }) {
   };
 
   const ComprobantesBancariosView = () => {
-    const [mes, setMes] = useState(mesActual());
-    const [filtBanco, setFiltBanco] = useState('');
+    const [filtBanco,  setFiltBanco]  = useState('');
+    const [filtDesde,  setFiltDesde]  = useState(mesActual()+'-01');
+    const [filtHasta,  setFiltHasta]  = useState(today());
+    const [filtRef,    setFiltRef]    = useState('');
     const [asientosLocal, setAsientosLocal] = useState([]);
+    const mes = filtDesde ? filtDesde.substring(0,7) : mesActual();
     useEffect(()=>{
       const u=onSnapshot(query(col('cont_asientos'),orderBy('fecha','desc')),s=>setAsientosLocal(s.docs.map(d=>d.data())));
       return()=>u();
     },[]);
-    const asientosMes = asientosLocal.filter(a=>
-      a.modulo==='Bancos' &&
-      a.fecha?.startsWith(mes) &&
-      (!filtBanco || movBanco.find(m=>m.id===a.movimientoBancoId)?.cuentaId===filtBanco)
-    );
+    const applyFiltros = (a, isMov=false) => {
+      if(!isMov && a.modulo!=='Bancos') return false;
+      if(filtDesde && a.fecha < filtDesde) return false;
+      if(filtHasta && a.fecha > filtHasta) return false;
+      const bancoId = isMov ? a.cuentaId : movBanco.find(m=>m.id===a.movimientoBancoId)?.cuentaId;
+      if(filtBanco && bancoId!==filtBanco) return false;
+      const refText = isMov ? (a.referencia||'')+(a.concepto||'') : (a.nroDocumento||'')+(a.descripcion||'')+(a.terceroNombre||'');
+      if(filtRef && !refText.toUpperCase().includes(filtRef.toUpperCase())) return false;
+      return true;
+    };
+    const asientosMes = asientosLocal.filter(a=>applyFiltros(a, false));
 
-    const rows = asientosMes.length > 0 ? asientosMes : movBanco.filter(m=>m.fecha?.startsWith(mes)&&(m.asientoDebito||m.asientoCredito)&&(!filtBanco||m.cuentaId===filtBanco)).map(m=>({
+    const rows = asientosMes.length > 0 ? asientosMes : movBanco.filter(m=>{
+      if(!(m.asientoDebito||m.asientoCredito)) return false;
+      return applyFiltros(m, true);
+    }).map(m=>({
       id:m.id, comprobante:m.asientoContableId||m.id,
-      fecha:m.fecha, descripcion:m.concepto,
+      fecha:m.fecha, descripcion:m.concepto, nroDocumento:m.referencia||'',
       cuentaNombre:m.cuentaNombre,
       lineas:[{codigo:'',cuenta:m.asientoDebito,tipoLinea:'D',debeBs:m.montoBs,haberBs:0,debeUSD:m.montoUSD,haberUSD:0},{codigo:'',cuenta:m.asientoCredito,tipoLinea:'H',debeBs:0,haberBs:m.montoBs,debeUSD:0,haberUSD:m.montoUSD}],
     }));
@@ -3587,26 +3599,48 @@ function BancoApp({ fbUser, onBack }) {
     return (
       <div className="space-y-4">
         {/* Filtros */}
-        <div className="flex gap-3 items-center">
-          <FG label="Mes"><input type="month" className={inp} style={{width:'140px'}} value={mes} onChange={e=>setMes(e.target.value)}/></FG>
-          <FG label="Filtrar por Banco">
-            <select className={sel} style={{minWidth:'200px'}} value={filtBanco} onChange={e=>setFiltBanco(e.target.value)}>
-              <option value="">Todos los bancos</option>
-              {[{label:'🇻🇪 Nacionales Bs.',items:cuentas.filter(c=>c.tipoBanco==='Nacional-Bs')},
-                {label:'💵 Moneda Extranjera',items:cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs')}
-              ].map(g=>g.items.length>0&&(
-                <optgroup key={g.label} label={g.label}>
-                  {g.items.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </FG>
-          <div className="ml-auto self-end">
+        <div className="bg-white rounded-2xl border-2 border-slate-100 p-4 space-y-3">
+          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Filtros de Búsqueda</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Banco */}
+            <FG label="Banco">
+              <select className={sel} value={filtBanco} onChange={e=>setFiltBanco(e.target.value)}>
+                <option value="">Todos los bancos</option>
+                {[{label:'🇻🇪 Nacionales Bs.',items:cuentas.filter(c=>c.tipoBanco==='Nacional-Bs')},
+                  {label:'💵 Moneda Extranjera',items:cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs')}
+                ].map(g=>g.items.length>0&&(
+                  <optgroup key={g.label} label={g.label}>{g.items.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}</optgroup>
+                ))}
+              </select>
+            </FG>
+            {/* Desde */}
+            <FG label="Desde">
+              <input type="date" className={inp} value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/>
+            </FG>
+            {/* Hasta */}
+            <FG label="Hasta">
+              <input type="date" className={inp} value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/>
+            </FG>
+            {/* Referencia */}
+            <FG label="Referencia / Concepto">
+              <div className="relative">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                <input className={`${inp} pl-8`} value={filtRef} onChange={e=>setFiltRef(e.target.value)} placeholder="REF-00000 o concepto..."/>
+              </div>
+            </FG>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              {(filtBanco||filtRef||(filtDesde!==mesActual()+'-01')||(filtHasta!==today()))&&(
+                <button onClick={()=>{setFiltBanco('');setFiltRef('');setFiltDesde(mesActual()+'-01');setFiltHasta(today());}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">✕ Limpiar filtros</button>
+              )}
+              <span className="text-[10px] text-slate-400 font-medium self-center">{rows.length} comprobante(s) encontrado(s)</span>
+            </div>
             <button onClick={imprimir} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><Download size={12}/> PDF Membretado</button>
           </div>
         </div>
 
-        <Card title={`Comprobante Contable Bancario — ${mes}`} subtitle={`${rows.length} asiento(s) registrado(s)`}>
+        <Card title={`Comprobante Contable Bancario`} subtitle={`${filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':'Todos los bancos'} · ${dd(filtDesde)} al ${dd(filtHasta)} · ${rows.length} resultado(s)`}>
           {rows.length===0
             ? <EmptyState icon={BookOpen} title="Sin asientos" desc="Los asientos se generan automáticamente al registrar movimientos bancarios"/>
             : <div className="space-y-3">
@@ -3628,7 +3662,7 @@ function BancoApp({ fbUser, onBack }) {
                           <Badge v="blue">{r.tipo||r.subTipo||'Bancario'}</Badge>
                         </div>
                         <div className="text-right">
-                          <p className="text-slate-400 text-[10px]">{dd(r.fecha)}</p>
+                          <p className="text-slate-400 text-[10px]">{dd(r.fecha)}{(r.nroDocumento||r.referencia)?<span className="ml-2 font-mono text-blue-400">{r.nroDocumento||r.referencia}</span>:''}</p>
                           <p className="font-mono font-black text-emerald-400 text-sm">{'$'+fmt(dUSD)}</p>
                         </div>
                       </div>
