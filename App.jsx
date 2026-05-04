@@ -1277,6 +1277,7 @@ function BancoApp({ fbUser, onBack }) {
   const [facturas,   setFacturas] = useState([]);
   const [provs,      setProvs]    = useState([]);
   const [contCuentas,setContC]    = useState([]);
+  const [asientosBanco, setAsientosBanco] = useState([]);
 
   useEffect(() => {
     if (!fbUser) return;
@@ -1291,6 +1292,7 @@ function BancoApp({ fbUser, onBack }) {
       onSnapshot(query(col('facturacion_facturas'), orderBy('fechaEmision','desc')), s => setFacturas(s.docs.map(d=>d.data()))),
       onSnapshot(col('compras_proveedores'), s => setProvs(s.docs.map(d=>d.data()))),
       onSnapshot(col('cont_cuentas'), s => setContC(s.docs.map(d=>d.data()))),
+      onSnapshot(query(col('cont_asientos'), orderBy('fecha','desc')), s => setAsientosBanco(s.docs.map(d=>d.data()))),
     ];
     return () => subs.forEach(u=>u());
   }, [fbUser]);
@@ -2302,25 +2304,87 @@ function BancoApp({ fbUser, onBack }) {
                     {movDetalle.facturaNumero&&<p className="text-[10px] text-blue-600 font-black mt-0.5">Factura: {movDetalle.facturaNumero}</p>}
                   </div>
                 )}
-                {(movDetalle.asientoDebito||movDetalle.asientoCredito)&&(
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                    <p className="text-[9px] font-black uppercase text-blue-700 tracking-widest mb-3">Asiento Contable — {movDetalle.moneda==='BS'?'Bs. (c/equiv. USD)':'USD (c/equiv. Bs.)'}</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3 bg-white rounded-lg p-3 border border-blue-100">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"/>
-                        <p className="text-[9px] font-black uppercase text-emerald-700 w-14">DÉBITO</p>
-                        <p className="text-xs font-semibold text-slate-700 flex-1">{movDetalle.asientoDebito}</p>
-                        <div className="text-right"><p className="font-mono font-black text-xs text-emerald-700">{movDetalle.moneda==='BS'?`Bs. ${fmt(movDetalle.montoBs)}`:`$${fmt(movDetalle.montoUSD)}`}</p><p className="font-mono text-[9px] text-slate-400">{movDetalle.moneda==='BS'?`≈ $${fmt(movDetalle.montoUSD)}`:`≈ Bs. ${fmt(movDetalle.montoBs)}`}</p></div>
+                {(()=>{
+                  // Buscar el asiento contable vinculado (con lineas reales)
+                  const asientoLinked = asientosBanco.find(a=>a.id===movDetalle.asientoContableId);
+                  // Reconstruir lineas dinámicamente desde datos del banco si no hay asiento guardado
+                  const ctaOrig = cuentas.find(c=>c.id===movDetalle.cuentaId);
+                  const ctaDest = cuentas.find(c=>c.id===movDetalle.cuentaDestinoId);
+                  const splitCta = c => ({
+                    cod:(c?.cuentaContableCod||c?.cuentaContable?.split('·')[0]||'').trim(),
+                    nom:(c?.cuentaContableNom||c?.cuentaContable?.split('·')[1]||c?.banco||'').trim()
+                  });
+                  // Líneas a mostrar: prioridad → lineas del asiento guardado → reconstruidas
+                  let lineasMostrar = [];
+                  if(asientoLinked?.lineas?.length > 0) {
+                    lineasMostrar = asientoLinked.lineas;
+                  } else if(movDetalle.tipo==='Traslado de Fondo' && ctaOrig && ctaDest) {
+                    const orig=splitCta(ctaOrig); const dest=splitCta(ctaDest);
+                    lineasMostrar=[
+                      {codigo:dest.cod,cuenta:`${dest.cod?dest.cod+' · ':''}${dest.nom||ctaDest.banco}`,tipoLinea:'D',debeBs:movDetalle.montoBs,haberBs:0,debeUSD:movDetalle.montoUSD,haberUSD:0},
+                      {codigo:orig.cod,cuenta:`${orig.cod?orig.cod+' · ':''}${orig.nom||ctaOrig.banco}`,tipoLinea:'H',debeBs:0,haberBs:movDetalle.montoBs,debeUSD:0,haberUSD:movDetalle.montoUSD},
+                    ];
+                  } else if(movDetalle.asientoDebito||movDetalle.asientoCredito) {
+                    // Fallback: enriquecer con cuentaContable del banco si está disponible
+                    const bancoOrig = splitCta(ctaOrig);
+                    const nomBanco = `${bancoOrig.cod?bancoOrig.cod+' · ':''}${bancoOrig.nom||ctaOrig?.banco||movDetalle.cuentaNombre}`;
+                    const esIng = movDetalle.tipo==='Ingreso'||movDetalle.tipo==='Nota de Crédito';
+                    lineasMostrar=[
+                      {codigo:'',cuenta:esIng?nomBanco:movDetalle.asientoDebito,tipoLinea:'D',debeBs:movDetalle.montoBs,haberBs:0,debeUSD:movDetalle.montoUSD,haberUSD:0},
+                      {codigo:'',cuenta:esIng?movDetalle.asientoCredito:nomBanco,tipoLinea:'H',debeBs:0,haberBs:movDetalle.montoBs,debeUSD:0,haberUSD:movDetalle.montoUSD},
+                    ];
+                  }
+                  if(lineasMostrar.length===0) return null;
+                  const totDeBs=lineasMostrar.reduce((a,l)=>a+Number(l.debeBs||0),0);
+                  const totHaBs=lineasMostrar.reduce((a,l)=>a+Number(l.haberBs||0),0);
+                  const totDeUSD=lineasMostrar.reduce((a,l)=>a+Number(l.debeUSD||0),0);
+                  const totHaUSD=lineasMostrar.reduce((a,l)=>a+Number(l.haberUSD||0),0);
+                  return (
+                    <div className="rounded-xl overflow-hidden border border-blue-100">
+                      <div className="px-5 py-3 flex items-center gap-2" style={{background:'#1e3a5f'}}>
+                        <BookOpen size={13} className="text-blue-300"/>
+                        <p className="text-[9px] font-black uppercase text-blue-200 tracking-widest flex-1">Asiento Contable — {asientoLinked?.comprobante||movDetalle.asientoContableId?.slice(0,8)||''}</p>
+                        <p className="text-[9px] text-blue-300 font-mono">{movDetalle.moneda==='BS'?'Bs. / USD':'USD / Bs.'}</p>
                       </div>
-                      <div className="flex items-center gap-3 bg-white rounded-lg p-3 border border-blue-100">
-                        <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"/>
-                        <p className="text-[9px] font-black uppercase text-red-600 w-14">CRÉDITO</p>
-                        <p className="text-xs font-semibold text-slate-700 flex-1 pl-3">{movDetalle.asientoCredito}</p>
-                        <div className="text-right"><p className="font-mono font-black text-xs text-red-600">{movDetalle.moneda==='BS'?`Bs. ${fmt(movDetalle.montoBs)}`:`$${fmt(movDetalle.montoUSD)}`}</p><p className="font-mono text-[9px] text-slate-400">{movDetalle.moneda==='BS'?`≈ $${fmt(movDetalle.montoUSD)}`:`≈ Bs. ${fmt(movDetalle.montoBs)}`}</p></div>
+                      {/* Cabecera columnas */}
+                      <div className="grid bg-slate-50 px-4 py-2 border-b border-slate-100 text-[8px] font-black uppercase text-slate-400 tracking-widest"
+                        style={{gridTemplateColumns:'1.5rem 2.5fr 0.8fr 0.8fr 0.8fr 0.8fr'}}>
+                        <div/><div>Cuenta Contable</div>
+                        <div className="text-right text-emerald-600">Debe Bs.</div>
+                        <div className="text-right text-red-500">Haber Bs.</div>
+                        <div className="text-right text-emerald-700">Debe $</div>
+                        <div className="text-right text-red-600">Haber $</div>
                       </div>
+                      {/* Líneas */}
+                      <div className="divide-y divide-slate-50">
+                        {lineasMostrar.map((l,i)=>(
+                          <div key={i} className="grid items-center px-4 py-2.5 hover:bg-slate-50"
+                            style={{gridTemplateColumns:'1.5rem 2.5fr 0.8fr 0.8fr 0.8fr 0.8fr'}}>
+                            <span className={`text-[9px] font-black ${l.tipoLinea==='D'?'text-emerald-600':'text-red-500'}`}>{l.tipoLinea}</span>
+                            <div style={{paddingLeft:l.tipoLinea==='H'?'12px':'0'}}>
+                              {l.codigo&&<span className="text-[9px] font-mono font-black text-blue-600 mr-1">{l.codigo}</span>}
+                              <span className="text-xs font-semibold text-slate-800">{l.cuenta}</span>
+                            </div>
+                            <p className="text-right font-mono text-[11px] text-emerald-700 font-black">{Number(l.debeBs||0)>0?`Bs.${fmt(l.debeBs)}`:''}</p>
+                            <p className="text-right font-mono text-[11px] text-red-500 font-black">{Number(l.haberBs||0)>0?`Bs.${fmt(l.haberBs)}`:''}</p>
+                            <p className="text-right font-mono text-[11px] text-emerald-700">{Number(l.debeUSD||0)>0?`$${fmt(l.debeUSD)}`:''}</p>
+                            <p className="text-right font-mono text-[11px] text-red-500">{Number(l.haberUSD||0)>0?`$${fmt(l.haberUSD)}`:''}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Totales */}
+                      <div className="grid px-4 py-2.5 border-t-2 border-slate-200 bg-slate-50 text-[11px] font-mono font-black"
+                        style={{gridTemplateColumns:'1.5rem 2.5fr 0.8fr 0.8fr 0.8fr 0.8fr'}}>
+                        <div/><div className="text-[9px] font-black uppercase text-slate-500 tracking-widest">SUMAS IGUALES</div>
+                        <div className={`text-right ${Math.abs(totDeBs-totHaBs)<0.01?'text-emerald-700':'text-amber-600'}`}>Bs.{fmt(totDeBs)}</div>
+                        <div className={`text-right ${Math.abs(totDeBs-totHaBs)<0.01?'text-red-500':'text-amber-600'}`}>Bs.{fmt(totHaBs)}</div>
+                        <div className={`text-right ${Math.abs(totDeUSD-totHaUSD)<0.01?'text-emerald-700':'text-amber-600'}`}>{'$'+fmt(totDeUSD)}</div>
+                        <div className={`text-right ${Math.abs(totDeUSD-totHaUSD)<0.01?'text-red-500':'text-amber-600'}`}>{'$'+fmt(totHaUSD)}</div>
+                      </div>
+                      {Math.abs(totDeBs-totHaBs)>0.01&&<p className="text-[9px] text-amber-600 font-bold px-4 pb-2">* Variación cambiaria: Bs.{fmt(Math.abs(totDeBs-totHaBs))}</p>}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
           </Modal>
