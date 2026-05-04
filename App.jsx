@@ -204,14 +204,18 @@ const Card = ({ title, subtitle, action, children, noPad }) => (
 const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white w-full ${xwide ? 'max-w-7xl h-[90vh]' : wide ? 'rounded-2xl max-w-3xl max-h-[90vh]' : 'rounded-2xl max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden`}>
-        {!noHeader&&<div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
-          <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
-          <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
-        </div>}
-        <div className={noHeader?'flex-1 overflow-hidden min-h-0':'overflow-y-auto flex-1 p-7'}>{children}</div>
-        {footer && <div className="px-7 py-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0 bg-slate-50 rounded-b-2xl">{footer}</div>}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={`bg-white w-full ${xwide ? 'max-w-[95vw] lg:max-w-[1200px] h-[90vh]' : wide ? 'max-w-[95vw] md:max-w-3xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
+        {!noHeader && (
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
+            <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
+            <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
+          </div>
+        )}
+        <div className="flex-1 overflow-hidden flex flex-col relative">
+          {noHeader ? children : <div className="overflow-y-auto flex-1 p-7">{children}</div>}
+        </div>
+        {footer && <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 flex-shrink-0 bg-slate-50 rounded-b-2xl">{footer}</div>}
       </div>
     </div>
   );
@@ -1751,10 +1755,34 @@ function BancoApp({ fbUser, onBack }) {
               </select>
               {form.cuentaContableCod && <p className="text-[10px] text-blue-600 font-black mt-1">✓ {form.cuentaContableCod} · {form.cuentaContableNom}</p>}
             </FG>
-            {/* URL Logo personalizado */}
-            <FG label="URL Logo del Banco (Opcional)">
-              <input className={inp} value={form.logoUrl||''} onChange={e=>setForm({...form,logoUrl:e.target.value})} placeholder="https://... o vacío para auto-generar desde el nombre"/>
-              {form.logoUrl&&<div className="mt-2 flex items-center gap-2"><BankLogo banco={form.banco} logoUrl={form.logoUrl} className="w-10 h-10 rounded-lg border border-slate-200"/><p className="text-[10px] text-slate-400">Vista previa del logo</p></div>}
+            {/* UPLOAD DE LOGO CON VISTA PREVIA */}
+            <FG label="Logo del Banco (Adjuntar Imagen)" full>
+              <div className="flex items-center gap-4">
+                {form.logoUrl ? (
+                  <div className="relative w-14 h-14 rounded-xl border border-slate-200 overflow-hidden flex-shrink-0 bg-white shadow-sm flex items-center justify-center">
+                    <img src={form.logoUrl} className="w-full h-full object-contain p-1" alt="Logo preview"/>
+                    <button onClick={()=>setForm({...form,logoUrl:''})} className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg shadow hover:bg-red-600" title="Quitar"><X size={11}/></button>
+                  </div>
+                ) : (
+                  <div className="w-14 h-14 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center flex-shrink-0 bg-slate-50 text-slate-400">
+                    <Building2 size={18}/>
+                  </div>
+                )}
+                <label className="flex-1 flex flex-col items-center justify-center gap-1 px-4 py-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-xl cursor-pointer transition-colors shadow-sm">
+                  <div className="flex items-center gap-2 font-black uppercase tracking-widest text-[10px]">
+                    <Upload size={14}/> Seleccionar Imagen (PNG/JPG)
+                  </div>
+                  <span className="text-[9px] text-blue-500 font-medium">Recomendado: fondo transparente, max. 500KB</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={e=>{
+                    const file=e.target.files[0];
+                    if(!file) return;
+                    if(file.size>500*1024) return alert('La imagen es muy pesada. Máximo 500KB.');
+                    const reader=new FileReader();
+                    reader.onloadend=()=>setForm({...form,logoUrl:reader.result});
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+              </div>
             </FG>
           </div>
         </Modal>
@@ -3046,8 +3074,9 @@ function BancoApp({ fbUser, onBack }) {
             {/* ══ COLUMNA DERECHA: RESUMEN BANCO + PREVIEW ASIENTO ══ */}
             <div className="w-72 flex-shrink-0 flex flex-col bg-slate-50 border-l border-slate-200 overflow-y-auto">
               {/* Header columna derecha */}
-              <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0">
-                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Estado Operativo</p>
+              <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0 flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2"><Activity size={13}/> Estado Operativo</p>
+                <button onClick={()=>{setModal(false);setForm(initF());}} className="text-slate-400 hover:text-slate-700 transition-colors"><X size={18}/></button>
               </div>
 
               <div className="p-4 space-y-3 flex-1">
