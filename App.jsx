@@ -205,7 +205,7 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white w-full ${xwide ? 'max-w-[95vw] lg:max-w-[1300px] h-[95vh]' : wide ? 'max-w-[95vw] md:max-w-4xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
+      <div className={`bg-white w-full ${xwide ? 'max-w-[95vw] lg:max-w-[1300px] h-[95vh]' : wide ? 'max-w-[95vw] md:max-w-3xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
         {!noHeader && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
             <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
@@ -3777,161 +3777,136 @@ function BancoApp({ fbUser, onBack }) {
 
   // ── NAV ────────────────────────────────────────────────────────────────────
   const navGroups = [
-    { group:'Analítica',   color:'#f97316', items:[{id:'dashboard',    label:'Panel General',      icon:LayoutDashboard}] },
-    { group:'Bancos',      color:'#3b82f6', items:[{id:'cuentas',      label:'Cuentas Bancarias',  icon:Building2},
-                                                    {id:'movimientos',  label:'Movimientos Banco',  icon:ArrowLeftRight},
-                                                    {id:'conciliacion', label:'Conciliación',       icon:CheckCircle}] },
-    { group:'Caja',        color:'#10b981', items:[{id:'caja_op',       label:'Operaciones Caja',   icon:Banknote},
-                                                    {id:'vales',          label:'Relación de Vales',  icon:FileText},
-                                                    {id:'arqueo',        label:'Arqueo de Caja',     icon:Calculator}] },
-    { group:'Reportes',    color:'#f59e0b', items:[{id:'reportes',     label:'Panel de Reportes',  icon:BarChart3},
-                                                    {id:'rpt_gral',    label:'General de Banco',    icon:FileSpreadsheet},
-                                                    {id:'rpt_conc',    label:'Conciliaciones',      icon:CheckCircle},
-                                                    {id:'rpt_concepto',label:'Por Concepto',        icon:BookMarked},
-                                                    {id:'rpt_comp',    label:'Comprobante Bancario',icon:BookOpen}] },
-    { group:'Config.',     color:'#64748b', items:[{id:'tasas',        label:'Tasas de Cambio',    icon:Globe}] },
+    { group:'Analítica',   color:'#f97316', items:[{id:'dashboard',    label:'Panel General',       icon:LayoutDashboard}] },
+    { group:'Bancos',      color:'#3b82f6', items:[{id:'cuentas',      label:'Cuentas Bancarias',   icon:Building2},
+                                                    {id:'movimientos',  label:'Movimientos Banco',   icon:ArrowLeftRight},
+                                                    {id:'conciliacion', label:'Conciliación',        icon:CheckCircle}] },
+    { group:'Caja',        color:'#10b981', items:[{id:'caja_op',      label:'Operaciones Caja',    icon:Banknote},
+                                                    {id:'vales',        label:'Relación de Vales',   icon:FileText},
+                                                    {id:'arqueo',       label:'Arqueo de Caja',      icon:Calculator}] },
+    { group:'Reportes',    color:'#f59e0b', items:[{id:'rpt_gral_banco',label:'General de Banco',    icon:Building2},
+                                                    {id:'rpt_gral_caja', label:'General de Caja',    icon:PiggyBank},
+                                                    {id:'rpt_comp_banco',label:'Comprobante Bancario',icon:FileText},
+                                                    {id:'rpt_comp_caja', label:'Comprobante de Caja', icon:FileText},
+                                                    {id:'rpt_libro',     label:'Libro Diario General',icon:BookOpen}] },
+    { group:'Config.',     color:'#64748b', items:[{id:'tasas',        label:'Tasas de Cambio',     icon:Globe}] },
   ];
-  const ReportesGeneralView = () => {
-    const totBs = cuentas.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo),0);
-    const totUSD= cuentas.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo),0);
-    const totBsEq= cuentas.reduce((a,c)=>a+(c.moneda==='BS'?Number(c.saldo):Number(c.saldo)*tasaActiva),0);
+  const ReportesGeneralView = ({ tipo = 'banco' }) => {
+    const isBanco = tipo === 'banco';
+    const totBsBanco   = cuentas.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo),0);
+    const totUSDBanco  = cuentas.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo),0);
+    const totBsEqBanco = cuentas.reduce((a,c)=>a+(c.moneda==='BS'?Number(c.saldo):Number(c.saldo)*tasaActiva),0);
+    const saldoCajaBs  = movCaja.filter(m=>m.moneda==='BS' ).reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoBs||0),0);
+    const saldoCajaUSD = movCaja.filter(m=>m.moneda==='USD').reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoUSD||0),0);
+    const totBsEqCaja  = saldoCajaBs + saldoCajaUSD*tasaActiva;
+    if (!isBanco) return (
+      <div className="space-y-5 w-full min-w-0">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <KPI label="Total Caja Bs." value={`Bs. ${fmt(saldoCajaBs)}`} accent="blue" Icon={PiggyBank} sub={`$${fmt(saldoCajaBs/tasaActiva)} USD equiv.`}/>
+          <KPI label="Total Caja USD" value={`$${fmt(saldoCajaUSD)}`} accent="green" Icon={DollarSign} sub={`Bs.${fmt(saldoCajaUSD*tasaActiva)} equiv.`}/>
+          <KPI label="Consolidado Global" value={`$${fmt(totBsEqCaja/tasaActiva)}`} accent="gold" Icon={TrendingUp} sub="Equivalente en USD"/>
+        </div>
+        <Card title="Resumen General de Caja">
+          <div className="overflow-x-auto w-full min-w-0">
+            <table className="w-full min-w-[600px]">
+              <thead><tr><Th>Caja Operativa</Th><Th>Moneda</Th><Th right>Saldo Actual</Th><Th right>Equivalencia</Th></tr></thead>
+              <tbody>
+                <tr className="hover:bg-slate-50"><Td className="font-black">Caja Principal (Bolívares)</Td><Td><Pill usd={false}>BS</Pill></Td><Td right mono className="font-black">Bs. {fmt(saldoCajaBs)}</Td><Td right mono className="text-emerald-600 font-black">$ {fmt(saldoCajaBs/tasaActiva)}</Td></tr>
+                <tr className="hover:bg-slate-50"><Td className="font-black">Caja Principal (Divisas)</Td><Td><Pill usd={true}>USD</Pill></Td><Td right mono className="font-black">$ {fmt(saldoCajaUSD)}</Td><Td right mono className="text-blue-600 font-black">Bs. {fmt(saldoCajaUSD*tasaActiva)}</Td></tr>
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    );
     const imprimir=()=>{
-      let rows=cuentas.map(c=>{
-        const bs=c.moneda==='BS';
-        const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);
-        const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
-        return `<tr><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta||'—'}</td><td>${c.moneda}</td><td style="text-align:right;font-family:monospace;font-weight:bold">Bs.${fmt(bsEq)}</td><td style="text-align:right;font-family:monospace;font-weight:bold;color:#16a34a">$${fmt(usd)}</td></tr>`;
-      }).join('');
-      printWindow(letterheadOpen('Reporte General Bancario',`Servicios Jiret G&B, C.A. · RIF: J-412309374 · ${dd(today())} · ${cuentas.length} cuentas`)+
-        `<table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Saldo Bs.</th><th>Equiv. USD</th></tr></thead><tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="4" style="font-weight:bold">TOTAL CONSOLIDADO</td><td style="text-align:right;font-weight:bold">Bs.${fmt(totBsEq)}</td><td style="text-align:right;font-weight:bold;color:#16a34a">$${fmt(totBsEq/tasaActiva)}</td></tr></tfoot></table>`+
-        letterheadClose(`${cuentas.length} cuenta(s) registrada(s)`));
+      let rows=cuentas.map(c=>{const bs=c.moneda==='BS';const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;return`<tr><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta}</td><td>${c.moneda}</td><td style="text-align:right;font-weight:bold">${bs?'Bs.':'$'} ${fmt(c.saldo)}</td><td style="text-align:right;color:#16a34a">$${fmt(usd)}</td><td style="text-align:right;color:#2563eb">Bs.${fmt(bsEq)}</td></tr>`;}).join('');
+      printWindow(letterheadOpen('Reporte General Bancario',`Tasa: ${tasaActiva} Bs/$`)+`<table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Saldo</th><th>En USD</th><th>En Bs.</th></tr></thead><tbody>${rows}</tbody></table>`+letterheadClose(`${cuentas.length} cuenta(s)`));
     };
     return (
-      <div className="space-y-5">
-        <div className="grid grid-cols-3 gap-4">
-          <KPI label="Total Bs." value={`Bs. ${fmt(totBs)}`} accent="blue" Icon={Building2} sub={`$${fmt(totBs/tasaActiva)} USD equiv.`}/>
-          <KPI label="Total USD" value={`$${fmt(totUSD)}`} accent="green" Icon={DollarSign}/>
-          <KPI label="Consolidado USD" value={`$${fmt(totBsEq/tasaActiva)}`} accent="gold" Icon={TrendingUp} sub="Todas las cuentas"/>
+      <div className="space-y-5 w-full min-w-0">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <KPI label="Total Bs." value={`Bs. ${fmt(totBsBanco)}`} accent="blue" Icon={Building2} sub={`$${fmt(totBsBanco/tasaActiva)} USD equiv.`}/>
+          <KPI label="Total USD" value={`$${fmt(totUSDBanco)}`} accent="green" Icon={DollarSign}/>
+          <KPI label="Consolidado USD" value={`$${fmt(totBsEqBanco/tasaActiva)}`} accent="gold" Icon={TrendingUp} sub="Todas las cuentas"/>
         </div>
-        <Card title="Resumen General Bancario" action={<button onClick={imprimir} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700"><Download size={12}/> PDF Membretado</button>}>
+        <Card title="Resumen General Bancario" action={<button onClick={imprimir} className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[9px] font-black uppercase hover:bg-slate-700"><Download size={11}/> PDF</button>}>
           {[{titulo:'Cuentas Nacionales Bs.',tipos:['Nacional-Bs']},{titulo:'Cuentas Moneda Extranjera',tipos:['Nacional-Ext','Internacional']}].map(g=>(
             <div key={g.titulo} className="mb-4">
               <p className="text-xs font-black uppercase text-slate-500 mb-2">{g.titulo}</p>
-              <table className="w-full"><thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead>
-                <tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{
-                  const bs=c.moneda==='BS'; const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo); const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
-                  return <tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
-                })}</tbody>
-              </table>
+              <div className="overflow-x-auto w-full min-w-0">
+                <table className="w-full min-w-[700px]">
+                  <thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead>
+                  <tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{
+                    const bs=c.moneda==='BS'; const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo); const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
+                    return <tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
+                  })}</tbody>
+                </table>
+              </div>
             </div>
           ))}
         </Card>
       </div>
     );
   };
-
-  const ReporteConceptoView = () => {
-    const [search, setSearch] = useState('');
-    const grouped = movBanco.reduce((acc,m)=>{
-      const k=(m.concepto||'Sin concepto').toUpperCase();
-      if(!acc[k]) acc[k]={concepto:k,ingresos:0,egresos:0,count:0};
-      if(m.tipo==='Ingreso') acc[k].ingresos+=Number(m.montoUSD||0);
-      if(m.tipo==='Egreso')  acc[k].egresos +=Number(m.montoUSD||0);
-      acc[k].count++;
-      return acc;
-    },{});
-    const rows=Object.values(grouped).filter(r=>!search||r.concepto.includes(search.toUpperCase())).sort((a,b)=>b.ingresos+b.egresos-(a.ingresos+a.egresos));
-    return (
-      <Card title="Transacciones por Concepto" action={<div className="relative"><Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Filtrar..." className={`${inp} pl-8 w-40`}/></div>}>
-        <table className="w-full"><thead><tr><Th>Concepto</Th><Th right>Transacciones</Th><Th right>Ingresos USD</Th><Th right>Egresos USD</Th><Th right>Neto</Th></tr></thead>
-          <tbody>{rows.length===0&&<tr><td colSpan={5}><EmptyState icon={BookMarked} title="Sin datos" desc="Registre movimientos bancarios"/></td></tr>}
-            {rows.map((r,i)=><tr key={i} className="hover:bg-slate-50">
-              <Td className="font-semibold uppercase max-w-[200px] truncate">{r.concepto}</Td>
-              <Td right mono className="text-slate-500">{r.count}</Td>
-              <Td right mono className="text-emerald-600 font-black">{'$'+fmt(r.ingresos)}</Td>
-              <Td right mono className="text-red-500 font-black">{'$'+fmt(r.egresos)}</Td>
-              <Td right mono className={`font-black ${r.ingresos-r.egresos>=0?'text-emerald-700':'text-red-600'}`}>{'$'+fmt(r.ingresos-r.egresos)}</Td>
-            </tr>)}
-          </tbody>
-        </table>
-      </Card>
-    );
-  };
-
-  // ── Tabla compacta por banco (sin scroll horizontal) ──────────────────────────
-  const BancoTable = ({title, tableRows, onPDF, onXLS}) => {
+  const BancoTable = ({title, tableRows}) => {
     if(tableRows.length===0) return null;
     let saldoRunBs=0, saldoRunUSD=0;
     return(
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
-          <p className="font-black text-xs text-slate-800 uppercase tracking-wide">{title}</p>
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] text-slate-400">{tableRows.length} asiento(s)</span>
-            <button onClick={onPDF} className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-red-700"><Download size={9}/> PDF</button>
-            <button onClick={onXLS} className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={9}/> XLS</button>
-          </div>
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden mb-6 shadow-sm flex flex-col min-w-0 w-full">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
+          <p className="font-black text-sm text-slate-800 uppercase tracking-wider">{title}</p>
+          <span className="text-[10px] text-slate-500 font-medium">{tableRows.length} asiento(s)</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{fontSize:'9px', tableLayout:'fixed', minWidth:'900px'}}>
-            <colgroup>
-              <col style={{width:'90px'}}/><col style={{width:'45px'}}/><col style={{width:'60px'}}/>
-              <col style={{width:'60px'}}/><col style={{width:'130px'}}/><col style={{width:'28px'}}/>
-              <col style={{width:'70px'}}/><col style={{width:'130px'}}/><col style={{width:'45px'}}/>
-              <col style={{width:'70px'}}/><col style={{width:'70px'}}/><col style={{width:'70px'}}/>
-              <col style={{width:'60px'}}/><col style={{width:'60px'}}/><col style={{width:'60px'}}/>
-            </colgroup>
+        <div className="overflow-x-auto w-full min-w-0 pb-2">
+          <table className="w-full text-left min-w-[1400px]">
             <thead>
-              <tr style={{background:'#0f172a'}}>
+              <tr className="bg-slate-900 border-b border-slate-800">
                 {['Comprobante','Mes','Fecha','Código','Cuenta de Movimiento','T','Nro Doc','Concepto','Tasa','Debe Bs.','Haber Bs.','Saldo Bs.','Debe $','Haber $','Saldo $'].map((h,hi)=>(
-                  <th key={hi} className={`px-2 py-2 font-black uppercase text-slate-300 whitespace-nowrap ${hi>=9?'text-right':hi===5?'text-center':'text-left'}`} style={{fontSize:'8px'}}>{h}</th>
+                  <th key={hi} className={`px-4 py-3 font-black uppercase text-white/90 whitespace-nowrap text-[10px] tracking-wider ${hi>=9?'text-right':hi===5?'text-center':'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100 bg-white">
               {tableRows.flatMap((r,idx)=>{
                 const lineas=r.lineas||[];
-                const comp=r.comprobante||r.numero||('CB-'+(idx+1).toString().padStart(4,'0'));
+                const comp=r.comprobante||('CB-'+(idx+1).toString().padStart(4,'0'));
                 const mesL=r.fecha?r.fecha.substring(5,7)+'/'+r.fecha.substring(0,4):'—';
-                const nroDoc=r.nroDocumento||r.referencia||'—';
-                const conc=r.descripcion||r.concepto||'—';
-                const tasa=Number(r.tasa||tasaActiva);
                 return lineas.map((l,li)=>{
                   const dBs=Number(l.debeBs||0),hBs=Number(l.haberBs||0);
                   const dU=Number(l.debeUSD||0),hU=Number(l.haberUSD||0);
                   saldoRunBs+=dBs-hBs; saldoRunUSD+=dU-hU;
                   const isD=l.tipoLinea==='D';
                   return(
-                    <tr key={`${r.id||idx}-${li}`} className={`border-b border-slate-50 hover:bg-indigo-50/30 ${li===0?'border-t border-t-slate-200':''}`}>
-                      <td className="px-2 py-1.5 font-mono font-black text-blue-600 truncate" title={comp}>{li===0?comp:''}</td>
-                      <td className="px-2 py-1.5 text-slate-400">{li===0?mesL:''}</td>
-                      <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{li===0?dd(r.fecha):''}</td>
-                      <td className="px-2 py-1.5 font-mono text-blue-500 truncate">{l.codigo||'—'}</td>
-                      <td className="px-2 py-1.5 font-semibold text-slate-800 truncate" style={{paddingLeft:isD?'6px':'14px'}} title={l.cuenta}>{l.cuenta||'—'}</td>
-                      <td className="px-2 py-1.5 text-center"><span className={`font-black ${isD?'text-emerald-600':'text-red-500'}`}>{l.tipoLinea}</span></td>
-                      <td className="px-2 py-1.5 font-mono text-slate-400 truncate">{li===0?nroDoc:''}</td>
-                      <td className="px-2 py-1.5 text-slate-600 truncate" title={conc}>{li===0?conc:''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-slate-400">{li===0?fmt(tasa):''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-black text-emerald-700 whitespace-nowrap">{dBs>0?'Bs.'+fmt(dBs):''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-black text-red-500 whitespace-nowrap">{hBs>0?'Bs.'+fmt(hBs):''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-slate-400 whitespace-nowrap">{li===lineas.length-1?'Bs.'+fmt(saldoRunBs):''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-black text-emerald-600 whitespace-nowrap">{dU>0?'$'+fmt(dU):''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-black text-red-400 whitespace-nowrap">{hU>0?'$'+fmt(hU):''}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-slate-400 whitespace-nowrap">{li===lineas.length-1?'$'+fmt(saldoRunUSD):''}</td>
+                    <tr key={`${r.id||idx}-${li}`} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-mono font-black text-blue-600 text-[11px] whitespace-nowrap">{li===0?comp:''}</td>
+                      <td className="px-4 py-3 text-slate-400 text-[10px] whitespace-nowrap">{li===0?mesL:''}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[10px] whitespace-nowrap font-mono">{li===0?dd(r.fecha):''}</td>
+                      <td className="px-4 py-3 font-mono font-black text-blue-500 text-[10px]">{l.codigo||'—'}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 text-[10px] uppercase truncate max-w-[200px]" style={{paddingLeft:!isD?'20px':'16px'}} title={l.cuenta}>{l.cuenta||'—'}</td>
+                      <td className="px-4 py-3 text-center font-black text-[11px]"><span className={isD?'text-emerald-600':'text-red-500'}>{l.tipoLinea}</span></td>
+                      <td className="px-4 py-3 font-mono text-slate-400 text-[10px] truncate max-w-[100px]">{li===0?r.nroDocumento:''}</td>
+                      <td className="px-4 py-3 text-slate-600 text-[10px] truncate max-w-[180px] font-medium uppercase" title={r.descripcion}>{li===0?r.descripcion:''}</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-400 text-[10px]">{li===0?fmt(r.tasa):''}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/20">{dBs>0?'Bs.'+fmt(dBs):''}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/20">{hBs>0?'Bs.'+fmt(hBs):''}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{li===lineas.length-1?'Bs.'+fmt(saldoRunBs):''}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/20">{dU>0?'$'+fmt(dU):''}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/20">{hU>0?'$'+fmt(hU):''}</td>
+                      <td className="px-4 py-3 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{li===lineas.length-1?'$'+fmt(saldoRunUSD):''}</td>
                     </tr>
                   );
                 });
               })}
             </tbody>
             <tfoot>
-              <tr style={{background:'#0f172a'}}>
-                <td colSpan={9} className="px-2 py-2 text-left font-black uppercase text-slate-400" style={{fontSize:'8px'}}>TOTALES — {tableRows.length} ASIENTO(S)</td>
-                <td className="px-2 py-2 text-right font-mono font-black text-emerald-400 whitespace-nowrap">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td>
-                <td className="px-2 py-2 text-right font-mono font-black text-red-400 whitespace-nowrap">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td>
+              <tr className="bg-slate-900 border-t-2 border-slate-800">
+                <td colSpan={9} className="px-4 py-4 text-left font-black uppercase tracking-widest text-slate-300 text-[10px]">TOTALES — {tableRows.length} ASIENTO(S)</td>
+                <td className="px-4 py-4 text-right font-mono font-black text-emerald-400 whitespace-nowrap text-[10px]">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td>
+                <td className="px-4 py-4 text-right font-mono font-black text-red-400 whitespace-nowrap text-[10px]">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td>
                 <td></td>
-                <td className="px-2 py-2 text-right font-mono font-black text-emerald-300 whitespace-nowrap">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td>
-                <td className="px-2 py-2 text-right font-mono font-black text-red-300 whitespace-nowrap">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td>
+                <td className="px-4 py-4 text-right font-mono font-black text-emerald-400 whitespace-nowrap text-[10px]">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td>
+                <td className="px-4 py-4 text-right font-mono font-black text-red-400 whitespace-nowrap text-[10px]">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -3940,129 +3915,109 @@ function BancoApp({ fbUser, onBack }) {
       </div>
     );
   };
-
-  const ComprobantesBancariosView = () => {
-    const [filtBanco, setFiltBanco] = useState('');
+  const ComprobantesBancariosView = ({ tipo = 'banco' }) => {
+    const isBanco = tipo === 'banco';
     const [filtDesde, setFiltDesde] = useState(mesActual()+'-01');
     const [filtHasta, setFiltHasta] = useState(today());
-    const [asientosLocal, setAsientosLocal] = useState([]);
-    useEffect(()=>{
-      const u=onSnapshot(query(col('cont_asientos'),orderBy('fecha','desc')),s=>setAsientosLocal(s.docs.map(d=>d.data())));
-      return()=>u();
-    },[]);
-    const applyFiltros=(a,isMov=false)=>{
-      if(!isMov && a.modulo!=='Bancos') return false;
-      if(filtDesde && a.fecha<filtDesde) return false;
-      if(filtHasta && a.fecha>filtHasta) return false;
-      const bancoId=isMov?a.cuentaId:movBanco.find(m=>m.id===a.movimientoBancoId)?.cuentaId;
-      if(filtBanco && bancoId!==filtBanco) return false;
+    const dataSource = isBanco ? movBanco : movCaja;
+    const filteredMovs = dataSource.filter(m => {
+      if (m.fecha < filtDesde || m.fecha > filtHasta) return false;
+      if (!(m.asientoDebito || m.asientoCredito || (m.lineasContra && m.lineasContra.length > 0))) return false;
       return true;
-    };
-    const asientosMes=asientosLocal.filter(a=>applyFiltros(a,false));
-    const rows=asientosMes.length>0?asientosMes:movBanco.filter(m=>{
-      if(!(m.asientoDebito||m.asientoCredito)) return false;
-      return applyFiltros(m,true);
-    }).map(m=>({id:m.id,comprobante:m.asientoContableId||m.id,fecha:m.fecha,descripcion:m.concepto,nroDocumento:m.referencia||'',tasa:m.tasa,cuentaNombre:m.cuentaNombre,lineas:[{codigo:'',cuenta:m.asientoDebito,tipoLinea:'D',debeBs:m.montoBs,haberBs:0,debeUSD:m.montoUSD,haberUSD:0},{codigo:'',cuenta:m.asientoCredito,tipoLinea:'H',debeBs:0,haberBs:m.montoBs,debeUSD:0,haberUSD:m.montoUSD}]}));
-
-    const getMovCuentaId=r=>movBanco.find(m=>m.id===r.movimientoBancoId)?.cuentaId||null;
-
-    const buildHTML=(tableRows,titulo)=>{
-      let sBs=0,sUSD=0;
-      const rowsHtml=tableRows.flatMap(r=>{
-        const lineas=r.lineas||[];
-        const comp=r.comprobante||'—';
-        const mesL=r.fecha?r.fecha.substring(5,7)+'/'+r.fecha.substring(0,4):'—';
-        const nroDoc=r.nroDocumento||r.referencia||'—';
-        const conc=r.descripcion||r.concepto||'—';
-        const tasa=Number(r.tasa||tasaActiva);
-        return lineas.map((l,li)=>{
-          const dBs=Number(l.debeBs||0),hBs=Number(l.haberBs||0);
-          const dU=Number(l.debeUSD||0),hU=Number(l.haberUSD||0);
-          sBs+=dBs-hBs; sUSD+=dU-hU;
-          return `<tr style="border-bottom:1px solid #e2e8f0${li%2===0?'':';background:#f8fafc'}">
-            <td>${li===0?comp:''}</td><td>${li===0?mesL:''}</td><td>${li===0?dd(r.fecha):''}</td>
-            <td style="font-family:monospace;color:#2563eb">${l.codigo||'—'}</td>
-            <td style="padding-left:${l.tipoLinea==='H'?'16':'4'}px">${l.cuenta||'—'}</td>
-            <td style="text-align:center;font-weight:900;color:${l.tipoLinea==='D'?'#16a34a':'#dc2626'}">${l.tipoLinea}</td>
-            <td>${li===0?nroDoc:''}</td><td>${li===0?conc:''}</td>
-            <td style="text-align:right">${li===0?fmt(tasa):''}</td>
-            <td style="text-align:right;color:#16a34a">${dBs>0?'Bs.'+fmt(dBs):''}</td>
-            <td style="text-align:right;color:#dc2626">${hBs>0?'Bs.'+fmt(hBs):''}</td>
-            <td style="text-align:right;color:#475569">${li===lineas.length-1?'Bs.'+fmt(sBs):''}</td>
-            <td style="text-align:right;color:#16a34a">${dU>0?'$'+fmt(dU):''}</td>
-            <td style="text-align:right;color:#dc2626">${hU>0?'$'+fmt(hU):''}</td>
-            <td style="text-align:right;color:#475569">${li===lineas.length-1?'$'+fmt(sUSD):''}</td>
-          </tr>`;
-        });
-      }).join('');
-      return letterheadOpen(`Comprobante Contable Bancario — ${titulo}`,`${tableRows.length} asiento(s) · Tasa ${tasaActiva} Bs/$ · ${dd(today())}`)+
-        `<style>table{font-size:9px;border-collapse:collapse;width:100%}th{background:#0f172a;color:#94a3b8;padding:6px 8px;text-align:left;font-size:8px;text-transform:uppercase;white-space:nowrap}td{padding:4px 8px;vertical-align:middle}</style>
-        <table><thead><tr><th>Comprobante</th><th>Mes</th><th>Fecha</th><th>Código</th><th>Cuenta de Movimiento</th><th style="text-align:center">T</th><th>Nro Doc</th><th>Concepto</th><th style="text-align:right">Tasa</th><th style="text-align:right;color:#4ade80">Debe Bs.</th><th style="text-align:right;color:#f87171">Haber Bs.</th><th style="text-align:right">Saldo Bs.</th><th style="text-align:right;color:#4ade80">Debe $</th><th style="text-align:right;color:#f87171">Haber $</th><th style="text-align:right">Saldo $</th></tr></thead>
-        <tbody>${rowsHtml}</tbody>
-        <tfoot><tr style="background:#0f172a"><td colspan="9" style="color:#64748b;font-weight:900;font-size:8px">TOTALES — ${tableRows.length} asiento(s)</td>
-        <td style="text-align:right;color:#4ade80">Bs.${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td>
-        <td style="text-align:right;color:#f87171">Bs.${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td>
-        <td/><td style="text-align:right;color:#4ade80">$${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td>
-        <td style="text-align:right;color:#f87171">$${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td>
-        <td/></tr></tfoot></table>`+letterheadClose('Módulo: Tesorería & Bancos');
-    };
-    const imprimirPDF=(tr,tl)=>printWindow(buildHTML(tr,tl));
-    const imprimirXLS=(tr,tl)=>{const h=buildHTML(tr,tl);const b=new Blob([h],{type:'application/vnd.ms-excel;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`comp_banco_${today()}.xls`;a.click();URL.revokeObjectURL(u);};
-
+    });
+    const rows = filteredMovs.map(m => {
+      const isIngreso=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
+      const dBs=isIngreso?Number(m.montoBs||0):0; const hBs=isIngreso?0:Number(m.montoBs||0);
+      const dU=isIngreso?Number(m.montoUSD||0):0;  const hU=isIngreso?0:Number(m.montoUSD||0);
+      let lineas=[];
+      lineas.push({codigo:isBanco?(cuentas.find(c=>c.id===m.cuentaId)?.cuentaContableCod||''):'1.1.01.01.001',cuenta:isBanco?(m.cuentaNombre||'BANCO'):'CAJA PRINCIPAL',tipoLinea:isIngreso?'D':'H',debeBs:dBs,haberBs:hBs,debeUSD:dU,haberUSD:hU});
+      if(m.lineasContra&&m.lineasContra.length>0){
+        m.lineasContra.forEach(l=>lineas.push({codigo:l.ctaNom?l.ctaNom.split('·')[0].trim():'',cuenta:l.ctaNom?(l.ctaNom.split('·')[1]?.trim()||l.ctaNom):l.ctaNom,tipoLinea:Number(l.debeBs)>0?'D':'H',debeBs:Number(l.debeBs||0),haberBs:Number(l.haberBs||0),debeUSD:Number(l.debeUSD||0),haberUSD:Number(l.haberUSD||0)}));
+      } else {
+        lineas.push({codigo:'',cuenta:isIngreso?m.asientoCredito:m.asientoDebito,tipoLinea:isIngreso?'H':'D',debeBs:hBs,haberBs:dBs,debeUSD:hU,haberUSD:dU});
+      }
+      return {id:m.id,comprobante:m.asientoContableId||m.id.substring(0,8).toUpperCase(),fecha:m.fecha,descripcion:m.esVale?`[VALE] ${m.concepto}`:m.concepto,nroDocumento:m.referencia||'',tasa:m.tasa,lineas};
+    });
     return (
-      <div className="space-y-3">
-        {/* Filtros */}
-        <div className="bg-white rounded-xl border border-slate-100 p-3 flex flex-wrap items-end gap-3">
-          <FG label="Banco">
-            <select className={`${sel} min-w-[160px]`} value={filtBanco} onChange={e=>setFiltBanco(e.target.value)}>
-              <option value="">Todos los bancos</option>
-              {[{label:'🇻🇪 Nacionales Bs.',items:cuentas.filter(c=>c.tipoBanco==='Nacional-Bs')},
-                {label:'💵 Moneda Extranjera',items:cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs')}
-              ].map(g=>g.items.length>0&&(
-                <optgroup key={g.label} label={g.label}>{g.items.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}</optgroup>
-              ))}
-            </select>
-          </FG>
+      <div className="space-y-5 w-full min-w-0">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-wrap items-end gap-5">
           <FG label="Desde"><input type="date" className={inp} value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/></FG>
           <FG label="Hasta"><input type="date" className={inp} value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/></FG>
-          {(filtBanco||filtDesde!==mesActual()+'-01'||filtHasta!==today())&&(
-            <button onClick={()=>{setFiltBanco('');setFiltDesde(mesActual()+'-01');setFiltHasta(today());}} className="self-end mb-0.5 text-[9px] font-black text-slate-400 hover:text-red-500 px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-red-50">✕</button>
-          )}
-          <div className="ml-auto self-end flex gap-2">
-            <button onClick={()=>imprimirPDF(rows,filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':mesActual())} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase hover:bg-red-700"><Download size={10}/> PDF</button>
-            <button onClick={()=>imprimirXLS(rows,filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':mesActual())} className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase hover:bg-emerald-700"><FileSpreadsheet size={10}/> Excel</button>
-          </div>
-          <p className="w-full text-[9px] text-slate-400 mt-1">{filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':'Todos los bancos'} · {dd(filtDesde)} al {dd(filtHasta)} · <strong className="text-slate-700">{rows.length} resultado(s)</strong></p>
+          <p className="text-[11px] text-slate-500 font-medium self-end">{dd(filtDesde)} al {dd(filtHasta)} — <span className="font-black text-slate-800">{rows.length} comprobante(s)</span></p>
         </div>
-
-        {/* Tablas agrupadas por banco */}
-        {rows.length===0&&<div className="bg-white rounded-xl border border-slate-100 p-8 text-center text-slate-400 text-sm">Sin asientos contables en el período seleccionado.</div>}
-        {filtBanco
-          ? <BancoTable title={cuentas.find(c=>c.id===filtBanco)?.banco||'Banco'} tableRows={rows} onPDF={()=>imprimirPDF(rows,cuentas.find(c=>c.id===filtBanco)?.banco||'Banco')} onXLS={()=>imprimirXLS(rows,cuentas.find(c=>c.id===filtBanco)?.banco||'Banco')}/>
-          : (()=>{
-              const grupos=[
-                {label:'🇻🇪 Cuentas Nacionales — Bolívares', bancos:cuentas.filter(c=>c.tipoBanco==='Nacional-Bs')},
-                {label:'🌐 Bancos Internacionales & ME',      bancos:cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs')},
-              ];
-              return grupos.map(g=>{
-                const bancosConMovs=g.bancos.filter(c=>rows.some(r=>getMovCuentaId(r)===c.id));
-                if(bancosConMovs.length===0) return null;
-                return(
-                  <div key={g.label} className="space-y-3">
-                    <div className="flex items-center gap-2"><p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{g.label}</p><div className="flex-1 h-px bg-slate-100"/></div>
-                    {bancosConMovs.map(c=>{
-                      const bancoRows=rows.filter(r=>getMovCuentaId(r)===c.id);
-                      return <BancoTable key={c.id} title={`${c.banco} · ${c.numeroCuenta}`} tableRows={bancoRows} onPDF={()=>imprimirPDF(bancoRows,c.banco)} onXLS={()=>imprimirXLS(bancoRows,c.banco)}/>;
-                    })}
-                  </div>
-                );
-              });
-            })()
-        }
+        {rows.length===0&&<div className="bg-white rounded-2xl border border-slate-200 p-12 shadow-sm"><EmptyState icon={BookOpen} title="Sin asientos" desc="No hay registros para este filtro."/></div>}
+        {rows.length>0&&<BancoTable title={`Comprobantes de ${isBanco?'Bancos':'Caja'}`} tableRows={rows}/>}
       </div>
     );
   };
-  const views = {dashboard:<DashboardView/>,cuentas:<CuentasView/>,movimientos:<MovimientosView/>,conciliacion:<ConciliacionView/>,caja_op:<CajaOpView/>,vales:<ValesView/>,arqueo:<ArqueoCajaView/>,reportes:<ReportesView/>,rpt_gral:<ReportesGeneralView/>,rpt_conc:<ConciliacionView/>,rpt_concepto:<ReporteConceptoView/>,rpt_comp:<ComprobantesBancariosView/>,tasas:<TasasView/>};
+
+  const RepLibroDiarioView = () => {
+    const allMovs=[...movBanco.map(m=>({...m,origen:'Banco'})),...movCaja.map(m=>({...m,origen:'Caja'}))];
+    allMovs.sort((a,b)=>b.fecha.localeCompare(a.fecha));
+    return(
+      <div className="space-y-5 flex flex-col min-w-0 w-full">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <h2 className="text-lg font-black text-slate-800 uppercase tracking-wide">Libro Diario General (Bimonetario)</h2>
+          <p className="text-xs text-slate-500 font-medium mt-1">Registro cronológico de partida doble de todas las transacciones de Banco y Caja.</p>
+        </div>
+        <div className="space-y-5 flex flex-col min-w-0">
+          {allMovs.map((m,idx)=>{
+            const isIngreso=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
+            const tasa=Number(m.tasa)||1; const mNat=Number(m.montoNativo)||Number(m.monto)||0;
+            const isBanco=m.origen==='Banco';
+            const ctaOrigen=isBanco?cuentas.find(c=>c.id===m.cuentaId):{moneda:m.moneda,banco:'CAJA',cuentaContableCod:'1.1.01.01.001'};
+            if(!ctaOrigen) return null;
+            const valBs=ctaOrigen.moneda==='BS'?mNat:mNat*tasa;
+            const valUSD=ctaOrigen.moneda==='BS'?mNat/tasa:mNat;
+            let lineas=[{codigo:ctaOrigen.cuentaContableCod||'—',nombre:isBanco?ctaOrigen.banco:'CAJA PRINCIPAL',dBs:isIngreso?valBs:0,hBs:isIngreso?0:valBs,dUSD:isIngreso?valUSD:0,hUSD:isIngreso?0:valUSD,isMain:true}];
+            if(m.lineasContra&&m.lineasContra.length>0){m.lineasContra.forEach(l=>lineas.push({codigo:l.ctaNom?l.ctaNom.split('·')[0].trim():'',nombre:l.ctaNom?l.ctaNom.split('·')[1]?.trim():l.ctaNom,dBs:Number(l.debeBs||0),hBs:Number(l.haberBs||0),dUSD:Number(l.debeUSD||0),hUSD:Number(l.haberUSD||0)}));}
+            else if(m.asientoDebito||m.asientoCredito){lineas.push({codigo:'',nombre:isIngreso?m.asientoCredito:m.asientoDebito,dBs:isIngreso?0:valBs,hBs:isIngreso?valBs:0,dUSD:isIngreso?0:valUSD,hUSD:isIngreso?valUSD:0});}
+            if(lineas.length<2) return null;
+            return(
+              <div key={m.id} className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden flex flex-col min-w-0">
+                <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black text-slate-900 bg-amber-400 px-2 py-1 rounded tracking-widest">ASIENTO N° {allMovs.length-idx}</span>
+                    <span className="text-[11px] text-white font-mono font-bold">{dd(m.fecha)}</span>
+                  </div>
+                  <Badge v={isBanco?'blue':'green'}>{m.origen}</Badge>
+                </div>
+                <div className="p-4 border-b border-slate-200 bg-slate-50 text-xs text-slate-600 font-medium">Concepto: <span className="font-bold text-slate-800">{m.esVale?`[VALE] ${m.concepto}`:m.concepto}</span></div>
+                <div className="overflow-x-auto w-full min-w-0">
+                  <table className="w-full text-left min-w-[700px]">
+                    <thead><tr className="border-b-2 border-slate-200 text-slate-400 bg-white"><Th>Cuenta</Th><Th>Descripción</Th><Th right>Debe Bs.</Th><Th right>Haber Bs.</Th><Th right>Debe $</Th><Th right>Haber $</Th></tr></thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {lineas.map((l,i)=>(
+                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                          <Td mono className="font-black text-blue-600 text-[11px]">{l.codigo}</Td>
+                          <Td className={`text-[10px] uppercase tracking-wide ${l.isMain?'font-black text-slate-900':'font-bold text-slate-500'}`}>{l.nombre}</Td>
+                          <Td right mono className="text-emerald-700 font-black bg-emerald-50/30">{l.dBs>0?fmt(l.dBs):''}</Td>
+                          <Td right mono className="text-red-700 font-black bg-red-50/30">{l.hBs>0?fmt(l.hBs):''}</Td>
+                          <Td right mono className="text-emerald-700 text-[10px] font-bold">{l.dUSD>0?fmt(l.dUSD):''}</Td>
+                          <Td right mono className="text-red-700 text-[10px] font-bold">{l.hUSD>0?fmt(l.hUSD):''}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+          {allMovs.length===0&&<div className="bg-white rounded-xl p-10 text-center text-slate-400">Sin movimientos registrados.</div>}
+        </div>
+      </div>
+    );
+  };
+  const views = {
+    dashboard:<DashboardView/>, cuentas:<CuentasView/>, movimientos:<MovimientosView/>,
+    conciliacion:<ConciliacionView/>, caja_op:<CajaOpView/>, vales:<ValesView/>, arqueo:<ArqueoCajaView/>,
+    rpt_gral_banco:<ReportesGeneralView tipo="banco"/>,
+    rpt_gral_caja:<ReportesGeneralView tipo="caja"/>,
+    rpt_comp_banco:<ComprobantesBancariosView tipo="banco"/>,
+    rpt_comp_caja:<ComprobantesBancariosView tipo="caja"/>,
+    rpt_libro:<RepLibroDiarioView/>,
+    tasas:<TasasView/>
+  };
   const curNav = navGroups.flatMap(g=>g.items).find(n=>n.id===sec);
 
   return (
