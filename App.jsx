@@ -174,7 +174,7 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-[98vw] h-[96vh]' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[96vh] flex flex-col shadow-2xl overflow-hidden`}>
+      <div className={`bg-white rounded-2xl w-full ${xwide ? 'max-w-[95vw] h-[92vh]' : wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[92vh] flex flex-col shadow-2xl overflow-hidden`}>
         {!noHeader&&<div className="flex items-center justify-between px-7 py-5 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
           <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
           <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"><X size={16} className="text-white" /></button>
@@ -1256,9 +1256,10 @@ function InventarioApp({ fbUser, onBack }) {
 const PRINT_STYLE = `@media print{.no-print{display:none!important}.print-only{display:block!important}body{background:#fff}@page{margin:1.5cm}}`;
 
 const TIPO_BANCO = [
-  { id:'Nacional-Bs',   label:'Banco Nacional — Bs.',   moneda:'BS',  flag:'🇻🇪' },
-  { id:'Nacional-Ext',  label:'Banco Nacional — USD',   moneda:'USD', flag:'🏦' },
-  { id:'Internacional', label:'Banco Internacional',     moneda:'USD', flag:'🌐' },
+  { id:'Nacional-Bs',   label:'Banco Nacional — Bs.',         moneda:'BS',  flag:'🇻🇪' },
+  { id:'Nacional-Ext',  label:'Banco Nacional — USD (ME)',     moneda:'USD', flag:'🏦' },
+  { id:'Internacional', label:'Banco Internacional — USD',     moneda:'USD', flag:'🌐' },
+  { id:'Pago-Movil',    label:'Pago Móvil (no bancario)',      moneda:'BS',  flag:'📱' },
 ];
 
 // Denominaciones VES para arqueo
@@ -1761,10 +1762,11 @@ function BancoApp({ fbUser, onBack }) {
     const [busy,     setBusy]    = useState(false);
     const [comprobante, setComprobante] = useState(null); // modal de comprobante imprimible
 
-    // Helper: cuenta selector con grupos Bs/USD
+    // Helper: cuenta selector con grupos Bs/USD — excluye Pago Móvil
+    const esBancario = c => c.tipoBanco!=='Pago-Movil' && c.tipoBanco!=='Pago Móvil';
     const CuentaSelector = ({value, onChange, label, excluirId}) => {
-      const nacBs=cuentas.filter(c=>c.tipoBanco==='Nacional-Bs'&&c.id!==excluirId);
-      const ext  =cuentas.filter(c=>(c.tipoBanco==='Nacional-Ext'||c.tipoBanco==='Internacional')&&c.id!==excluirId);
+      const nacBs=cuentas.filter(c=>c.tipoBanco==='Nacional-Bs'&&c.id!==excluirId&&esBancario(c));
+      const ext  =cuentas.filter(c=>(c.tipoBanco==='Nacional-Ext'||c.tipoBanco==='Internacional')&&c.id!==excluirId&&esBancario(c));
       return (
         <FG label={label||'Cuenta Bancaria'} full>
           <div className="space-y-2">
@@ -2151,11 +2153,21 @@ function BancoApp({ fbUser, onBack }) {
       );
     };
 
-    const movFilt = movBanco.filter(m=>{
+    const movFiltAll = movBanco.filter(m=>{
       if(filtC     && m.cuentaId!==filtC)   return false;
       if(filtDesde && m.fecha<filtDesde)     return false;
       if(filtHasta && m.fecha>filtHasta)     return false;
       return true;
+    });
+    // Split by moneda de la cuenta
+    const movFilt     = movFiltAll; // kept for compat (tfoot balance)
+    const movFiltBS   = movFiltAll.filter(m=>{
+      const c=cuentas.find(x=>x.id===m.cuentaId);
+      return c?.moneda==='BS'||c?.tipoBanco==='Nacional-Bs';
+    });
+    const movFiltUSD  = movFiltAll.filter(m=>{
+      const c=cuentas.find(x=>x.id===m.cuentaId);
+      return c?.moneda!=='BS'&&c?.tipoBanco!=='Nacional-Bs';
     });
 
     return (
@@ -2410,38 +2422,40 @@ function BancoApp({ fbUser, onBack }) {
         )}
 
         {/* ── FILTROS + TABLA ── */}
-        <Card title="Movimientos Bancarios" subtitle="Ingresos · Egresos · Traslados"
-          action={
-            <div className="flex gap-2 flex-wrap items-center">
-              <div className="flex rounded-xl overflow-hidden border-2 border-slate-200">
-                <button onClick={()=>setMonedaVista('BS')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='BS'?'bg-blue-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>Bs.</button>
-                <button onClick={()=>setMonedaVista('USD')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='USD'?'bg-emerald-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>USD $</button>
-              </div>
-              <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
-                <option value="">Todos los bancos</option>
-                {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').length>0&&<optgroup label="🇻🇪 Bolívares">
-                  {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
-                </optgroup>}
-                {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').length>0&&<optgroup label="💵 Moneda Extranjera">
-                  {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco} ({c.moneda})</option>)}
-                </optgroup>}
-              </select>
-              <div className="flex items-center gap-1.5">
-                <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtDesde} onChange={e=>setFiltD(e.target.value)} title="Desde"/>
-                <span className="text-slate-400 text-xs font-bold">—</span>
-                <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
-              </div>
-              {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
-              <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
-              <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
-            </div>
-          }>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto / Tercero</Th><Th right>{monedaVista==='BS'?'Bs.':'USD'}</Th><Th right>Tasa</Th><Th>Estado</Th><Th></Th></tr></thead>
-              <tbody>
-                {movFilt.length===0&&<tr><td colSpan={8}><EmptyState icon={ArrowLeftRight} title="Sin movimientos" desc="Registre transacciones bancarias"/></td></tr>}
-                {movFilt.map(m=><tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(m.id)}>
+        {/* ── FILTROS COMUNES ── */}
+        <div className="flex gap-2 flex-wrap items-center bg-white rounded-2xl border border-slate-100 p-3 mb-2">
+          <div className="flex rounded-xl overflow-hidden border-2 border-slate-200">
+            <button onClick={()=>setMonedaVista('BS')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='BS'?'bg-blue-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>Bs.</button>
+            <button onClick={()=>setMonedaVista('USD')} className={`px-3 py-1.5 text-[10px] font-black uppercase transition-all ${monedaVista==='USD'?'bg-emerald-600 text-white':'bg-white text-slate-500 hover:bg-slate-50'}`}>USD $</button>
+          </div>
+          <select className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-700" value={filtC} onChange={e=>setFiltC(e.target.value)}>
+            <option value="">Todos los bancos</option>
+            {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').length>0&&<optgroup label="🇻🇪 Bolívares">
+              {cuentas.filter(c=>c.tipoBanco==='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}
+            </optgroup>}
+            {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').length>0&&<optgroup label="💵 Moneda Extranjera">
+              {cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs').map(c=><option key={c.id} value={c.id}>{c.banco} ({c.moneda})</option>)}
+            </optgroup>}
+          </select>
+          <div className="flex items-center gap-1.5">
+            <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtDesde} onChange={e=>setFiltD(e.target.value)} title="Desde"/>
+            <span className="text-slate-400 text-xs font-bold">—</span>
+            <input type="date" className="border-2 border-slate-200 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-blue-500" value={filtHasta} onChange={e=>setFiltH(e.target.value)} title="Hasta"/>
+          </div>
+          {(filtC||filtDesde||filtHasta)&&<button onClick={()=>{setFiltC('');setFiltD('');setFiltH('');}} className="text-[9px] font-black uppercase text-slate-400 hover:text-red-500 px-2">✕ Limpiar</button>}
+          <button onClick={()=>exportarMovimientos('excel')} className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={12}/> Excel</button>
+          <Bg onClick={()=>{setForm(initF());setModal(true);}}><Plus size={13}/> Nuevo</Bg>
+        </div>
+
+        {/* ── TABLA NACIONALES — Bs. ── */}
+        {(()=>{const movRows=filtC?movFiltAll.filter(m=>m.cuentaId===filtC):movFiltBS; return(
+          <Card title={`🇻🇪 Cuentas Nacionales — Bolívares`} subtitle={`${movRows.length} movimiento(s)`}>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto / Tercero</Th><Th right>Bs.</Th><Th right>Tasa</Th><Th>Estado</Th><Th></Th></tr></thead>
+                <tbody>
+                  {movRows.length===0&&<tr><td colSpan={8}><EmptyState icon={ArrowLeftRight} title="Sin movimientos nacionales" desc="Registre transacciones en cuentas Bs."/></td></tr>}
+                                  {movRows.map(m=><tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(m.id)}>
                   <Td>{dd(m.fecha)}</Td>
                   <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'gold':m.tipo==='Nota de Débito'?'red':m.tipo==='Nota de Crédito'?'green':'blue'}>{(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'Traslado':m.tipo==='Nota de Débito'?'N.Débito':m.tipo==='Nota de Crédito'?'N.Crédito':m.tipo}</Badge></Td>
                   <Td className="font-semibold text-[11px] max-w-[90px] truncate">{m.cuentaNombre}</Td>
@@ -2461,21 +2475,67 @@ function BancoApp({ fbUser, onBack }) {
                     </div>
                   </Td>
                 </tr>)}
-              </tbody>
-              {movFilt.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
+                </tbody>
+                              {movRows.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
                 <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 text-left">BALANCE NETO (INGRESOS - EGRESOS)</td>
                 <td className="px-4 py-3 text-right font-mono font-black text-white">
-                  {(monedaVista==='BS'?'Bs.':'$')+fmt(movFilt.reduce((a,m)=>{
+                  {(monedaVista==='BS'?'Bs.':'$')+fmt(movRows.reduce((a,m)=>{
                     if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
                     if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
-                    return a; // Traslados y otros: valor neutro
+                    return a;
                   },0))}
                 </td>
                 <td colSpan={3}></td>
               </tr></tfoot>}
-            </table>
-          </div>
-        </Card>
+              </table>
+            </div>
+          </Card>
+        );})()}
+
+        {/* ── TABLA INTERNACIONALES — USD/ME ── */}
+        {!filtC&&(()=>{const movRows=movFiltUSD; return(
+          <Card title={`🌐 Cuentas Internacionales & Moneda Extranjera`} subtitle={`${movRows.length} movimiento(s)`}>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead><tr><Th>Fecha</Th><Th>Tipo</Th><Th>Banco</Th><Th>Concepto / Tercero</Th><Th right>$</Th><Th right>Tasa</Th><Th>Estado</Th><Th></Th></tr></thead>
+                <tbody>
+                  {movRows.length===0&&<tr><td colSpan={8}><EmptyState icon={ArrowLeftRight} title="Sin movimientos internacionales" desc="Registre transacciones en cuentas USD"/></td></tr>}
+                                  {movRows.map(m=><tr key={m.id} className="hover:bg-slate-50 cursor-pointer" onClick={()=>setDetalle(m.id)}>
+                  <Td>{dd(m.fecha)}</Td>
+                  <Td><Badge v={m.tipo==='Ingreso'?'green':m.tipo==='Egreso'?'red':(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'gold':m.tipo==='Nota de Débito'?'red':m.tipo==='Nota de Crédito'?'green':'blue'}>{(m.tipo==='Traslado Banco→Caja'||m.tipo==='Traslado de Fondo')?'Traslado':m.tipo==='Nota de Débito'?'N.Débito':m.tipo==='Nota de Crédito'?'N.Crédito':m.tipo}</Badge></Td>
+                  <Td className="font-semibold text-[11px] max-w-[90px] truncate">{m.cuentaNombre}</Td>
+                  <Td className="max-w-[200px]">
+                    <p className="text-slate-800 text-[11px] font-medium truncate">{m.concepto}</p>
+                    {m.aplicaTercero&&m.terceroNombre&&<p className="text-[10px] text-blue-600 font-black truncate">{m.terceroNombre}{m.referencia?` · ${m.referencia}`:''}</p>}
+                    {(!m.aplicaTercero||!m.terceroNombre)&&m.referencia&&<p className="text-[10px] text-slate-400 font-mono">{m.referencia}</p>}
+                  </Td>
+                  <Td right mono className={`font-black ${m.tipo==='Ingreso'?'text-emerald-600':'text-red-500'}`}>{monedaVista==='BS'?`Bs.${fmt(m.montoBs)}`:`$${fmt(m.montoUSD)}`}</Td>
+                  <Td right mono className="text-slate-400 text-[10px]">{m.tasa}</Td>
+                  <Td><Badge v={m.estatus==='Conciliado'?'green':'gray'}>{m.estatus==='Conciliado'?'✓ Conc.':'Pend.'}</Badge></Td>
+                  <Td>
+                    <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>setDetalle(m.id)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg" title="Ver detalle"><Search size={12}/></button>
+                      <button onClick={()=>abrirEdicion(m)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg" title="Editar"><Settings size={12}/></button>
+                      <button onClick={e=>{e.stopPropagation();pedirEliminar(m);}} disabled={m.estatus==='Conciliado'} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg disabled:opacity-30" title="Eliminar (clave admin)"><Trash2 size={12}/></button>
+                    </div>
+                  </Td>
+                </tr>)}
+                </tbody>
+                              {movRows.length>0&&<tfoot><tr style={{background:'#0f172a'}}>
+                <td colSpan={4} className="px-4 py-3 text-[10px] font-black uppercase text-slate-400 text-left">BALANCE NETO (INGRESOS - EGRESOS)</td>
+                <td className="px-4 py-3 text-right font-mono font-black text-white">
+                  {(monedaVista==='BS'?'Bs.':'$')+fmt(movRows.reduce((a,m)=>{
+                    if(m.tipo==='Ingreso'||m.tipo==='Nota de Crédito') return a+Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
+                    if(m.tipo==='Egreso'||m.tipo==='Nota de Débito')  return a-Number(monedaVista==='BS'?m.montoBs:m.montoUSD);
+                    return a;
+                  },0))}
+                </td>
+                <td colSpan={3}></td>
+              </tr></tfoot>}
+              </table>
+            </div>
+          </Card>
+        );})()}
 
         {/* ── COMPROBANTE IMPRIMIBLE ── */}
         {comprobante&&(
@@ -2577,10 +2637,10 @@ function BancoApp({ fbUser, onBack }) {
             {/* ══ COLUMNA IZQUIERDA: FORMULARIO ══ */}
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* Header */}
-              <div className="px-6 py-4 flex justify-between items-center flex-shrink-0" style={{background:'#0f172a'}}>
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-600/30 p-2 rounded-lg border border-blue-500/30"><ArrowLeftRight size={16} className="text-blue-400"/></div>
-                  <p className="font-black text-white text-sm uppercase tracking-wide">Registro Operativo Bimonetario</p>
+              <div className="px-4 py-3 flex justify-between items-center flex-shrink-0" style={{background:'#0f172a'}}>
+                <div className="flex items-center gap-2">
+                  <div className="bg-blue-600/30 p-1.5 rounded-lg border border-blue-500/30"><ArrowLeftRight size={13} className="text-blue-400"/></div>
+                  <p className="font-black text-white text-xs uppercase tracking-wide">Registro Operativo Bimonetario</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-[9px] font-black tracking-widest border border-emerald-500/30 flex items-center gap-1.5">
@@ -2590,9 +2650,9 @@ function BancoApp({ fbUser, onBack }) {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {/* ── Fila 1: Banco + Tipo + Ref + Fecha ── */}
-                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
                   <div>
                     <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label="Banco / Cuenta de Origen"/>
                   </div>
@@ -2673,7 +2733,14 @@ function BancoApp({ fbUser, onBack }) {
                       {form.tipo==='Nota de Débito'?'▼ Nota de Débito — Cuenta de Gasto / Comisión':'▲ Nota de Crédito — Cuenta de Ingreso / Interés'}
                     </p>
                     <FG label="Cuenta Contable del Ajuste">
-                      <div className="relative mb-1">
+                      {/* Accesos rápidos: comisiones e intereses */}
+                      {[...contCuentas].filter(c=>c.nombre?.toUpperCase().includes('COMIS')||c.nombre?.toUpperCase().includes('BANCARI')||c.nombre?.toUpperCase().includes('INTERES')||c.nombre?.toUpperCase().includes('INTERÉS')).slice(0,4).map(c=>(
+                        <button key={c.id} onClick={()=>setForm({...form,cuentaAjusteId:c.id})}
+                          className={`mr-1 mb-1.5 px-2 py-1 rounded-lg text-[9px] font-black uppercase border transition-all ${form.cuentaAjusteId===c.id?'bg-rose-600 text-white border-rose-600':'bg-white text-slate-600 border-slate-200 hover:border-rose-300'}`}>
+                          ⚡ {c.codigo} · {c.nombre.length>22?c.nombre.substring(0,22)+'…':c.nombre}
+                        </button>
+                      ))}
+                      <div className="relative mb-1 mt-1">
                         <Search size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
                         <input value={busqCtas['ajuste']||''} onChange={e=>setBusqCtas(p=>({...p,ajuste:e.target.value}))}
                           placeholder="Buscar cuenta por código o nombre..." className={`${inp} pl-8 text-[11px]`}/>
@@ -2805,13 +2872,13 @@ function BancoApp({ fbUser, onBack }) {
             </div>
 
             {/* ══ COLUMNA DERECHA: RESUMEN BANCO + PREVIEW ASIENTO ══ */}
-            <div className="w-80 flex-shrink-0 flex flex-col bg-slate-50 border-l border-slate-200 overflow-y-auto">
+            <div className="w-72 flex-shrink-0 flex flex-col bg-slate-50 border-l border-slate-200 overflow-y-auto">
               {/* Header columna derecha */}
               <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0">
                 <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Estado Operativo</p>
               </div>
 
-              <div className="p-5 space-y-5 flex-1">
+              <div className="p-4 space-y-3 flex-1">
                 {/* Bank summary */}
                 {form.cuentaId&&<BancoInfoPanel cuentaId={form.cuentaId}/>}
                 {!form.cuentaId&&<div className="flex flex-col items-center justify-center text-center p-8 bg-white rounded-2xl border-2 border-dashed border-slate-200 min-h-[180px]">
@@ -2892,9 +2959,9 @@ function BancoApp({ fbUser, onBack }) {
               </div>
 
               {/* Action bar */}
-              <div className="p-5 border-t border-slate-200 bg-white flex-shrink-0 space-y-3">
+              <div className="p-4 border-t border-slate-200 bg-white flex-shrink-0 space-y-2">
                 <button onClick={save} disabled={busy}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none">
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none">
                   {busy?<><RefreshCw size={15} className="animate-spin"/> Procesando...</>:<><Save size={16}/> Procesar y Ver Comprobante</>}
                 </button>
                 <button onClick={()=>{setModal(false);setForm(initF());}} className="w-full py-2 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 transition-colors">
