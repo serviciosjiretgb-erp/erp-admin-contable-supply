@@ -137,8 +137,14 @@ const letterheadClose = (extra='') => `
 const printWindow = (html) => { const w=window.open('','_blank'); w.document.write(html); w.document.close(); };
 
 
-// ── Bank Logo Fetcher (Clearbit) ────────────────────────────────────────────
-const BankLogo = ({ banco, className = "w-8 h-8 rounded-md" }) => {
+// ── Bank Logo Fetcher (logoUrl custom + Clearbit fallback) ──────────────────
+const BankLogo = ({ banco, logoUrl, className = "w-8 h-8 rounded-md" }) => {
+  const [err, setErr] = React.useState(false);
+  // 1) Si el usuario guardó un logo custom y no ha fallado, úsalo primero
+  if (logoUrl && !err) {
+    return <img src={logoUrl} alt={banco} className={`${className} object-contain bg-white`} onError={() => setErr(true)} />;
+  }
+  // 2) Fallback automático por nombre del banco (Clearbit)
   const n = (banco || '').toLowerCase();
   let domain = '';
   if (n.includes('provincial') || n.includes('bbva')) domain = 'provincial.com';
@@ -154,10 +160,10 @@ const BankLogo = ({ banco, className = "w-8 h-8 rounded-md" }) => {
   else if (n.includes('caroni')) domain = 'bancocaroni.com.ve';
   else if (n.includes('exterior')) domain = 'bancoexterior.com';
   else if (n.includes('bicentenario')) domain = 'bancobicentenario.gob.ve';
-  const [err, setErr] = React.useState(false);
   if (domain && !err) {
     return <img src={`https://logo.clearbit.com/${domain}`} alt={banco} className={`${className} object-contain bg-white`} onError={() => setErr(true)} />;
   }
+  // 3) Fallback genérico
   return <div className={`flex items-center justify-center bg-indigo-50 border border-indigo-100 ${className}`}><Landmark size={14} className="text-indigo-600"/></div>;
 };
 
@@ -1443,7 +1449,7 @@ function BancoApp({ fbUser, onBack }) {
                         <tr key={c.id} className={`hover:bg-blue-50/30 transition-colors ${isNeg?'bg-red-50/40':''}`}>
                           <td className="py-3.5 pr-3">
                             <div className="flex items-center gap-3">
-                              <BankLogo banco={c.banco} className="w-8 h-8 rounded-lg shadow-sm border border-slate-200 p-0.5 object-contain"/>
+                              <BankLogo banco={c.banco} logoUrl={c.logoUrl} className="w-8 h-8 rounded-lg shadow-sm border border-slate-200 p-0.5 object-contain"/>
                               <div>
                                 <p className="font-bold text-slate-800 leading-tight truncate max-w-[150px]">{c.banco}</p>
                                 <p className="text-[9px] text-slate-400 font-mono">{c.titular||'—'}</p>
@@ -1511,7 +1517,7 @@ function BancoApp({ fbUser, onBack }) {
                     <div key={c.id}>
                       <div className="flex justify-between items-end text-[9px] font-bold text-slate-600 mb-1">
                         <span className="uppercase truncate max-w-[180px] flex items-center gap-1.5">
-                          <BankLogo banco={c.banco} className="w-4 h-4 rounded"/>{c.banco}
+                          <BankLogo banco={c.banco} logoUrl={c.logoUrl} className="w-4 h-4 rounded"/>{c.banco}
                         </span>
                         <span className="font-mono">{pct}%</span>
                       </div>
@@ -1536,12 +1542,12 @@ function BancoApp({ fbUser, onBack }) {
     const [editando, setEdit]   = useState(null);
     const [certCuenta, setCert] = useState(null);
     const [busy, setBusy]       = useState(false);
-    const initF = ()=>({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:'',cuentaContableCod:'',cuentaContableNom:''});
+    const initF = ()=>({banco:'',numeroCuenta:'',tipoCuenta:'Corriente',tipoBanco:'Nacional-Bs',saldo:'0',titular:'',cuentaContableCod:'',cuentaContableNom:'',logoUrl:''});
     const [form, setForm] = useState(initF());
     const monedaDe = tb => TIPO_BANCO.find(t=>t.id===tb)?.moneda||'BS';
 
     const openNew  = ()=>{ setEdit(null); setForm(initF()); setModal(true); };
-    const openEdit = c  =>{ setEdit(c); setForm({banco:c.banco,numeroCuenta:c.numeroCuenta,tipoCuenta:c.tipoCuenta,tipoBanco:c.tipoBanco||'Nacional-Bs',saldo:String(c.saldo),titular:c.titular||'',cuentaContableCod:c.cuentaContableCod||'',cuentaContableNom:c.cuentaContableNom||''}); setModal(true); };
+    const openEdit = c  =>{ setEdit(c); setForm({banco:c.banco,numeroCuenta:c.numeroCuenta,tipoCuenta:c.tipoCuenta,tipoBanco:c.tipoBanco||'Nacional-Bs',saldo:String(c.saldo),titular:c.titular||'',cuentaContableCod:c.cuentaContableCod||'',cuentaContableNom:c.cuentaContableNom||'',logoUrl:c.logoUrl||''}); setModal(true); };
 
     const save = async()=>{
       if(!form.banco||!form.numeroCuenta) return alert('Banco y número requeridos');
@@ -1685,7 +1691,7 @@ function BancoApp({ fbUser, onBack }) {
                         return <tr key={c.id} className="hover:bg-blue-50/30 border-b border-slate-50">
                           <Td className="font-black text-slate-900">
                             <div className="flex items-center gap-3">
-                              <BankLogo banco={c.banco} className="w-7 h-7 rounded shadow-sm object-contain border border-slate-200 p-0.5"/>
+                              <BankLogo banco={c.banco} logoUrl={c.logoUrl} className="w-7 h-7 rounded shadow-sm object-contain border border-slate-200 p-0.5"/>
                               {c.banco}
                             </div>
                           </Td>
@@ -1738,12 +1744,17 @@ function BancoApp({ fbUser, onBack }) {
             <FG label="Tipo de Cuenta"><select className={sel} value={form.tipoCuenta} onChange={e=>setForm({...form,tipoCuenta:e.target.value})}><option>Corriente</option><option>Ahorros</option><option>Nómina</option><option>Divisas</option><option>Custodia</option><option>Swift</option></select></FG>
             <FG label="Titular de la Cuenta" full><input className={inp} value={form.titular} onChange={e=>setForm({...form,titular:e.target.value.toUpperCase()})} placeholder="SERVICIOS JIRET G&B C.A."/></FG>
             <FG label={`Saldo ${editando?'Actual':'Inicial'} (${monedaDe(form.tipoBanco)})`}><input type="number" step="0.01" className={inp} value={form.saldo} onChange={e=>setForm({...form,saldo:e.target.value})}/></FG>
-            <FG label="Cuenta Contable Asociada (PUC)" full>
+            <FG label="Cuenta Contable Asociada (PUC)">
               <select className={sel} value={form.cuentaContableCod} onChange={e=>{const c=contCuentas.find(x=>x.codigo===e.target.value);setForm({...form,cuentaContableCod:e.target.value,cuentaContableNom:c?.nombre||''})}}>
                 <option value="">— Sin vincular al PUC —</option>
                 {[...contCuentas].filter(c=>String(c.codigo).startsWith('1')).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo))).map(c=><option key={c.id} value={c.codigo}>{c.codigo} · {c.nombre}</option>)}
               </select>
               {form.cuentaContableCod && <p className="text-[10px] text-blue-600 font-black mt-1">✓ {form.cuentaContableCod} · {form.cuentaContableNom}</p>}
+            </FG>
+            {/* URL Logo personalizado */}
+            <FG label="URL Logo del Banco (Opcional)">
+              <input className={inp} value={form.logoUrl||''} onChange={e=>setForm({...form,logoUrl:e.target.value})} placeholder="https://... o vacío para auto-generar desde el nombre"/>
+              {form.logoUrl&&<div className="mt-2 flex items-center gap-2"><BankLogo banco={form.banco} logoUrl={form.logoUrl} className="w-10 h-10 rounded-lg border border-slate-200"/><p className="text-[10px] text-slate-400">Vista previa del logo</p></div>}
             </FG>
           </div>
         </Modal>
