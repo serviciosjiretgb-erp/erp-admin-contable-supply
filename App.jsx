@@ -2856,75 +2856,105 @@ function BancoApp({ fbUser, onBack }) {
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {/* ── Fila 1: Banco + Tipo + Ref + Fecha ── */}
-                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <div>
-                    <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label="Banco / Cuenta de Origen"/>
-                  </div>
-                  <div className="space-y-3">
-                    <FG label="Tipo de Operación">
-                      <select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value,cuentaDestinoId:'',cuentaAjusteId:''})}>
-                        <option value="Ingreso">Ingreso / Cobro</option>
-                        <option value="Egreso">Egreso / Pago</option>
-                        <option value="Traslado de Fondo">Traslado de Fondo (Banco→Banco)</option>
-                        <option value="Traslado Banco→Caja">Traslado Banco→Caja</option>
-                        <option value="Nota de Débito">Nota de Débito (Comisión/Gasto)</option>
-                        <option value="Nota de Crédito">Nota de Crédito (Interés/Ingreso)</option>
-                      </select>
-                    </FG>
-                    <div className="grid grid-cols-2 gap-3">
-                      <FG label="Fecha"><input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/></FG>
-                      <FG label="N° Referencia"><input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="REF-00000"/></FG>
-                    </div>
-                  </div>
-                </div>
+          {/* ── DISEÑO HORIZONTAL COMPACTO (12 COLUMNAS) ── */}
+<div className="grid grid-cols-12 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+  
+  {/* ── Fila 1: Datos Básicos ── */}
+  <div className="col-span-12 md:col-span-3">
+    <CuentaSelector value={form.cuentaId} onChange={v=>setForm({...form,cuentaId:v})} label="Banco Origen"/>
+  </div>
+  
+  <div className="col-span-12 md:col-span-3">
+    <FG label="Tipo de Operación">
+      <select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value,cuentaDestinoId:'',cuentaAjusteId:''})}>
+        <option value="Ingreso">Ingreso / Cobro</option>
+        <option value="Egreso">Egreso / Pago</option>
+        <option value="Traslado de Fondo">Traslado (Banco→Banco)</option>
+        <option value="Traslado Banco→Caja">Traslado (Banco→Caja)</option>
+        <option value="Nota de Débito">Nota Débito (Comisión)</option>
+        <option value="Nota de Crédito">Nota Crédito (Interés)</option>
+      </select>
+    </FG>
+  </div>
 
-                {/* ── Sub-tipo contextual ── */}
-                {form.tipo==='Ingreso'&&<div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
-                  <p className="text-[9px] font-black uppercase text-emerald-700 mb-2 tracking-widest">Origen del Ingreso</p>
-                  <div className="flex gap-2 flex-wrap">{['Venta','Préstamo de Terceros','Depósito','Otros'].map(o=>(
-                    <button key={o} onClick={()=>setForm({...form,origenIngreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.origenIngreso===o?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
-                  ))}</div>
-                </div>}
-                {form.tipo==='Egreso'&&<div className="bg-red-50 rounded-xl p-3 border border-red-100">
-                  <p className="text-[9px] font-black uppercase text-red-700 mb-2 tracking-widest">Motivo del Egreso</p>
-                  <div className="flex gap-2 flex-wrap">{['Pago Proveedor','Nómina','Gastos Operativos','Impuestos','Préstamo','Otros'].map(o=>(
-                    <button key={o} onClick={()=>setForm({...form,motivoEgreso:o})} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border transition-all ${form.motivoEgreso===o?'bg-red-600 text-white border-red-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
-                  ))}</div>
-                </div>}
+  <div className="col-span-12 md:col-span-2">
+    <FG label="Fecha">
+      <input type="date" className={inp} value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})}/>
+    </FG>
+  </div>
 
-                {/* ── Banco Destino (Traslado de Fondo) ── */}
-                {(form.tipo==='Traslado de Fondo')&&(
-                  <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200">
-                    <p className="text-[9px] font-black uppercase text-blue-700 mb-2 tracking-widest flex items-center gap-1.5"><ArrowLeftRight size={12}/> Banco Destino (Receptor)</p>
-                    <CuentaSelector value={form.cuentaDestinoId} onChange={v=>{if(v===form.cuentaId){alert('El Banco Destino no puede ser el mismo que el Banco Origen');return;}setForm({...form,cuentaDestinoId:v});}} label="Banco Destino" excluirId={form.cuentaId}/>
-                    {form.cuentaDestinoId&&form.cuentaDestinoId===form.cuentaId&&<p className="text-[10px] text-red-500 font-black mt-1 uppercase">⚠ El banco destino no puede ser el mismo que el origen</p>}
-                  </div>
-                )}
+  <div className="col-span-12 md:col-span-4">
+    <FG label="N° Referencia / Beneficiario">
+      <input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="REF-00000"/>
+    </FG>
+  </div>
 
-                {/* ── Monto + Tasa ── */}
-                {cuentaSel&&<div className="grid grid-cols-3 gap-4 bg-blue-50/60 p-4 rounded-2xl border border-blue-100">
-                  <FG label={`Monto (${cuentaSel.moneda})`}>
-                    <div className="relative">
-                      <span className="absolute left-3 top-3 text-slate-400 font-bold text-xs">{bs?'Bs.':'$'}</span>
-                      <input type="number" step="0.01" min="0.01" className={`${inp} pl-8 font-black text-lg`} value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/>
-                    </div>
-                  </FG>
-                  <FG label="Tasa Bs/$">
-                    <div className="relative">
-                      <input type="number" step="0.01" className={inp} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/>
-                      <RefreshCw size={14} className="absolute right-3 top-3 text-blue-400"/>
-                    </div>
-                    <p className="text-[9px] text-blue-600 font-bold mt-1">{bs?`${fmt(mNat)} ÷ ${tasa} = $${fmt(montoUSD)}`:`$${fmt(mNat)} × ${tasa} = Bs.${fmt(montoBs)}`}</p>
-                  </FG>
-                  <div className="flex flex-col justify-end pb-0.5">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Equivalencia</p>
-                    <div className="rounded-xl p-3 text-center" style={{background:'linear-gradient(135deg,#0f172a,#1e293b)'}}>
-                      <p className="text-emerald-400 font-mono font-black text-lg leading-none">{'$'+fmt(montoUSD)}</p>
-                      <p className="text-slate-400 text-[10px] mt-0.5">Bs. {fmt(montoBs)}</p>
-                    </div>
-                  </div>
-                </div>}
+  {/* ── Fila 2: Opciones Condicionales (Se muestran como franjas horizontales) ── */}
+  {form.tipo==='Ingreso' && (
+    <div className="col-span-12 bg-emerald-50 rounded-lg p-2 border border-emerald-100 flex items-center gap-3">
+      <span className="text-[9px] font-black uppercase text-emerald-700 tracking-widest min-w-max ml-1">Origen:</span>
+      <div className="flex gap-2 flex-wrap">
+        {['Venta','Préstamo de Terceros','Depósito','Otros'].map(o=>(
+          <button key={o} onClick={()=>setForm({...form,origenIngreso:o})} className={`px-3 py-1 rounded text-[10px] font-bold uppercase border transition-all ${form.origenIngreso===o?'bg-emerald-600 text-white border-emerald-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {form.tipo==='Egreso' && (
+    <div className="col-span-12 bg-red-50 rounded-lg p-2 border border-red-100 flex items-center gap-3">
+      <span className="text-[9px] font-black uppercase text-red-700 tracking-widest min-w-max ml-1">Motivo:</span>
+      <div className="flex gap-2 flex-wrap">
+        {['Pago Proveedor','Nómina','Gastos Operativos','Impuestos','Préstamo','Otros'].map(o=>(
+          <button key={o} onClick={()=>setForm({...form,motivoEgreso:o})} className={`px-3 py-1 rounded text-[10px] font-bold uppercase border transition-all ${form.motivoEgreso===o?'bg-red-600 text-white border-red-600':'bg-white text-slate-500 border-slate-200'}`}>{o}</button>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {form.tipo==='Traslado de Fondo' && (
+    <div className="col-span-12 bg-blue-50 p-2 rounded-lg border border-blue-200 flex items-center gap-3">
+      <span className="text-[9px] font-black uppercase text-blue-700 tracking-widest min-w-max ml-1 flex items-center gap-1"><ArrowLeftRight size={12}/> Banco Destino:</span>
+      <div className="flex-1 max-w-sm">
+        <CuentaSelector value={form.cuentaDestinoId} onChange={v=>{if(v===form.cuentaId){alert('El Banco Destino no puede ser el mismo que el Banco Origen');return;}setForm({...form,cuentaDestinoId:v});}} label="" excluirId={form.cuentaId}/>
+      </div>
+    </div>
+  )}
+
+  {/* ── Fila 3: Monto + Tasa + Equivalencia ── */}
+  {cuentaSel && (
+    <>
+      <div className="col-span-12 md:col-span-4 mt-2">
+        <FG label={`Monto (${cuentaSel.moneda})`}>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">{bs?'Bs.':'$'}</span>
+            <input type="number" step="0.01" min="0.01" className={`${inp} pl-8 font-black text-emerald-600 bg-white`} value={form.montoNativo} onChange={e=>setForm({...form,montoNativo:e.target.value})} placeholder="0.00"/>
+          </div>
+        </FG>
+      </div>
+      
+      <div className="col-span-12 md:col-span-4 mt-2">
+        <FG label="Tasa Bs/$">
+          <div className="relative">
+            <input type="number" step="0.01" className={`${inp} bg-white`} value={form.tasa} onChange={e=>setForm({...form,tasa:e.target.value})}/>
+            <RefreshCw size={14} className="absolute right-3 top-2.5 text-blue-400"/>
+          </div>
+          <p className="text-[9px] text-blue-600 font-bold mt-1">{bs?`${fmt(mNat)} ÷ ${tasa} = $${fmt(montoUSD)}`:`$${fmt(mNat)} × ${tasa} = Bs.${fmt(montoBs)}`}</p>
+        </FG>
+      </div>
+
+      <div className="col-span-12 md:col-span-4 mt-2 flex items-end">
+        <div className="w-full bg-slate-900 text-white rounded-lg p-2.5 h-[38px] flex justify-between items-center shadow-inner mb-4">
+           <span className="text-[10px] text-slate-400 uppercase font-black px-1">Equiv:</span>
+           <div className="flex items-center gap-2 pr-1">
+             <span className="font-mono font-black text-emerald-400">{'$'+fmt(montoUSD)}</span>
+             <span className="text-[10px] text-slate-400">| Bs.{fmt(montoBs)}</span>
+           </div>
+        </div>
+      </div>
+    </>
+  )}
+</div>
 
                 {/* ── Concepto ── */}
                 <FG label="Concepto / Descripción" full>
