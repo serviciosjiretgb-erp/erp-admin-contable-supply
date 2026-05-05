@@ -3776,137 +3776,202 @@ function BancoApp({ fbUser, onBack }) {
   };
 
   // ── NAV ────────────────────────────────────────────────────────────────────
-  const navGroups = [
-    { group:'Analítica',   color:'#f97316', items:[{id:'dashboard',    label:'Panel General',       icon:LayoutDashboard}] },
-    { group:'Bancos',      color:'#3b82f6', items:[{id:'cuentas',      label:'Cuentas Bancarias',   icon:Building2},
-                                                    {id:'movimientos',  label:'Movimientos Banco',   icon:ArrowLeftRight},
-                                                    {id:'conciliacion', label:'Conciliación',        icon:CheckCircle}] },
-    { group:'Caja',        color:'#10b981', items:[{id:'caja_op',      label:'Operaciones Caja',    icon:Banknote},
-                                                    {id:'vales',        label:'Relación de Vales',   icon:FileText},
-                                                    {id:'arqueo',       label:'Arqueo de Caja',      icon:Calculator}] },
-    { group:'Reportes',    color:'#f59e0b', items:[{id:'rpt_gral_banco',label:'General de Banco',    icon:Building2},
-                                                    {id:'rpt_gral_caja', label:'General de Caja',    icon:PiggyBank},
-                                                    {id:'rpt_comp_banco',label:'Comprobante Bancario',icon:FileText},
-                                                    {id:'rpt_comp_caja', label:'Comprobante de Caja', icon:FileText},
-                                                    {id:'rpt_libro',     label:'Libro Diario General',icon:BookOpen}] },
-    { group:'Config.',     color:'#64748b', items:[{id:'tasas',        label:'Tasas de Cambio',     icon:Globe}] },
-  ];
+  const RepLibroDiarioView = () => {
+    const [filtDesde,setFiltDesde]=useState(mesActual()+'-01');
+    const [filtHasta,setFiltHasta]=useState(today());
+    const [filtOrigen,setFiltOrigen]=useState('');
+    const [filtCta,setFiltCta]=useState('');
+    let allMovs=[...movBanco.map(m=>({...m,origen:'Banco'})),...movCaja.map(m=>({...m,origen:'Caja'}))];
+    allMovs=allMovs.filter(m=>{if(m.fecha<filtDesde||m.fecha>filtHasta)return false;if(filtOrigen&&m.cuentaId!==filtOrigen&&m.cajaId!==filtOrigen)return false;return true;});
+    allMovs.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    let lineasPlanas=[],sBs=0,sUSD=0;
+    allMovs.forEach(m=>{
+      const isBanco=m.origen==='Banco';
+      const ctaP=isBanco?cuentas.find(c=>c.id===m.cuentaId):cajas.find(c=>c.id===m.cajaId);
+      if(!ctaP)return;
+      const isIng=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
+      const tasa=Number(m.tasa)||1;const mNat=Number(m.montoNativo)||Number(m.monto)||0;
+      const valBs=ctaP.moneda==='BS'?mNat:mNat*tasa;const valUSD=ctaP.moneda==='BS'?mNat/tasa:mNat;
+      const comp=m.asientoContableId||m.id.substring(0,6).toUpperCase();
+      const mesL=m.fecha.substring(5,7)+'/'+m.fecha.substring(0,4);
+      const doc=m.referencia||'—';const conc=m.esVale?`[VALE] ${m.concepto}`:m.concepto;
+      let sub=[{comp,mes:mesL,fecha:m.fecha,doc,conc,tasa,codigo:ctaP.cuentaContableCod||'—',cuenta:isBanco?ctaP.banco:ctaP.nombre,tipo:isIng?'D':'H',dBs:isIng?valBs:0,hBs:isIng?0:valBs,dUSD:isIng?valUSD:0,hUSD:isIng?0:valUSD}];
+      if(m.lineasContra&&m.lineasContra.length>0){m.lineasContra.forEach(l=>sub.push({comp,mes:mesL,fecha:m.fecha,doc,conc,tasa,codigo:l.ctaNom?l.ctaNom.split('·')[0].trim():'',cuenta:l.ctaNom?l.ctaNom.split('·')[1]?.trim():l.ctaNom,tipo:Number(l.debeBs||0)>0?'D':'H',dBs:Number(l.debeBs||0),hBs:Number(l.haberBs||0),dUSD:Number(l.debeUSD||0),hUSD:Number(l.haberUSD||0)}));}
+      else if(m.asientoDebito||m.asientoCredito){sub.push({comp,mes:mesL,fecha:m.fecha,doc,conc,tasa,codigo:'',cuenta:isIng?m.asientoCredito:m.asientoDebito,tipo:isIng?'H':'D',dBs:isIng?0:valBs,hBs:isIng?valBs:0,dUSD:isIng?0:valUSD,hUSD:isIng?valUSD:0});}
+      if(filtCta){const ok=sub.some(sl=>(sl.codigo+' '+sl.cuenta).toLowerCase().includes(filtCta.toLowerCase()));if(!ok)return;}
+      sub.forEach(sl=>{sBs+=sl.dBs-sl.hBs;sUSD+=sl.dUSD-sl.hUSD;lineasPlanas.push({...sl,sBs,sUSD});});
+    });
+    return(
+      <div className="space-y-5 flex flex-col min-w-0 w-full">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div><h2 className="text-lg font-black text-slate-800 uppercase tracking-wide">Libro Diario General Bimonetario</h2><p className="text-xs text-slate-500 font-medium mt-1">Todos los asientos integrados en un solo comprobante maestro.</p></div>
+          <div className="flex flex-wrap gap-4 items-end bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Desde</label><input type="date" className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold outline-none" value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/></div>
+            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Hasta</label><input type="date" className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold outline-none" value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/></div>
+            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Origen</label>
+              <select className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold outline-none min-w-[200px]" value={filtOrigen} onChange={e=>setFiltOrigen(e.target.value)}>
+                <option value="">TODOS LOS ORÍGENES</option>
+                <optgroup label="Bancos">{cuentas.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}</optgroup>
+                <optgroup label="Cajas">{cajas.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</optgroup>
+              </select>
+            </div>
+            <div className="flex-1"><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cuenta Contable</label>
+              <div className="relative"><Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input type="text" className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-semibold outline-none" placeholder="Ej: 1.1.01..." value={filtCta} onChange={e=>setFiltCta(e.target.value)}/></div>
+            </div>
+            {(filtOrigen||filtCta||filtDesde!==mesActual()+'-01'||filtHasta!==today())&&<button onClick={()=>{setFiltDesde(mesActual()+'-01');setFiltHasta(today());setFiltOrigen('');setFiltCta('');}} className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase hover:bg-red-100">Limpiar</button>}
+          </div>
+        </div>
+        {lineasPlanas.length===0?<EmptyState icon={BookOpen} title="Sin resultados" desc="No hay asientos para los filtros seleccionados."/>:(
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-w-0 w-full">
+            <div className="overflow-x-auto w-full min-w-0 pb-2">
+              <table className="w-full text-left min-w-[1400px]">
+                <thead><tr className="bg-slate-900 border-b border-slate-800">
+                  {['Comprobante','Mes','Fecha','Código','Cuenta de Movimiento','T','Nro Doc','Concepto','Tasa','Debe Bs.','Haber Bs.','Saldo Bs.','Debe $','Haber $','Saldo $'].map((h,hi)=>(
+                    <th key={hi} className={`px-4 py-3 font-black uppercase text-white/90 whitespace-nowrap text-[10px] tracking-wider ${hi>=9?'text-right':hi===5?'text-center':'text-left'}`}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {lineasPlanas.map((l,idx)=>{
+                    const isD=l.tipo==='D';
+                    const esInicio=idx===0||lineasPlanas[idx-1].comp!==l.comp;
+                    return(
+                      <tr key={idx} className={`hover:bg-slate-50 transition-colors ${esInicio&&idx>0?'border-t-2 border-slate-200':''}`}>
+                        <td className="px-4 py-2.5 font-mono font-black text-blue-600 text-[11px] whitespace-nowrap">{esInicio?l.comp:''}</td>
+                        <td className="px-4 py-2.5 text-slate-400 text-[10px] whitespace-nowrap">{esInicio?l.mes:''}</td>
+                        <td className="px-4 py-2.5 text-slate-500 text-[10px] whitespace-nowrap font-mono">{esInicio?dd(l.fecha):''}</td>
+                        <td className="px-4 py-2.5 font-mono font-black text-blue-500 text-[10px]">{l.codigo||'—'}</td>
+                        <td className="px-4 py-2.5 font-bold text-slate-700 text-[10px] uppercase truncate max-w-[200px]" style={{paddingLeft:!isD?'20px':'16px'}} title={l.cuenta}>{l.cuenta||'—'}</td>
+                        <td className="px-4 py-2.5 text-center font-black text-[11px]"><span className={isD?'text-emerald-600':'text-red-500'}>{l.tipo}</span></td>
+                        <td className="px-4 py-2.5 font-mono text-slate-400 text-[10px] truncate max-w-[100px]">{esInicio?l.doc:''}</td>
+                        <td className="px-4 py-2.5 text-slate-600 text-[10px] truncate max-w-[180px] font-medium uppercase" title={l.conc}>{esInicio?l.conc:''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-slate-400 text-[10px]">{esInicio?fmt(l.tasa):''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/10">{l.dBs>0?'Bs.'+fmt(l.dBs):''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/10">{l.hBs>0?'Bs.'+fmt(l.hBs):''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{!esInicio?'Bs.'+fmt(l.sBs):''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/10">{l.dUSD>0?'$'+fmt(l.dUSD):''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/10">{l.hUSD>0?'$'+fmt(l.hUSD):''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{!esInicio?'$'+fmt(l.sUSD):''}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const ReportesGeneralView = ({ tipo = 'banco' }) => {
     const isBanco = tipo === 'banco';
-    const totBsBanco   = cuentas.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo),0);
-    const totUSDBanco  = cuentas.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo),0);
+    const totBsBanco = cuentas.filter(c=>c.moneda==='BS').reduce((a,c)=>a+Number(c.saldo),0);
+    const totUSDBanco = cuentas.filter(c=>c.moneda==='USD').reduce((a,c)=>a+Number(c.saldo),0);
     const totBsEqBanco = cuentas.reduce((a,c)=>a+(c.moneda==='BS'?Number(c.saldo):Number(c.saldo)*tasaActiva),0);
     const saldoCajaBs  = movCaja.filter(m=>m.moneda==='BS' ).reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoBs||0),0);
     const saldoCajaUSD = movCaja.filter(m=>m.moneda==='USD').reduce((a,m)=>a+(m.tipo==='Ingreso'?1:-1)*Number(m.montoUSD||0),0);
-    const totBsEqCaja  = saldoCajaBs + saldoCajaUSD*tasaActiva;
-    if (!isBanco) return (
+    const totBsEqCaja = saldoCajaBs + (saldoCajaUSD * tasaActiva);
+    const imprimir=()=>{
+      const nacBs=cuentas.filter(c=>c.tipoBanco==='Nacional-Bs');const ext=cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs');
+      const renderTabla=(lista,titulo)=>{if(lista.length===0)return '';const rows=lista.map(c=>{const bs=c.moneda==='BS';const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;return`<tr><td>${c.banco}</td><td>${c.numeroCuenta}</td><td>${c.tipoCuenta||'—'}</td><td>${c.moneda}</td><td style="text-align:right;font-weight:bold">Bs.${fmt(bsEq)}</td><td style="text-align:right;color:#16a34a;font-weight:bold">$${fmt(usd)}</td></tr>`;}).join('');return`<h3 style="margin-top:20px;font-size:12px;color:#1e3a8a;text-transform:uppercase;">${titulo}</h3><table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Saldo Bs.</th><th>Equiv. USD</th></tr></thead><tbody>${rows}</tbody></table>`;};
+      printWindow(letterheadOpen('Reporte General Bancario',`RIF: J-412309374 · ${dd(today())} · ${cuentas.length} cuentas`)+renderTabla(nacBs,'🇻🇪 Cuentas Nacionales — Bolívares')+renderTabla(ext,'💵 Cuentas Moneda Extranjera e Internacionales')+`<div style="margin-top:20px;padding:10px;background:#0f172a;color:#fff;text-align:right;font-weight:bold;font-size:12px;">TOTAL CONSOLIDADO: Bs.${fmt(totBsEqBanco)} | $${fmt(totBsEqBanco/tasaActiva)}</div>`+letterheadClose(`${cuentas.length} cuenta(s)`));
+    };
+    if(!isBanco) return(
       <div className="space-y-5 w-full min-w-0">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <KPI label="Total Caja Bs." value={`Bs. ${fmt(saldoCajaBs)}`} accent="blue" Icon={PiggyBank} sub={`$${fmt(saldoCajaBs/tasaActiva)} USD equiv.`}/>
           <KPI label="Total Caja USD" value={`$${fmt(saldoCajaUSD)}`} accent="green" Icon={DollarSign} sub={`Bs.${fmt(saldoCajaUSD*tasaActiva)} equiv.`}/>
           <KPI label="Consolidado Global" value={`$${fmt(totBsEqCaja/tasaActiva)}`} accent="gold" Icon={TrendingUp} sub="Equivalente en USD"/>
         </div>
-        <Card title="Resumen General de Caja">
-          <div className="overflow-x-auto w-full min-w-0">
-            <table className="w-full min-w-[600px]">
-              <thead><tr><Th>Caja Operativa</Th><Th>Moneda</Th><Th right>Saldo Actual</Th><Th right>Equivalencia</Th></tr></thead>
-              <tbody>
-                <tr className="hover:bg-slate-50"><Td className="font-black">Caja Principal (Bolívares)</Td><Td><Pill usd={false}>BS</Pill></Td><Td right mono className="font-black">Bs. {fmt(saldoCajaBs)}</Td><Td right mono className="text-emerald-600 font-black">$ {fmt(saldoCajaBs/tasaActiva)}</Td></tr>
-                <tr className="hover:bg-slate-50"><Td className="font-black">Caja Principal (Divisas)</Td><Td><Pill usd={true}>USD</Pill></Td><Td right mono className="font-black">$ {fmt(saldoCajaUSD)}</Td><Td right mono className="text-blue-600 font-black">Bs. {fmt(saldoCajaUSD*tasaActiva)}</Td></tr>
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <Card title="Resumen General de Caja"><div className="overflow-x-auto w-full min-w-0"><table className="w-full min-w-[600px]"><thead><tr><Th>Caja Operativa</Th><Th>Moneda</Th><Th right>Saldo Actual</Th><Th right>Equivalencia</Th></tr></thead><tbody><tr className="hover:bg-slate-50"><Td className="font-black">Caja Principal (Bolívares)</Td><Td><Pill usd={false}>BS</Pill></Td><Td right mono className="font-black">Bs. {fmt(saldoCajaBs)}</Td><Td right mono className="text-emerald-600 font-black">$ {fmt(saldoCajaBs/tasaActiva)}</Td></tr><tr className="hover:bg-slate-50"><Td className="font-black">Caja Principal (Divisas)</Td><Td><Pill usd={true}>USD</Pill></Td><Td right mono className="font-black">$ {fmt(saldoCajaUSD)}</Td><Td right mono className="text-blue-600 font-black">Bs. {fmt(saldoCajaUSD*tasaActiva)}</Td></tr></tbody></table></div></Card>
       </div>
     );
-    const imprimir=()=>{
-      let rows=cuentas.map(c=>{const bs=c.moneda==='BS';const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;return`<tr><td>${c.banco}</td><td style="font-family:monospace">${c.numeroCuenta}</td><td>${c.tipoCuenta}</td><td>${c.moneda}</td><td style="text-align:right;font-weight:bold">${bs?'Bs.':'$'} ${fmt(c.saldo)}</td><td style="text-align:right;color:#16a34a">$${fmt(usd)}</td><td style="text-align:right;color:#2563eb">Bs.${fmt(bsEq)}</td></tr>`;}).join('');
-      printWindow(letterheadOpen('Reporte General Bancario',`Tasa: ${tasaActiva} Bs/$`)+`<table><thead><tr><th>Banco</th><th>Nro. Cuenta</th><th>Tipo</th><th>Moneda</th><th>Saldo</th><th>En USD</th><th>En Bs.</th></tr></thead><tbody>${rows}</tbody></table>`+letterheadClose(`${cuentas.length} cuenta(s)`));
-    };
-    return (
+    return(
       <div className="space-y-5 w-full min-w-0">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <KPI label="Total Bs." value={`Bs. ${fmt(totBsBanco)}`} accent="blue" Icon={Building2} sub={`$${fmt(totBsBanco/tasaActiva)} USD equiv.`}/>
           <KPI label="Total USD" value={`$${fmt(totUSDBanco)}`} accent="green" Icon={DollarSign}/>
           <KPI label="Consolidado USD" value={`$${fmt(totBsEqBanco/tasaActiva)}`} accent="gold" Icon={TrendingUp} sub="Todas las cuentas"/>
         </div>
-        <Card title="Resumen General Bancario" action={<button onClick={imprimir} className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[9px] font-black uppercase hover:bg-slate-700"><Download size={11}/> PDF</button>}>
-          {[{titulo:'Cuentas Nacionales Bs.',tipos:['Nacional-Bs']},{titulo:'Cuentas Moneda Extranjera',tipos:['Nacional-Ext','Internacional']}].map(g=>(
-            <div key={g.titulo} className="mb-4">
-              <p className="text-xs font-black uppercase text-slate-500 mb-2">{g.titulo}</p>
-              <div className="overflow-x-auto w-full min-w-0">
-                <table className="w-full min-w-[700px]">
-                  <thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead>
-                  <tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{
-                    const bs=c.moneda==='BS'; const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo); const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
-                    return <tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
-                  })}</tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+        <Card title="Resumen General Bancario" action={<button onClick={imprimir} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 shadow-sm"><Download size={12}/> PDF Membretado</button>}>
+          {[{titulo:'Cuentas Nacionales Bs.',tipos:['Nacional-Bs']},{titulo:'Cuentas Moneda Extranjera',tipos:['Nacional-Ext','Internacional']}].map(g=>(<div key={g.titulo} className="mb-4"><p className="text-xs font-black uppercase text-slate-500 mb-2">{g.titulo}</p><div className="overflow-x-auto w-full min-w-0"><table className="w-full min-w-[700px]"><thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead><tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{const bs=c.moneda==='BS';const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;return<tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>; })}</tbody></table></div></div>))}
         </Card>
       </div>
     );
   };
-  const BancoTable = ({title, tableRows}) => {
+
+  const BancoTable = ({title, tableRows, onPDF, onXLS}) => {
     if(tableRows.length===0) return null;
     let saldoRunBs=0, saldoRunUSD=0;
     return(
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden mb-6 shadow-sm flex flex-col min-w-0 w-full">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
-          <p className="font-black text-sm text-slate-800 uppercase tracking-wider">{title}</p>
-          <span className="text-[10px] text-slate-500 font-medium">{tableRows.length} asiento(s)</span>
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-3">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+          <p className="font-black text-xs text-slate-800 uppercase tracking-wide">{title}</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-slate-400">{tableRows.length} asiento(s)</span>
+            <button onClick={onPDF} className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-red-700"><Download size={9}/> PDF</button>
+            <button onClick={onXLS} className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={9}/> XLS</button>
+          </div>
         </div>
-        <div className="overflow-x-auto w-full min-w-0 pb-2">
-          <table className="w-full text-left min-w-[1400px]">
+        <div className="overflow-x-auto">
+          <table className="w-full" style={{fontSize:'9px', tableLayout:'fixed', minWidth:'900px'}}>
+            <colgroup>
+              <col style={{width:'90px'}}/><col style={{width:'45px'}}/><col style={{width:'60px'}}/>
+              <col style={{width:'60px'}}/><col style={{width:'130px'}}/><col style={{width:'28px'}}/>
+              <col style={{width:'70px'}}/><col style={{width:'130px'}}/><col style={{width:'45px'}}/>
+              <col style={{width:'70px'}}/><col style={{width:'70px'}}/><col style={{width:'70px'}}/>
+              <col style={{width:'60px'}}/><col style={{width:'60px'}}/><col style={{width:'60px'}}/>
+            </colgroup>
             <thead>
-              <tr className="bg-slate-900 border-b border-slate-800">
+              <tr style={{background:'#0f172a'}}>
                 {['Comprobante','Mes','Fecha','Código','Cuenta de Movimiento','T','Nro Doc','Concepto','Tasa','Debe Bs.','Haber Bs.','Saldo Bs.','Debe $','Haber $','Saldo $'].map((h,hi)=>(
-                  <th key={hi} className={`px-4 py-3 font-black uppercase text-white/90 whitespace-nowrap text-[10px] tracking-wider ${hi>=9?'text-right':hi===5?'text-center':'text-left'}`}>{h}</th>
+                  <th key={hi} className={`px-2 py-2 font-black uppercase text-slate-300 whitespace-nowrap ${hi>=9?'text-right':hi===5?'text-center':'text-left'}`} style={{fontSize:'8px'}}>{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody>
               {tableRows.flatMap((r,idx)=>{
                 const lineas=r.lineas||[];
-                const comp=r.comprobante||('CB-'+(idx+1).toString().padStart(4,'0'));
+                const comp=r.comprobante||r.numero||('CB-'+(idx+1).toString().padStart(4,'0'));
                 const mesL=r.fecha?r.fecha.substring(5,7)+'/'+r.fecha.substring(0,4):'—';
+                const nroDoc=r.nroDocumento||r.referencia||'—';
+                const conc=r.descripcion||r.concepto||'—';
+                const tasa=Number(r.tasa||tasaActiva);
                 return lineas.map((l,li)=>{
                   const dBs=Number(l.debeBs||0),hBs=Number(l.haberBs||0);
                   const dU=Number(l.debeUSD||0),hU=Number(l.haberUSD||0);
                   saldoRunBs+=dBs-hBs; saldoRunUSD+=dU-hU;
                   const isD=l.tipoLinea==='D';
                   return(
-                    <tr key={`${r.id||idx}-${li}`} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-mono font-black text-blue-600 text-[11px] whitespace-nowrap">{li===0?comp:''}</td>
-                      <td className="px-4 py-3 text-slate-400 text-[10px] whitespace-nowrap">{li===0?mesL:''}</td>
-                      <td className="px-4 py-3 text-slate-500 text-[10px] whitespace-nowrap font-mono">{li===0?dd(r.fecha):''}</td>
-                      <td className="px-4 py-3 font-mono font-black text-blue-500 text-[10px]">{l.codigo||'—'}</td>
-                      <td className="px-4 py-3 font-bold text-slate-700 text-[10px] uppercase truncate max-w-[200px]" style={{paddingLeft:!isD?'20px':'16px'}} title={l.cuenta}>{l.cuenta||'—'}</td>
-                      <td className="px-4 py-3 text-center font-black text-[11px]"><span className={isD?'text-emerald-600':'text-red-500'}>{l.tipoLinea}</span></td>
-                      <td className="px-4 py-3 font-mono text-slate-400 text-[10px] truncate max-w-[100px]">{li===0?r.nroDocumento:''}</td>
-                      <td className="px-4 py-3 text-slate-600 text-[10px] truncate max-w-[180px] font-medium uppercase" title={r.descripcion}>{li===0?r.descripcion:''}</td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-400 text-[10px]">{li===0?fmt(r.tasa):''}</td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/20">{dBs>0?'Bs.'+fmt(dBs):''}</td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/20">{hBs>0?'Bs.'+fmt(hBs):''}</td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{li===lineas.length-1?'Bs.'+fmt(saldoRunBs):''}</td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/20">{dU>0?'$'+fmt(dU):''}</td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/20">{hU>0?'$'+fmt(hU):''}</td>
-                      <td className="px-4 py-3 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{li===lineas.length-1?'$'+fmt(saldoRunUSD):''}</td>
+                    <tr key={`${r.id||idx}-${li}`} className={`border-b border-slate-50 hover:bg-indigo-50/30 ${li===0?'border-t border-t-slate-200':''}`}>
+                      <td className="px-2 py-1.5 font-mono font-black text-blue-600 truncate" title={comp}>{li===0?comp:''}</td>
+                      <td className="px-2 py-1.5 text-slate-400">{li===0?mesL:''}</td>
+                      <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{li===0?dd(r.fecha):''}</td>
+                      <td className="px-2 py-1.5 font-mono text-blue-500 truncate">{l.codigo||'—'}</td>
+                      <td className="px-2 py-1.5 font-semibold text-slate-800 truncate" style={{paddingLeft:isD?'6px':'14px'}} title={l.cuenta}>{l.cuenta||'—'}</td>
+                      <td className="px-2 py-1.5 text-center"><span className={`font-black ${isD?'text-emerald-600':'text-red-500'}`}>{l.tipoLinea}</span></td>
+                      <td className="px-2 py-1.5 font-mono text-slate-400 truncate">{li===0?nroDoc:''}</td>
+                      <td className="px-2 py-1.5 text-slate-600 truncate" title={conc}>{li===0?conc:''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-slate-400">{li===0?fmt(tasa):''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-black text-emerald-700 whitespace-nowrap">{dBs>0?'Bs.'+fmt(dBs):''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-black text-red-500 whitespace-nowrap">{hBs>0?'Bs.'+fmt(hBs):''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-slate-400 whitespace-nowrap">{li===lineas.length-1?'Bs.'+fmt(saldoRunBs):''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-black text-emerald-600 whitespace-nowrap">{dU>0?'$'+fmt(dU):''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-black text-red-400 whitespace-nowrap">{hU>0?'$'+fmt(hU):''}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-slate-400 whitespace-nowrap">{li===lineas.length-1?'$'+fmt(saldoRunUSD):''}</td>
                     </tr>
                   );
                 });
               })}
             </tbody>
             <tfoot>
-              <tr className="bg-slate-900 border-t-2 border-slate-800">
-                <td colSpan={9} className="px-4 py-4 text-left font-black uppercase tracking-widest text-slate-300 text-[10px]">TOTALES — {tableRows.length} ASIENTO(S)</td>
-                <td className="px-4 py-4 text-right font-mono font-black text-emerald-400 whitespace-nowrap text-[10px]">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td>
-                <td className="px-4 py-4 text-right font-mono font-black text-red-400 whitespace-nowrap text-[10px]">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td>
+              <tr style={{background:'#0f172a'}}>
+                <td colSpan={9} className="px-2 py-2 text-left font-black uppercase text-slate-400" style={{fontSize:'8px'}}>TOTALES — {tableRows.length} ASIENTO(S)</td>
+                <td className="px-2 py-2 text-right font-mono font-black text-emerald-400 whitespace-nowrap">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td>
+                <td className="px-2 py-2 text-right font-mono font-black text-red-400 whitespace-nowrap">Bs.{fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td>
                 <td></td>
-                <td className="px-4 py-4 text-right font-mono font-black text-emerald-400 whitespace-nowrap text-[10px]">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td>
-                <td className="px-4 py-4 text-right font-mono font-black text-red-400 whitespace-nowrap text-[10px]">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td>
+                <td className="px-2 py-2 text-right font-mono font-black text-emerald-300 whitespace-nowrap">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td>
+                <td className="px-2 py-2 text-right font-mono font-black text-red-300 whitespace-nowrap">{'$'+fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -3915,99 +3980,203 @@ function BancoApp({ fbUser, onBack }) {
       </div>
     );
   };
+
   const ComprobantesBancariosView = ({ tipo = 'banco' }) => {
     const isBanco = tipo === 'banco';
-    const [filtDesde, setFiltDesde] = useState(mesActual()+'-01');
-    const [filtHasta, setFiltHasta] = useState(today());
-    const dataSource = isBanco ? movBanco : movCaja;
-    const filteredMovs = dataSource.filter(m => {
-      if (m.fecha < filtDesde || m.fecha > filtHasta) return false;
-      if (!(m.asientoDebito || m.asientoCredito || (m.lineasContra && m.lineasContra.length > 0))) return false;
+    const [filtBanco,  setFiltBanco]  = useState('');
+    const [filtDesde,  setFiltDesde]  = useState(mesActual()+'-01');
+    const [filtHasta,  setFiltHasta]  = useState(today());
+    const [asientosLocal, setAsientosLocal] = useState([]);
+    const mes = filtDesde ? filtDesde.substring(0,7) : mesActual();
+    useEffect(()=>{
+      const u=onSnapshot(query(col('cont_asientos'),orderBy('fecha','desc')),s=>setAsientosLocal(s.docs.map(d=>d.data())));
+      return()=>u();
+    },[]);
+    const applyFiltros = (a, isMov=false) => {
+      if(!isMov && a.modulo!=='Bancos') return false;
+      if(filtDesde && a.fecha < filtDesde) return false;
+      if(filtHasta && a.fecha > filtHasta) return false;
+      const bancoId = isMov ? a.cuentaId : movBanco.find(m=>m.id===a.movimientoBancoId)?.cuentaId;
+      if(filtBanco && bancoId!==filtBanco) return false;
       return true;
-    });
-    const rows = filteredMovs.map(m => {
-      const isIngreso=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
-      const dBs=isIngreso?Number(m.montoBs||0):0; const hBs=isIngreso?0:Number(m.montoBs||0);
-      const dU=isIngreso?Number(m.montoUSD||0):0;  const hU=isIngreso?0:Number(m.montoUSD||0);
-      let lineas=[];
-      lineas.push({codigo:isBanco?(cuentas.find(c=>c.id===m.cuentaId)?.cuentaContableCod||''):'1.1.01.01.001',cuenta:isBanco?(m.cuentaNombre||'BANCO'):'CAJA PRINCIPAL',tipoLinea:isIngreso?'D':'H',debeBs:dBs,haberBs:hBs,debeUSD:dU,haberUSD:hU});
-      if(m.lineasContra&&m.lineasContra.length>0){
-        m.lineasContra.forEach(l=>lineas.push({codigo:l.ctaNom?l.ctaNom.split('·')[0].trim():'',cuenta:l.ctaNom?(l.ctaNom.split('·')[1]?.trim()||l.ctaNom):l.ctaNom,tipoLinea:Number(l.debeBs)>0?'D':'H',debeBs:Number(l.debeBs||0),haberBs:Number(l.haberBs||0),debeUSD:Number(l.debeUSD||0),haberUSD:Number(l.haberUSD||0)}));
-      } else {
-        lineas.push({codigo:'',cuenta:isIngreso?m.asientoCredito:m.asientoDebito,tipoLinea:isIngreso?'H':'D',debeBs:hBs,haberBs:dBs,debeUSD:hU,haberUSD:dU});
-      }
-      return {id:m.id,comprobante:m.asientoContableId||m.id.substring(0,8).toUpperCase(),fecha:m.fecha,descripcion:m.esVale?`[VALE] ${m.concepto}`:m.concepto,nroDocumento:m.referencia||'',tasa:m.tasa,lineas};
-    });
+    };
+    const asientosMes = asientosLocal.filter(a=>applyFiltros(a, false));
+    const rows = asientosMes.length > 0 ? asientosMes : movBanco.filter(m=>{
+      if(!(m.asientoDebito||m.asientoCredito)) return false;
+      return applyFiltros(m, true);
+    }).map(m=>({
+      id:m.id, comprobante:m.asientoContableId||m.id,
+      fecha:m.fecha, descripcion:m.concepto, nroDocumento:m.referencia||'',
+      tasa:m.tasa, cuentaNombre:m.cuentaNombre,
+      lineas:[{codigo:'',cuenta:m.asientoDebito,tipoLinea:'D',debeBs:m.montoBs,haberBs:0,debeUSD:m.montoUSD,haberUSD:0},{codigo:'',cuenta:m.asientoCredito,tipoLinea:'H',debeBs:0,haberBs:m.montoBs,debeUSD:0,haberUSD:m.montoUSD}],
+    }));
+    const getMovCuentaId = r => movBanco.find(m=>m.id===r.movimientoBancoId)?.cuentaId||null;
+
+    // ── PDF / XLS generator ──────────────────────────────────────────────────
+    const buildHTML = (tableRows, titleLabel) => {
+      let sBs=0, sUSD=0;
+      const rowsHtml = tableRows.flatMap(r=>{
+        const lineas=r.lineas||[];
+        const comp=r.comprobante||r.numero||'—';
+        const mesL=r.fecha?r.fecha.substring(5,7)+'/'+r.fecha.substring(0,4):'—';
+        const nroDoc=r.nroDocumento||r.referencia||'—';
+        const conc=r.descripcion||r.concepto||'—';
+        const tasa=Number(r.tasa||tasaActiva);
+        return lineas.map((l,li)=>{
+          const dBs=Number(l.debeBs||0),hBs=Number(l.haberBs||0);
+          const dU=Number(l.debeUSD||0),hU=Number(l.haberUSD||0);
+          sBs+=dBs-hBs; sUSD+=dU-hU;
+          return `<tr style="border-bottom:1px solid #e2e8f0"><td>${li===0?comp:''}</td><td>${li===0?mesL:''}</td><td>${li===0?dd(r.fecha):''}</td><td style="font-family:monospace;color:#2563eb">${l.codigo||'—'}</td><td style="padding-left:${l.tipoLinea==='H'?'16':'4'}px">${l.cuenta||'—'}</td><td style="text-align:center;font-weight:900;color:${l.tipoLinea==='D'?'#16a34a':'#dc2626'}">${l.tipoLinea}</td><td>${li===0?nroDoc:''}</td><td>${li===0?conc:''}</td><td style="text-align:right">${li===0?fmt(tasa):''}</td><td style="text-align:right;color:#16a34a">${dBs>0?'Bs.'+fmt(dBs):''}</td><td style="text-align:right;color:#dc2626">${hBs>0?'Bs.'+fmt(hBs):''}</td><td style="text-align:right;color:#64748b">${li===lineas.length-1?'Bs.'+fmt(sBs):''}</td><td style="text-align:right;color:#16a34a">${dU>0?'$'+fmt(dU):''}</td><td style="text-align:right;color:#dc2626">${hU>0?'$'+fmt(hU):''}</td><td style="text-align:right;color:#64748b">${li===lineas.length-1?'$'+fmt(sUSD):''}</td></tr>`;
+        });
+      }).join('');
+      return letterheadOpen(`Comprobante Contable Bancario — ${titleLabel}`,`${tableRows.length} asiento(s) · Tasa ${tasaActiva} Bs/$ · ${dd(today())}`)+
+        `<style>table{font-size:9px;border-collapse:collapse;width:100%}th{background:#0f172a;color:#e2e8f0;padding:6px 8px;text-align:left;font-size:8px;text-transform:uppercase;white-space:nowrap}td{padding:4px 8px;vertical-align:middle}tr:nth-child(even){background:#f8fafc}.tfoot-row{background:#0f172a;color:white;font-weight:900}</style>
+        <table><thead><tr><th>Comprobante</th><th>Mes</th><th>Fecha</th><th>Código</th><th>Cuenta de Movimiento</th><th style="text-align:center">T</th><th>Nro Doc</th><th>Concepto</th><th style="text-align:right">Tasa</th><th style="text-align:right;color:#4ade80">Debe Bs.</th><th style="text-align:right;color:#f87171">Haber Bs.</th><th style="text-align:right">Saldo Bs.</th><th style="text-align:right;color:#4ade80">Debe $</th><th style="text-align:right;color:#f87171">Haber $</th><th style="text-align:right">Saldo $</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot><tr class="tfoot-row"><td colspan="9">TOTALES — ${tableRows.length} asiento(s)</td><td style="text-align:right;color:#4ade80">Bs.${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeBs||0),a),0))}</td><td style="text-align:right;color:#f87171">Bs.${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberBs||0),a),0))}</td><td></td><td style="text-align:right;color:#4ade80">$${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.debeUSD||0),a),0))}</td><td style="text-align:right;color:#f87171">$${fmt(tableRows.reduce((a,r)=>(r.lineas||[]).reduce((b,l)=>b+Number(l.haberUSD||0),a),0))}</td><td></td></tr></tfoot></table>`+
+        letterheadClose('Módulo: Tesorería & Bancos');
+    };
+    const imprimirPDF=(tr,tl)=>printWindow(buildHTML(tr,tl));
+    const imprimirXLS=(tr,tl)=>{const h=buildHTML(tr,tl);const b=new Blob([h],{type:'application/vnd.ms-excel;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`comp_banco_${today()}.xls`;a.click();URL.revokeObjectURL(u);};
+
     return (
-      <div className="space-y-5 w-full min-w-0">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-wrap items-end gap-5">
+      <div className="space-y-3">
+        {/* Filtros */}
+        <div className="bg-white rounded-xl border border-slate-100 p-3 flex flex-wrap items-end gap-3">
+          <FG label="Banco">
+            <select className={`${sel} min-w-[160px]`} value={filtBanco} onChange={e=>setFiltBanco(e.target.value)}>
+              <option value="">Todos los bancos</option>
+              {[{label:'🇻🇪 Nacionales Bs.',items:cuentas.filter(c=>c.tipoBanco==='Nacional-Bs')},
+                {label:'💵 Moneda Extranjera',items:cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs')}
+              ].map(g=>g.items.length>0&&(
+                <optgroup key={g.label} label={g.label}>{g.items.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}</optgroup>
+              ))}
+            </select>
+          </FG>
           <FG label="Desde"><input type="date" className={inp} value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/></FG>
           <FG label="Hasta"><input type="date" className={inp} value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/></FG>
-          <p className="text-[11px] text-slate-500 font-medium self-end">{dd(filtDesde)} al {dd(filtHasta)} — <span className="font-black text-slate-800">{rows.length} comprobante(s)</span></p>
+          {(filtBanco||filtDesde!==mesActual()+'-01'||filtHasta!==today())&&(
+            <button onClick={()=>{setFiltBanco('');setFiltDesde(mesActual()+'-01');setFiltHasta(today());}} className="self-end mb-0.5 text-[9px] font-black text-slate-400 hover:text-red-500 px-2 py-1.5 rounded-lg border border-slate-200 hover:bg-red-50">✕</button>
+          )}
+          <div className="ml-auto self-end flex gap-2">
+            <button onClick={()=>imprimirPDF(rows, filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':`${mes}`)} className="flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase hover:bg-red-700"><Download size={10}/> PDF</button>
+            <button onClick={()=>imprimirXLS(rows, filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':`${mes}`)} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-[9px] font-black uppercase hover:bg-green-700"><FileSpreadsheet size={10}/> Excel</button>
+          </div>
+          <p className="w-full text-[9px] text-slate-400">{filtBanco?cuentas.find(c=>c.id===filtBanco)?.banco||'Banco':'Todos los bancos'} · {dd(filtDesde)} al {dd(filtHasta)} · <strong className="text-slate-700">{rows.length} resultado(s)</strong></p>
         </div>
-        {rows.length===0&&<div className="bg-white rounded-2xl border border-slate-200 p-12 shadow-sm"><EmptyState icon={BookOpen} title="Sin asientos" desc="No hay registros para este filtro."/></div>}
-        {rows.length>0&&<BancoTable title={`Comprobantes de ${isBanco?'Bancos':'Caja'}`} tableRows={rows}/>}
+
+        {/* Tablas por banco */}
+        {rows.length===0&&<div className="bg-white rounded-xl border border-slate-100 p-8"><EmptyState icon={BookOpen} title="Sin asientos" desc="Los asientos se generan automáticamente al registrar movimientos bancarios"/></div>}
+        {filtBanco
+          ? <BancoTable title={cuentas.find(c=>c.id===filtBanco)?.banco||'Banco'} tableRows={rows} onPDF={()=>imprimirPDF(rows,cuentas.find(c=>c.id===filtBanco)?.banco||'Banco')} onXLS={()=>imprimirXLS(rows,cuentas.find(c=>c.id===filtBanco)?.banco||'Banco')}/>
+          : (()=>{
+              const grupos=[
+                {label:'🇻🇪 Cuentas Nacionales — Bolívares', bancos:cuentas.filter(c=>c.tipoBanco==='Nacional-Bs')},
+                {label:'🌐 Bancos Internacionales & ME',      bancos:cuentas.filter(c=>c.tipoBanco!=='Nacional-Bs')},
+              ];
+              return grupos.map(g=>{
+                const bancosConMovs=g.bancos.filter(c=>rows.some(r=>getMovCuentaId(r)===c.id));
+                if(bancosConMovs.length===0) return null;
+                return(
+                  <div key={g.label} className="space-y-2">
+                    <div className="flex items-center gap-2 mt-2">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{g.label}</p>
+                      <div className="flex-1 h-px bg-slate-100"/>
+                    </div>
+                    {bancosConMovs.map(c=>{
+                      const bancoRows=rows.filter(r=>getMovCuentaId(r)===c.id);
+                      return <BancoTable key={c.id} title={`${c.banco} · ${c.numeroCuenta}`} tableRows={bancoRows} onPDF={()=>imprimirPDF(bancoRows,c.banco)} onXLS={()=>imprimirXLS(bancoRows,c.banco)}/>;
+                    })}
+                  </div>
+                );
+              });
+            })()
+        }
+        {!filtBanco&&rows.filter(r=>!getMovCuentaId(r)).length>0&&(
+          <BancoTable title="Sin banco identificado" tableRows={rows.filter(r=>!getMovCuentaId(r))} onPDF={()=>imprimirPDF(rows.filter(r=>!getMovCuentaId(r)),'Sin banco')} onXLS={()=>imprimirXLS(rows.filter(r=>!getMovCuentaId(r)),'Sin banco')}/>
+        )}
       </div>
     );
   };
 
   const RepLibroDiarioView = () => {
-    const allMovs=[...movBanco.map(m=>({...m,origen:'Banco'})),...movCaja.map(m=>({...m,origen:'Caja'}))];
-    allMovs.sort((a,b)=>b.fecha.localeCompare(a.fecha));
+    const [filtDesde,setFiltDesde]=useState(mesActual()+'-01'); const [filtHasta,setFiltHasta]=useState(today());
+    const [filtOrigen,setFiltOrigen]=useState(''); const [filtCta,setFiltCta]=useState('');
+    let allMovs=[...movBanco.map(m=>({...m,origen:'Banco'})),...movCaja.map(m=>({...m,origen:'Caja'}))];
+    allMovs=allMovs.filter(m=>{if(m.fecha<filtDesde||m.fecha>filtHasta)return false;if(filtOrigen&&m.cuentaId!==filtOrigen&&m.cajaId!==filtOrigen)return false;return true;});
+    allMovs.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    let lineasPlanas=[],sBs=0,sUSD=0;
+    allMovs.forEach(m=>{
+      const isBanco=m.origen==='Banco';const ctaP=isBanco?cuentas.find(c=>c.id===m.cuentaId):cajas.find(c=>c.id===m.cajaId);if(!ctaP)return;
+      const isIng=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';const tasa=Number(m.tasa)||1;const mNat=Number(m.montoNativo)||Number(m.monto)||0;
+      const valBs=ctaP.moneda==='BS'?mNat:mNat*tasa;const valUSD=ctaP.moneda==='BS'?mNat/tasa:mNat;
+      const comp=m.asientoContableId||m.id.substring(0,6).toUpperCase();
+      const mesL=m.fecha.substring(5,7)+'/'+m.fecha.substring(0,4);const doc=m.referencia||'—';const conc=m.esVale?`[VALE] ${m.concepto}`:m.concepto;
+      let sub=[{comp,mes:mesL,fecha:m.fecha,doc,conc,tasa,codigo:ctaP.cuentaContableCod||'—',cuenta:isBanco?ctaP.banco:ctaP.nombre,tipo:isIng?'D':'H',dBs:isIng?valBs:0,hBs:isIng?0:valBs,dUSD:isIng?valUSD:0,hUSD:isIng?0:valUSD}];
+      if(m.lineasContra&&m.lineasContra.length>0){m.lineasContra.forEach(l=>sub.push({comp,mes:mesL,fecha:m.fecha,doc,conc,tasa,codigo:l.ctaNom?l.ctaNom.split('·')[0].trim():'',cuenta:l.ctaNom?l.ctaNom.split('·')[1]?.trim():l.ctaNom,tipo:Number(l.debeBs||0)>0?'D':'H',dBs:Number(l.debeBs||0),hBs:Number(l.haberBs||0),dUSD:Number(l.debeUSD||0),hUSD:Number(l.haberUSD||0)}));}
+      else if(m.asientoDebito||m.asientoCredito){sub.push({comp,mes:mesL,fecha:m.fecha,doc,conc,tasa,codigo:'',cuenta:isIng?m.asientoCredito:m.asientoDebito,tipo:isIng?'H':'D',dBs:isIng?0:valBs,hBs:isIng?valBs:0,dUSD:isIng?0:valUSD,hUSD:isIng?valUSD:0});}
+      if(filtCta){const ok=sub.some(sl=>(sl.codigo+' '+sl.cuenta).toLowerCase().includes(filtCta.toLowerCase()));if(!ok)return;}
+      sub.forEach(sl=>{sBs+=sl.dBs-sl.hBs;sUSD+=sl.dUSD-sl.hUSD;lineasPlanas.push({...sl,sBs,sUSD});});
+    });
     return(
       <div className="space-y-5 flex flex-col min-w-0 w-full">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <h2 className="text-lg font-black text-slate-800 uppercase tracking-wide">Libro Diario General (Bimonetario)</h2>
-          <p className="text-xs text-slate-500 font-medium mt-1">Registro cronológico de partida doble de todas las transacciones de Banco y Caja.</p>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div><h2 className="text-lg font-black text-slate-800 uppercase tracking-wide">Libro Diario General Bimonetario</h2><p className="text-xs text-slate-500 font-medium mt-1">Todos los asientos integrados en un solo comprobante maestro.</p></div>
+          <div className="flex flex-wrap gap-4 items-end bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Desde</label><input type="date" className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold outline-none" value={filtDesde} onChange={e=>setFiltDesde(e.target.value)}/></div>
+            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Hasta</label><input type="date" className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold outline-none" value={filtHasta} onChange={e=>setFiltHasta(e.target.value)}/></div>
+            <div><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Origen</label><select className="border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold outline-none min-w-[200px]" value={filtOrigen} onChange={e=>setFiltOrigen(e.target.value)}><option value="">TODOS LOS ORÍGENES</option><optgroup label="Bancos">{cuentas.map(c=><option key={c.id} value={c.id}>{c.banco}</option>)}</optgroup><optgroup label="Cajas">{cajas.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</optgroup></select></div>
+            <div className="flex-1"><label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Cuenta Contable</label><div className="relative"><Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input type="text" className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-xs font-semibold outline-none" placeholder="Ej: 1.1.01..." value={filtCta} onChange={e=>setFiltCta(e.target.value)}/></div></div>
+            {(filtOrigen||filtCta||filtDesde!==mesActual()+'-01'||filtHasta!==today())&&<button onClick={()=>{setFiltDesde(mesActual()+'-01');setFiltHasta(today());setFiltOrigen('');setFiltCta('');}} className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase hover:bg-red-100">Limpiar</button>}
+          </div>
         </div>
-        <div className="space-y-5 flex flex-col min-w-0">
-          {allMovs.map((m,idx)=>{
-            const isIngreso=m.tipo==='Ingreso'||m.tipo==='Nota de Crédito';
-            const tasa=Number(m.tasa)||1; const mNat=Number(m.montoNativo)||Number(m.monto)||0;
-            const isBanco=m.origen==='Banco';
-            const ctaOrigen=isBanco?cuentas.find(c=>c.id===m.cuentaId):{moneda:m.moneda,banco:'CAJA',cuentaContableCod:'1.1.01.01.001'};
-            if(!ctaOrigen) return null;
-            const valBs=ctaOrigen.moneda==='BS'?mNat:mNat*tasa;
-            const valUSD=ctaOrigen.moneda==='BS'?mNat/tasa:mNat;
-            let lineas=[{codigo:ctaOrigen.cuentaContableCod||'—',nombre:isBanco?ctaOrigen.banco:'CAJA PRINCIPAL',dBs:isIngreso?valBs:0,hBs:isIngreso?0:valBs,dUSD:isIngreso?valUSD:0,hUSD:isIngreso?0:valUSD,isMain:true}];
-            if(m.lineasContra&&m.lineasContra.length>0){m.lineasContra.forEach(l=>lineas.push({codigo:l.ctaNom?l.ctaNom.split('·')[0].trim():'',nombre:l.ctaNom?l.ctaNom.split('·')[1]?.trim():l.ctaNom,dBs:Number(l.debeBs||0),hBs:Number(l.haberBs||0),dUSD:Number(l.debeUSD||0),hUSD:Number(l.haberUSD||0)}));}
-            else if(m.asientoDebito||m.asientoCredito){lineas.push({codigo:'',nombre:isIngreso?m.asientoCredito:m.asientoDebito,dBs:isIngreso?0:valBs,hBs:isIngreso?valBs:0,dUSD:isIngreso?0:valUSD,hUSD:isIngreso?valUSD:0});}
-            if(lineas.length<2) return null;
-            return(
-              <div key={m.id} className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden flex flex-col min-w-0">
-                <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-black text-slate-900 bg-amber-400 px-2 py-1 rounded tracking-widest">ASIENTO N° {allMovs.length-idx}</span>
-                    <span className="text-[11px] text-white font-mono font-bold">{dd(m.fecha)}</span>
-                  </div>
-                  <Badge v={isBanco?'blue':'green'}>{m.origen}</Badge>
-                </div>
-                <div className="p-4 border-b border-slate-200 bg-slate-50 text-xs text-slate-600 font-medium">Concepto: <span className="font-bold text-slate-800">{m.esVale?`[VALE] ${m.concepto}`:m.concepto}</span></div>
-                <div className="overflow-x-auto w-full min-w-0">
-                  <table className="w-full text-left min-w-[700px]">
-                    <thead><tr className="border-b-2 border-slate-200 text-slate-400 bg-white"><Th>Cuenta</Th><Th>Descripción</Th><Th right>Debe Bs.</Th><Th right>Haber Bs.</Th><Th right>Debe $</Th><Th right>Haber $</Th></tr></thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {lineas.map((l,i)=>(
-                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                          <Td mono className="font-black text-blue-600 text-[11px]">{l.codigo}</Td>
-                          <Td className={`text-[10px] uppercase tracking-wide ${l.isMain?'font-black text-slate-900':'font-bold text-slate-500'}`}>{l.nombre}</Td>
-                          <Td right mono className="text-emerald-700 font-black bg-emerald-50/30">{l.dBs>0?fmt(l.dBs):''}</Td>
-                          <Td right mono className="text-red-700 font-black bg-red-50/30">{l.hBs>0?fmt(l.hBs):''}</Td>
-                          <Td right mono className="text-emerald-700 text-[10px] font-bold">{l.dUSD>0?fmt(l.dUSD):''}</Td>
-                          <Td right mono className="text-red-700 text-[10px] font-bold">{l.hUSD>0?fmt(l.hUSD):''}</Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
-          {allMovs.length===0&&<div className="bg-white rounded-xl p-10 text-center text-slate-400">Sin movimientos registrados.</div>}
-        </div>
+        {lineasPlanas.length===0?<EmptyState icon={BookOpen} title="Sin resultados" desc="No hay asientos para los filtros seleccionados."/>:(
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-w-0 w-full">
+            <div className="overflow-x-auto w-full min-w-0 pb-2"><table className="w-full text-left min-w-[1400px]">
+              <thead><tr className="bg-slate-900 border-b border-slate-800">{['Comprobante','Mes','Fecha','Código','Cuenta de Movimiento','T','Nro Doc','Concepto','Tasa','Debe Bs.','Haber Bs.','Saldo Bs.','Debe $','Haber $','Saldo $'].map((h,hi)=>(<th key={hi} className={`px-4 py-3 font-black uppercase text-white/90 whitespace-nowrap text-[10px] tracking-wider ${hi>=9?'text-right':hi===5?'text-center':'text-left'}`}>{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {lineasPlanas.map((l,idx)=>{const isD=l.tipo==='D';const esInicio=idx===0||lineasPlanas[idx-1].comp!==l.comp;return(
+                  <tr key={idx} className={`hover:bg-slate-50 transition-colors ${esInicio&&idx>0?'border-t-2 border-slate-200':''}`}>
+                    <td className="px-4 py-2.5 font-mono font-black text-blue-600 text-[11px] whitespace-nowrap">{esInicio?l.comp:''}</td>
+                    <td className="px-4 py-2.5 text-slate-400 text-[10px] whitespace-nowrap">{esInicio?l.mes:''}</td>
+                    <td className="px-4 py-2.5 text-slate-500 text-[10px] whitespace-nowrap font-mono">{esInicio?dd(l.fecha):''}</td>
+                    <td className="px-4 py-2.5 font-mono font-black text-blue-500 text-[10px]">{l.codigo||'—'}</td>
+                    <td className="px-4 py-2.5 font-bold text-slate-700 text-[10px] uppercase truncate max-w-[200px]" style={{paddingLeft:!isD?'20px':'16px'}} title={l.cuenta}>{l.cuenta||'—'}</td>
+                    <td className="px-4 py-2.5 text-center font-black text-[11px]"><span className={isD?'text-emerald-600':'text-red-500'}>{l.tipo}</span></td>
+                    <td className="px-4 py-2.5 font-mono text-slate-400 text-[10px] truncate max-w-[100px]">{esInicio?l.doc:''}</td>
+                    <td className="px-4 py-2.5 text-slate-600 text-[10px] truncate max-w-[180px] font-medium uppercase" title={l.conc}>{esInicio?l.conc:''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-slate-400 text-[10px]">{esInicio?fmt(l.tasa):''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/10">{l.dBs>0?'Bs.'+fmt(l.dBs):''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/10">{l.hBs>0?'Bs.'+fmt(l.hBs):''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{!esInicio?'Bs.'+fmt(l.sBs):''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-600 text-[10px] whitespace-nowrap bg-emerald-50/10">{l.dUSD>0?'$'+fmt(l.dUSD):''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black text-red-500 text-[10px] whitespace-nowrap bg-red-50/10">{l.hUSD>0?'$'+fmt(l.hUSD):''}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-black text-slate-400 text-[10px] whitespace-nowrap">{!esInicio?'$'+fmt(l.sUSD):''}</td>
+                  </tr>);})}
+              </tbody>
+            </table></div>
+          </div>
+        )}
       </div>
     );
   };
+
+  const navGroups = [
+    { group:'Analítica',   color:'#f97316', items:[{id:'dashboard',    label:'Panel General',      icon:LayoutDashboard}] },
+    { group:'Bancos',      color:'#3b82f6', items:[{id:'cuentas',      label:'Cuentas Bancarias',  icon:Building2},
+                                                    {id:'movimientos',  label:'Movimientos Banco',  icon:ArrowLeftRight},
+                                                    {id:'conciliacion', label:'Conciliación',       icon:CheckCircle}] },
+    { group:'Caja',        color:'#10b981', items:[{id:'caja_op',      label:'Operaciones Caja',   icon:Banknote},
+                                                    {id:'vales',        label:'Relación de Vales',  icon:FileText},
+                                                    {id:'arqueo',       label:'Arqueo de Caja',     icon:Calculator}] },
+    { group:'Reportes',    color:'#f59e0b', items:[{id:'rpt_gral_banco',label:'General de Banco',   icon:Building2},
+                                                    {id:'rpt_gral_caja', label:'General de Caja',   icon:PiggyBank},
+                                                    {id:'rpt_comp_banco',label:'Comprobante Bancario',icon:FileText},
+                                                    {id:'rpt_comp_caja', label:'Comprobante de Caja', icon:FileText},
+                                                    {id:'rpt_libro',    label:'Libro Diario General',icon:BookOpen}] },
+    { group:'Config.',     color:'#64748b', items:[{id:'tasas',        label:'Tasas de Cambio',    icon:Globe}] },
+  ];
+
   const views = {
     dashboard:<DashboardView/>, cuentas:<CuentasView/>, movimientos:<MovimientosView/>,
     conciliacion:<ConciliacionView/>, caja_op:<CajaOpView/>, vales:<ValesView/>, arqueo:<ArqueoCajaView/>,
