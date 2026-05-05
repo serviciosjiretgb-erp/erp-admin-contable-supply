@@ -2858,8 +2858,7 @@ function BancoApp({ fbUser, onBack }) {
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {/* ── DISEÑO HORIZONTAL COMPACTO CAJA ── */}
 <div className="grid grid-cols-12 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
-  
-  {/* ── Fila 1: Datos Básicos ── */}
+    {/* ── Fila 1: Datos Básicos ── */}
   <div className="col-span-12 md:col-span-3">
     <FG label="Caja Origen">
       <select className={sel} value={form.cuentaId} onChange={e=>setForm({...form,cuentaId:e.target.value})}>
@@ -2870,8 +2869,7 @@ function BancoApp({ fbUser, onBack }) {
       </select>
     </FG>
   </div>
-  
-  <div className="col-span-12 md:col-span-3">
+    <div className="col-span-12 md:col-span-3">
     <FG label="Tipo de Operación">
       <select className={sel} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})}>
         <option value="Ingreso">Ingreso</option>
@@ -2891,7 +2889,6 @@ function BancoApp({ fbUser, onBack }) {
       <input className={inp} value={form.referencia} onChange={e=>setForm({...form,referencia:e.target.value})} placeholder="Ej: Juan Pérez / REF-123"/>
     </FG>
   </div>
-
   {/* ── Fila 2: Contabilidad, Monto y Tasa ── */}
   <div className="col-span-12 md:col-span-4 mt-2">
     <FG label="Cuenta Contable (Contrapartida)">
@@ -2903,8 +2900,7 @@ function BancoApp({ fbUser, onBack }) {
       </select>
     </FG>
   </div>
-  
-  <div className="col-span-12 md:col-span-4 mt-2">
+    <div className="col-span-12 md:col-span-4 mt-2">
     <FG label="Monto Divisas (USD)">
       <div className="relative">
         <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">$</span>
@@ -2930,7 +2926,6 @@ function BancoApp({ fbUser, onBack }) {
       </FG>
     </div>
   </div>
-
 </div>
                 {/* ── Concepto ── */}
                 <FG label="Concepto / Descripción" full>
@@ -2966,7 +2961,6 @@ function BancoApp({ fbUser, onBack }) {
                     </FG>
                   </div>
                 )}
-
                 {/* ── Asiento Contable Compuesto (Ingreso/Egreso) ── */}
                 {form.tipo!=='Transferencia'&&form.tipo!=='Traslado de Fondo'&&form.tipo!=='Nota de Débito'&&form.tipo!=='Nota de Crédito' && cuentaSel && (
                   <div className="rounded-2xl overflow-hidden border border-blue-100">
@@ -3081,7 +3075,6 @@ function BancoApp({ fbUser, onBack }) {
                 </div>}
               </div>
             </div>
-
             {/* ══ COLUMNA DERECHA: RESUMEN BANCO + PREVIEW ASIENTO ══ */}
             <div className="w-72 flex-shrink-0 flex flex-col bg-slate-50 border-l border-slate-200 overflow-y-auto">
               {/* Header columna derecha */}
@@ -3097,7 +3090,6 @@ function BancoApp({ fbUser, onBack }) {
                   <Building2 size={28} className="text-slate-300 mb-3"/>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-relaxed">Seleccione un banco para visualizar su estado</p>
                 </div>}
-
                 {/* Live accounting preview */}
                 {cuentaSel&&mNat>0&&<div className="rounded-xl overflow-hidden border border-slate-800">
                   <div className="px-4 py-3 flex items-center gap-2" style={{background:'#0b1120'}}>
