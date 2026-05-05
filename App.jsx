@@ -205,7 +205,7 @@ const Modal = ({ open, onClose, title, children, footer, wide, xwide, noHeader }
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6" style={{ background: 'rgba(15,23,42,.85)', backdropFilter: 'blur(4px)' }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`bg-white w-full ${xwide ? 'max-w-[95vw] lg:max-w-[1300px] h-[95vh]' : wide ? 'max-w-[95vw] md:max-w-3xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
+      <div className={`bg-white w-full ${xwide ? 'w-[98vw] max-w-[98vw] h-[98vh]' : wide ? 'max-w-[95vw] md:max-w-3xl max-h-[90vh]' : 'max-w-[95vw] sm:max-w-lg max-h-[90vh]'} rounded-2xl flex flex-col shadow-2xl overflow-hidden relative`}>
         {!noHeader && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0" style={{ background: 'linear-gradient(135deg,#0f172a,#1e293b)' }}>
             <h2 className="font-black text-white uppercase tracking-widest text-sm">{title}</h2>
@@ -294,7 +294,7 @@ const SidebarLayout = ({ brand, brandSub, navGroups, activeId, onNav, children, 
                         : { borderLeft: '3px solid transparent' }}>
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all"
                         style={active ? { background: gc } : { background: '#1e293b' }}>
-                        <Icon size={13} style={{ color: active ? '#fff' : '#64748b' }} />
+                        <Icon size={16} strokeWidth={1.5} style={{ color: active ? '#fff' : '#64748b' }} />
                       </div>
                       <span className={`text-[11px] font-bold uppercase tracking-wide truncate transition-colors ${active ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>
                         {label}
@@ -1304,6 +1304,7 @@ const DENOM_USD = [100,50,20,10,5,2,1];
 function BancoApp({ fbUser, onBack }) {
   const [sec, setSec] = useState('dashboard');
   const [cuentas,    setCuentas]  = useState([]);
+  const [cajas,      setCajas]    = useState([]);
   const [movBanco,   setMovBanco] = useState([]);
   const [movCaja,    setMovCaja]  = useState([]);
   const [arques,     setArques]   = useState([]);
@@ -1319,6 +1320,7 @@ function BancoApp({ fbUser, onBack }) {
     if (!fbUser) return;
     const subs = [
       onSnapshot(col('banco_cuentas'), s => setCuentas(s.docs.map(d=>d.data()))),
+      onSnapshot(col('caja_cuentas'), s => setCajas(s.docs.map(d=>d.data()))),,
       onSnapshot(query(col('banco_movimientos'), orderBy('fecha','desc')), s => setMovBanco(s.docs.map(d=>d.data()))),
       onSnapshot(query(col('caja_movimientos'), orderBy('fecha','desc')), s => setMovCaja(s.docs.map(d=>d.data()))),
       onSnapshot(query(col('caja_arques'), orderBy('fecha','desc')), s => setArques(s.docs.map(d=>d.data()))),
@@ -2153,8 +2155,11 @@ function BancoApp({ fbUser, onBack }) {
           estatus:'No Conciliado',ts:serverTimestamp()
         });
         batch.update(dref('banco_cuentas',cuenta.id),{saldo:nuevoSaldo});
-        if((form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&cuentaDest)
+        if((form.tipo==='Transferencia'||form.tipo==='Traslado de Fondo')&&cuentaDest) {
           batch.update(dref('banco_cuentas',cuentaDest.id),{saldo:Number(cuentaDest.saldo)+mNat});
+          const idDestino=gid();
+          batch.set(dref('banco_movimientos',idDestino),{id:idDestino,fecha:form.fecha,tipo:'Ingreso',cuentaId:cuentaDest.id,cuentaNombre:cuentaDest.banco,tipoBanco:cuentaDest.tipoBanco,moneda:cuentaDest.moneda,origenIngreso:'Transferencia',concepto:`Transferencia recibida desde ${cuenta.banco} | Ref: ${form.referencia}`,referencia:form.referencia,tasa,montoNativo:mNat,montoBs,montoUSD,saldoAnterior:Number(cuentaDest.saldo),saldoResultante:Number(cuentaDest.saldo)+mNat,estatus:'No Conciliado',ts:serverTimestamp()});
+        }
         if(factura&&form.cerrarCxC){
           const ns=Math.max(0,factura.saldoUSD-montoUSD);
           batch.update(dref('facturacion_facturas',factura.id),{saldoUSD:ns,estado:ns<0.01?'Pagada':'Pendiente'});
@@ -3885,7 +3890,7 @@ function BancoApp({ fbUser, onBack }) {
                 <thead><tr><Th>Banco</Th><Th>Nro.</Th><Th>Tipo</Th><Th>Moneda</Th><Th right>Saldo</Th><Th right>En USD</Th><Th right>En Bs.</Th></tr></thead>
                 <tbody>{cuentas.filter(c=>g.tipos.includes(c.tipoBanco||'Nacional-Bs')).map(c=>{
                   const bs=c.moneda==='BS';const usd=bs?Number(c.saldo)/tasaActiva:Number(c.saldo);const bsEq=bs?Number(c.saldo):Number(c.saldo)*tasaActiva;
-                  return<tr key={c.id} className="hover:bg-slate-50"><Td className="font-black">{c.banco}</Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
+                  return<tr key={c.id} className="hover:bg-slate-50"><Td className="font-black"><div className="flex items-center gap-2"><BankLogo banco={c.banco} logoUrl={c.logoUrl} className="w-6 h-6 rounded shadow-sm object-contain border border-slate-200"/><span>{c.banco}</span></div></Td><Td mono className="text-[10px]">{c.numeroCuenta}</Td><Td className="text-[10px]">{c.tipoCuenta}</Td><Td><Pill usd={!bs}>{c.moneda}</Pill></Td><Td right mono className="font-black">{bs?'Bs.':'$'} {fmt(c.saldo)}</Td><Td right mono className="text-emerald-600 font-black">{'$'+fmt(usd)}</Td><Td right mono className="text-blue-600">Bs.{fmt(bsEq)}</Td></tr>;
                 })}</tbody>
               </table></div>
             </div>
