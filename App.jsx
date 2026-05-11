@@ -268,7 +268,20 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 };
 
 // ============================================================================
-// 3. VISTA: ESTADO DE RESULTADOS 
+// COMPONENTE MEMBRETE OFICIAL
+// ============================================================================
+const ReportHeader = ({ title, period }) => (
+  <div className="text-center mb-10 text-black font-sans">
+    <h1 className="text-xl font-bold uppercase">SERVICIOS JIRET G&B, C.A</h1>
+    <p className="text-sm font-bold mt-1">J-412309374</p>
+    <p className="text-base font-bold uppercase mt-4">{title}</p>
+    <p className="text-sm font-bold uppercase mt-1">{period}</p>
+    <p className="text-sm font-bold uppercase mt-4">EXPRESADO EN DOLARES AMERICANOS (USD)</p>
+  </div>
+);
+
+// ============================================================================
+// 3. VISTA: ESTADO DE RESULTADOS
 // ============================================================================
 function EstadoResultadoView({ onBack, dbData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData]);
@@ -304,11 +317,11 @@ function EstadoResultadoView({ onBack, dbData }) {
       let pathArray = item.path.split('>');
       let cur = root;
       
-      // Unificación de Ventas
       let itemName = item.name.trim();
       const isVenta = itemName.toUpperCase().includes('VENTA') || itemName.toUpperCase().includes('INGRESO') || item.path.toUpperCase().includes('VENTA');
       if (isVenta) {
         itemName = "4.1.01.001 - INGRESOS GENERALES POR VENTA";
+        pathArray = ["INGRESOS"]; // Forzar la carpeta superior también
       }
 
       pathArray.forEach(folderName => {
@@ -368,8 +381,8 @@ function EstadoResultadoView({ onBack, dbData }) {
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
+    <div className="min-h-screen bg-white">
+      <header className="bg-white border-b-2 border-black p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
         <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-black uppercase hover:text-orange-600 transition-colors"><ArrowLeft size={16}/> Volver al Panel</button>
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-gray-500 uppercase tracking-widest mr-1">Filtro:</span>
@@ -380,13 +393,13 @@ function EstadoResultadoView({ onBack, dbData }) {
         </div>
       </header>
       <main className="p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-8 border-black shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <h1 className="text-3xl font-black text-black uppercase mb-2 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
-          <div className="w-24 h-1.5 bg-orange-500 mb-4 rounded-full"/>
-          <h2 className="text-xl font-black text-gray-800 uppercase tracking-widest border-b border-gray-100 pb-2 mb-4 w-full max-w-md">Estado de Resultado</h2>
-          <p className="text-white font-black uppercase flex items-center gap-2 bg-black px-5 py-2 rounded-full text-[10px] shadow-sm"><CalendarDays size={14}/> {selectedMonth}</p>
-        </div>
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+        
+        <ReportHeader 
+          title="ESTADO DE RESULTADO" 
+          period={selectedMonth === 'General' ? 'ACUMULADO' : `MES: ${selectedMonth}`}
+        />
+
+        <div className="bg-white border border-gray-200">
           <table className="w-full text-left border-collapse">
             <thead className="bg-black text-[10px] uppercase font-black text-white">
               <tr><th className="px-4 py-5 w-[55%]">Cuentas</th><th className="px-3 py-5 text-right text-orange-400">USD</th><th className="px-3 py-5 text-right hidden sm:table-cell">Bs.</th><th className="px-3 py-5 text-right">%</th></tr>
@@ -412,8 +425,9 @@ function EstadoResultadoView({ onBack, dbData }) {
 // ============================================================================
 function AnalisisComparativoView({ onBack, dbData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes'), [dbData]);
-  const [month1, setMonth1] = useState(availableMonths[0] || '');
-  const [month2, setMonth2] = useState(availableMonths[1] || availableMonths[0] || '');
+  // month1 = Anterior, month2 = Actual
+  const [month1, setMonth1] = useState(availableMonths[1] || availableMonths[0] || ''); 
+  const [month2, setMonth2] = useState(availableMonths[0] || '');
   
   const tree = useMemo(() => {
     const root = [];
@@ -421,16 +435,17 @@ function AnalisisComparativoView({ onBack, dbData }) {
       const p = d.path.toUpperCase(); const n = d.name.toUpperCase();
       return !(p.includes('ACTIVO') || p.includes('PASIVO') || (p.includes('PATRIMONIO') && !p.includes('RESULTADO')) || /^[123]/.test(n));
     };
+
     const m1Data = dbData.filter(d => d.month === month1 && filterFn(d));
     const m2Data = dbData.filter(d => d.month === month2 && filterFn(d));
     
     const processItem = (item, isM1) => {
-      const pathParts = item.path.split('>');
-      const mainCategory = pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS';
-      
-      // Usa el nombre de la cuenta real (no agrupada por detalles menores)
+      let mainCategory = item.path.split('>')[0] ? item.path.split('>')[0].trim().toUpperCase() : 'OTROS';
       let accName = item.name.trim();
-      if (item.name.toUpperCase().includes('VENTA') || item.name.toUpperCase().includes('INGRESO') || item.path.toUpperCase().includes('VENTA')) {
+
+      const isVenta = accName.toUpperCase().includes('VENTA') || accName.toUpperCase().includes('INGRESO') || item.path.toUpperCase().includes('VENTA');
+      if (isVenta) {
+        mainCategory = "INGRESOS";
         accName = "4.1.01.001 - INGRESOS GENERALES POR VENTA";
       }
 
@@ -453,7 +468,7 @@ function AnalisisComparativoView({ onBack, dbData }) {
     });
     
     root.sort((a, b) => {
-      const order = { "INGRESO": 1, "VENTA": 1, "COSTO": 2, "GASTO": 3, "EGRESO": 3 };
+      const order = { "INGRESO": 1, "VENTA": 1, "COSTO": 2, "GASTO": 3 };
       const aVal = order[Object.keys(order).find(k => a.n.toUpperCase().includes(k))] || 99;
       const bVal = order[Object.keys(order).find(k => b.n.toUpperCase().includes(k))] || 99;
       return aVal - bVal;
@@ -472,33 +487,35 @@ function AnalisisComparativoView({ onBack, dbData }) {
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       <header className="bg-white border-b-2 border-black p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
         <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-black uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver</button>
         <div className="flex gap-2 items-center">
-          <span className="text-[10px] font-black uppercase text-gray-500">Base:</span>
-          <select value={month1} onChange={(e) => setMonth1(e.target.value)} className="text-xs p-1 border border-gray-300 rounded font-bold uppercase outline-none focus:ring-1 focus:ring-orange-500">{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
-          <span className="font-bold text-[10px] uppercase text-gray-400 mx-1">VS</span>
-          <select value={month2} onChange={(e) => setMonth2(e.target.value)} className="text-xs p-1 border border-orange-300 rounded font-bold uppercase bg-orange-50 outline-none focus:ring-1 focus:ring-orange-500">{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+          <span className="text-[10px] font-black uppercase text-gray-500">Mes Anterior:</span>
+          <select value={month1} onChange={(e) => setMonth1(e.target.value)} className="text-xs p-1 border rounded font-bold uppercase outline-none focus:border-black">{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+          <span className="font-bold text-xs pt-1 mx-2">VS</span>
+          <span className="text-[10px] font-black uppercase text-gray-500">Mes Actual:</span>
+          <select value={month2} onChange={(e) => setMonth2(e.target.value)} className="text-xs p-1 border rounded font-bold uppercase bg-gray-100 outline-none focus:border-black">{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
         </div>
       </header>
-      <main className="p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white p-10 border-t-8 border-black shadow-xl text-center mb-6 rounded-b-2xl">
-          <h1 className="text-3xl font-black text-black mb-2 tracking-tighter uppercase">Análisis Comparativo</h1>
-          <div className="w-20 h-1.5 bg-orange-500 mx-auto rounded-full mb-4"/>
-          <p className="bg-black text-white px-5 py-2 inline-block rounded-full font-black text-[10px] uppercase shadow-md"><GitCompare className="inline mr-2" size={12}/> {month1} VS {month2}</p>
-        </div>
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+      <main className="p-8 max-w-6xl mx-auto">
+        
+        <ReportHeader 
+          title="ANÁLISIS COMPARATIVO" 
+          period={`${month1} VS ${month2}`}
+        />
+
+        <div className="bg-white border border-gray-200">
           <table className="w-full text-left border-collapse">
             <thead className="bg-black text-white text-[10px] uppercase font-black border-b-2 border-orange-500">
-              <tr><th className="p-5 w-[45%]">Estructura</th><th className="p-5 text-right text-gray-300">{month1}</th><th className="p-5 text-right">{month2}</th><th className="p-5 text-right text-orange-400">Var. Absoluta</th><th className="p-5 text-right">Var. %</th></tr>
+              <tr><th className="p-4">Estructura</th><th className="p-4 text-right text-gray-300">{month1}</th><th className="p-4 text-right">{month2}</th><th className="p-4 text-right text-orange-400">Var. Absoluta</th><th className="p-4 text-right">Var. %</th></tr>
             </thead>
             <tbody>
               {tree.map((cat, i) => {
                 const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key.startsWith('4');
                 const sortedAccounts = [...cat.c].sort((a, b) => String(a.n).localeCompare(String(b.n)));
                 
-                const catVarAbs = cat.m2_u - cat.m1_u;
+                const catVarAbs = cat.m2_u - cat.m1_u; // Actual - Anterior
                 const catVarPct = cat.m1_u !== 0 ? (catVarAbs / Math.abs(cat.m1_u)) * 100 : (cat.m2_u !== 0 ? 100 : 0);
                 const isPosCat = catVarAbs > 0;
                 const isNegCat = catVarAbs < 0;
@@ -512,9 +529,9 @@ function AnalisisComparativoView({ onBack, dbData }) {
 
                 return (
                   <React.Fragment key={i}>
-                    <tr className="bg-black border-b border-gray-800"><td colSpan={5} className="py-3 px-4 font-black text-white text-xs uppercase tracking-[0.2em]">{cat.n}</td></tr>
+                    <tr className="bg-black border-b border-gray-800"><td colSpan={5} className="py-2 px-4 font-black text-white text-xs uppercase tracking-[0.2em]">{cat.n}</td></tr>
                     {sortedAccounts.map((acc, j) => {
-                      const vAbs = acc.m2_u - acc.m1_u; 
+                      const vAbs = acc.m2_u - acc.m1_u; // Actual - Anterior
                       const vPct = acc.m1_u !== 0 ? (vAbs / Math.abs(acc.m1_u)) * 100 : (acc.m2_u !== 0 ? 100 : 0);
                       const isPos = vAbs > 0; const isNeg = vAbs < 0;
                       
@@ -526,18 +543,18 @@ function AnalisisComparativoView({ onBack, dbData }) {
                       }
 
                       return (
-                        <tr key={j} className="border-b border-gray-100 hover:bg-orange-50 transition-colors">
-                          <td className="py-2.5 px-4 pl-8 text-[11px] font-bold uppercase border-l-4 border-gray-300 text-black">{acc.n}</td>
-                          <td className="py-2.5 px-3 text-right font-mono text-[11px] text-gray-600">{fmtR(acc.m1_u)}</td>
-                          <td className="py-2.5 px-3 text-right font-mono text-[11px] text-black font-bold">{fmtR(acc.m2_u)}</td>
-                          <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${vAbs !== 0 ? 'text-orange-600' : 'text-gray-400'}`}>{fmtR(vAbs)}</td>
-                          <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black flex items-center justify-end gap-1 ${colorClass}`}>
+                        <tr key={j} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                          <td className="py-2 px-4 pl-8 text-[11px] font-bold uppercase border-l-4 border-gray-300">{acc.n}</td>
+                          <td className="py-2 px-3 text-right font-mono text-[11px] text-gray-600">{fmtR(acc.m1_u)}</td>
+                          <td className="py-2 px-3 text-right font-mono text-[11px] font-bold">{fmtR(acc.m2_u)}</td>
+                          <td className={`py-2 px-3 text-right font-mono text-[11px] font-bold ${vAbs !== 0 ? 'text-orange-600' : ''}`}>{fmtR(vAbs)}</td>
+                          <td className={`py-2 px-3 text-right font-mono text-[11px] font-black flex items-center justify-end gap-1 ${colorClass}`}>
                             {ArrowIcon && <ArrowIcon size={14}/>} {Math.abs(vPct).toFixed(2)}%
                           </td>
                         </tr>
                       );
                     })}
-                    <tr className="bg-gray-100 text-black border-t border-gray-300 shadow-sm">
+                    <tr className="bg-gray-100 text-black border-t border-gray-300">
                       <td className="py-3 px-4 font-black text-[11px] uppercase tracking-wider pl-6">TOTAL {cat.n}</td>
                       <td className="py-3 px-3 text-right font-mono text-[12px] font-black">{fmtR(cat.m1_u)}</td>
                       <td className="py-3 px-3 text-right font-mono text-[12px] font-black">{fmtR(cat.m2_u)}</td>
@@ -550,11 +567,11 @@ function AnalisisComparativoView({ onBack, dbData }) {
                 );
               })}
               <tr className="bg-black text-white font-black border-t-4 border-orange-500">
-                <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO NETO</td>
-                <td className="px-3 py-7 text-right text-base font-mono border-l border-gray-800">{fmtR(total_m1)}</td>
-                <td className="px-3 py-7 text-right text-base font-mono border-l border-gray-800">{fmtR(total_m2)}</td>
-                <td className={`px-3 py-7 text-right text-lg font-mono border-l border-gray-800 text-orange-400`}>{fmtR(varAbsTotal)}</td>
-                <td className={`px-3 py-7 text-right text-lg font-mono flex items-center justify-end gap-2 ${varAbsTotal > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <td className="px-5 py-6 text-sm uppercase tracking-[0.2em]">RESULTADO NETO</td>
+                <td className="px-3 py-6 text-right text-base font-mono">{fmtR(total_m1)}</td>
+                <td className="px-3 py-6 text-right text-base font-mono">{fmtR(total_m2)}</td>
+                <td className={`px-3 py-6 text-right text-lg font-mono text-orange-400`}>{fmtR(varAbsTotal)}</td>
+                <td className={`px-3 py-6 text-right text-lg font-mono flex items-center justify-end gap-2 ${varAbsTotal > 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {varAbsTotal > 0 ? <ArrowUpRight size={20}/> : <ArrowDownRight size={20}/>} {Math.abs(varPctTotal).toFixed(2)}%
                 </td>
               </tr>
@@ -623,9 +640,9 @@ function BalanceGeneralView({ onBack, dbData }) {
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       <header className="bg-white border-b-2 border-black p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-black uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button>
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button>
         <div className="flex gap-4 items-center">
           <span className="text-[10px] font-black uppercase text-gray-500">Corte:</span>
           <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="text-xs p-1.5 border border-gray-300 rounded font-bold uppercase outline-none focus:ring-1 focus:ring-orange-500">{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
@@ -634,15 +651,16 @@ function BalanceGeneralView({ onBack, dbData }) {
         </div>
       </header>
       <main className="p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white p-10 border-t-8 border-black text-center mb-6 rounded-b-2xl shadow-xl">
-          <h1 className="text-3xl font-black text-black uppercase mb-2">Balance General</h1>
-          <div className="w-20 h-1.5 bg-orange-500 mx-auto rounded-full mb-4" />
-          <p className="font-black uppercase flex items-center justify-center gap-2 px-5 py-2 rounded-full text-[10px] bg-black text-white shadow-sm w-max mx-auto"><Scale size={14}/> {selectedMonth}</p>
-        </div>
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+        
+        <ReportHeader 
+          title="BALANCE GENERAL" 
+          period={`AL MES DE ${selectedMonth}`}
+        />
+
+        <div className="bg-white border border-gray-200">
           <table className="w-full text-left border-collapse">
             <thead className="bg-black text-white text-[10px] uppercase font-black">
-              <tr><th className="p-5 w-[55%]">Estructura</th><th className="p-5 text-right text-orange-400">USD</th><th className="p-5 text-right text-gray-300 hidden sm:table-cell">Equiv. Bs.</th><th className="p-5 text-right">%</th></tr>
+              <tr><th className="p-4 w-[55%]">Estructura</th><th className="p-4 text-right text-orange-400">USD</th><th className="p-4 text-right text-gray-300 hidden sm:table-cell">Equiv. Bs.</th><th className="p-4 text-right">%</th></tr>
             </thead>
             <tbody>
               {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos || 1} highlightedAccounts={new Set()} toggleHighlight={()=>{}} isBalance={true}/>)}
@@ -707,9 +725,9 @@ function InversionesView({ onBack, activosData }) {
   const granTotalNeto = Object.values(categories).reduce((acc, c) => acc + c.totalNeto, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       <header className="bg-white border-b-2 border-black p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-black uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver</button>
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs uppercase hover:text-orange-500"><ArrowLeft size={16}/> Volver</button>
         <div className="flex gap-4 items-center">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Inversión:</span>
@@ -726,15 +744,15 @@ function InversionesView({ onBack, activosData }) {
       </header>
 
       <main className="p-8 max-w-[1200px] mx-auto pb-24">
-        <div className="bg-white p-10 border-t-8 border-black text-center mb-6 rounded-b-2xl shadow-xl">
-          <h1 className="text-3xl font-black text-black uppercase tracking-tighter mb-2">Auxiliar de Activos Fijos</h1>
-          <div className="w-20 h-1.5 bg-orange-500 mx-auto rounded-full mb-4" />
-          <p className="text-gray-500 font-bold text-[10px] uppercase tracking-[0.3em]">Valores expresados en USD para Inversión</p>
-        </div>
+        
+        <ReportHeader 
+          title="AUXILIAR DE ACTIVOS FIJOS E INVERSIONES" 
+          period={mesFiltro === 'Todos' ? 'HISTÓRICO GENERAL' : `MES: ${mesFiltro}`}
+        />
 
-        <div className="space-y-12">
+        <div className="space-y-12 mt-8">
           {Object.keys(categories).sort().map(catName => (
-            <div key={catName} className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-200">
+            <div key={catName} className="bg-white border border-gray-200">
               <div className="flex justify-between items-end border-b-4 border-black bg-gray-50 p-4">
                 <h2 className="text-xl font-black uppercase tracking-tight text-black">{catName}</h2>
                 <div className="text-right">
@@ -845,15 +863,9 @@ export default function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const nuevos = await processActivosFijos(e.target.files[0]);
-      setActivosData(nuevos); // Reemplaza para evitar duplicados del mismo archivo
+      setActivosData(nuevos);
       alert(`✅ Activos Fijos cargados (${nuevos.length} registros).`);
     } catch (error) { alert("Error al procesar archivo de Activos Fijos."); }
-  };
-
-  const handleDeleteMonth = (monthToDelete) => {
-    if (window.confirm(`¿Eliminar los datos de ${monthToDelete}?`)) {
-      setDbData(prev => prev.filter(d => d.month !== monthToDelete));
-    }
   };
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
@@ -865,196 +877,73 @@ export default function ReportesFinancierosApp() {
   if (view === 'balance')       return <BalanceGeneralView    onBack={() => setView('dashboard')} dbData={dbData} />;
   if (view === 'inversiones')   return <InversionesView       onBack={() => setView('dashboard')} activosData={activosData} />;
 
-  // ── VISTA CONFIGURACIÓN ────────────────────────────────────────────────────
-  if (view === 'configuracion') return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="px-6 py-4 bg-black border-b-4 border-orange-500 flex items-center gap-4 shadow-lg">
-        <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-gray-400 hover:text-white font-black text-xs uppercase transition-colors"><ArrowLeft size={16}/> Panel</button>
-        <h1 className="text-white font-black text-lg tracking-widest uppercase flex items-center gap-2">
-          Configuración <span className="text-orange-500 text-sm">/ Ingesta de Datos</span>
-        </h1>
-      </header>
-      <main className="max-w-3xl mx-auto p-8 space-y-6">
-
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label:'Plan de Cuentas', ok: hasPlan,   val: hasPlan ? 'Cargado' : 'Pendiente' },
-            { label:'Meses en Memoria', ok: loadedMonths.length > 0, val: loadedMonths.length > 0 ? loadedMonths.join(', ') : 'Ninguno' },
-            { label:'Activos Fijos', ok: hasActivos, val: hasActivos ? `${activosData.length} registros` : 'Pendiente' },
-          ].map(s => (
-            <div key={s.label} className={`rounded-xl p-4 border ${s.ok ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-200'} shadow-sm`}>
-              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">{s.label}</p>
-              <p className={`text-xs font-bold truncate ${s.ok ? 'text-orange-600' : 'text-gray-500'}`}>{s.val}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="bg-white rounded-2xl p-8 border border-gray-200 shadow-md space-y-4">
-          <h2 className="text-black font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
-
-          {[
-            { num:'01', label: hasPlan ? '✓ Plan de Cuentas Cargado' : 'Plan de Cuentas (.txt)', color:'black', active: true, accept:'.txt', handler: handleUploadPlan },
-            { num:'02', label:'Estados de Resultados / Balance (.txt, .xlsx)', color:'orange', active: true, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler: handleUploadResultados, multiple: true },
-            { num:'03', label: hasActivos ? `✓ Activos Fijos Cargados` : 'Activos Fijos / Inversiones (.xlsx, .csv)', color:'black', active: true, accept:'.xlsx,.xls,.csv', handler: handleUploadActivos },
-          ].map(step => {
-            const colors = {
-              orange: 'border-orange-500 text-orange-600 bg-orange-50',
-              black:  'border-black text-black bg-gray-50',
-            };
-            return (
-              <label key={step.num} className={`flex items-center gap-4 p-4 rounded-xl border-2 ${step.active ? `${colors[step.color]} cursor-pointer hover:shadow-md transition-all` : 'border-gray-200 text-gray-400 opacity-60 cursor-not-allowed'}`}>
-                <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
-                <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
-                <Upload size={16} className="opacity-50"/>
-                <input type="file" accept={step.accept} multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
-              </label>
-            );
-          })}
-        </div>
-
-        {loadedMonths.length > 0 && (
-          <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-            <p className="text-gray-400 font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2"><CheckCircle size={14} className="text-orange-500"/> Meses en Memoria</p>
-            <div className="flex flex-wrap gap-2">
-              {loadedMonths.map(m => (
-                <span key={m} className="bg-black text-white border border-black px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm">
-                  {m}
-                  <button onClick={() => handleDeleteMonth(m)} className="hover:text-orange-400 transition-colors"><Trash2 size={10}/></button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="bg-red-50 rounded-2xl p-5 border border-red-200 flex items-center justify-between">
-          <div>
-            <p className="text-red-600 font-black text-xs uppercase tracking-wider">Zona de Peligro</p>
-            <p className="text-red-400 text-[11px] mt-0.5 font-bold">Elimina todos los datos cargados en memoria</p>
-          </div>
-          <button onClick={() => { if(window.confirm("¿Borrar TODOS los datos?")) { setDbData([]); setPlanCuentas({}); setActivosData([]); }}}
-            className="bg-red-600 hover:bg-red-700 text-white border border-red-700 px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest transition-all shadow-md">
-            Limpiar Todo
-          </button>
-        </div>
-
-      </main>
-    </div>
-  );
-
-  // ── DASHBOARD PRINCIPAL (BLANCO, NARANJA, NEGRO) ──────────────────────────
-  const modules = [
-    {
-      id: 'resultado',
-      title: 'Estado de Resultados',
-      desc: 'P&L mensual y acumulado por cuentas',
-      icon: <LineChart size={32}/>,
-      accent: '#f97316', // Orange
-      dark: false,
-      onClick: () => dbData.length > 0 ? setView('resultado') : alert('Carga datos en Configuración primero.'),
-    },
-    {
-      id: 'balance',
-      title: 'Balance General',
-      desc: 'Situación financiera multimoneda USD/Bs',
-      icon: <Scale size={32}/>,
-      accent: '#000000', // Black
-      dark: true,
-      onClick: () => dbData.length > 0 ? setView('balance') : alert('Carga datos en Configuración primero.'),
-    },
-    {
-      id: 'comparativo',
-      title: 'Análisis de Variaciones',
-      desc: 'Comparativo mes a mes de resultados',
-      icon: <GitCompare size={32}/>,
-      accent: '#f97316', // Orange
-      dark: false,
-      onClick: () => dbData.length >= 2 ? setView('comparativo') : alert('Necesitas al menos 2 meses cargados.'),
-    },
-    {
-      id: 'inversiones',
-      title: 'Inversiones y Activos',
-      desc: `${hasActivos ? activosData.length + ' activos registrados' : 'Depreciación y control'}`,
-      icon: <Landmark size={32}/>,
-      accent: '#000000', // Black
-      dark: true,
-      onClick: () => hasActivos ? setView('inversiones') : alert('Carga tus Activos Fijos en Configuración.'),
-    },
-    {
-      id: 'configuracion',
-      title: 'Configuración',
-      desc: `Ingesta de datos y limpieza de bases`,
-      icon: <Database size={32}/>,
-      accent: '#f97316', // Orange
-      dark: false,
-      onClick: () => setView('configuracion'),
-    },
-  ];
-
   return (
     <div className="min-h-screen bg-white">
-      {/* HEADER */}
-      <header className="px-8 py-5 bg-black border-b-4 border-orange-500 shadow-xl">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase">
-              JIRET G&B <span className="text-orange-500">Finance</span>
-            </h1>
-            <p className="text-gray-400 text-[11px] font-bold tracking-[0.3em] uppercase mt-0.5">Servicios Jiret G&B, C.A. · RIF: J-412309374</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {loadedMonths.length > 0 && (
-              <span className="bg-orange-500/20 border border-orange-500 text-orange-400 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest">
-                {loadedMonths.length} mes{loadedMonths.length !== 1 ? 'es' : ''} en memoria
-              </span>
-            )}
-            <button onClick={() => setView('configuracion')} className="bg-white hover:bg-gray-100 text-black border border-gray-300 px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center gap-2">
-              <Database size={14} className="text-orange-500"/> Config.
-            </button>
-          </div>
-        </div>
+      <header className="px-8 py-5 bg-black border-b-4 border-orange-500 flex justify-between items-center shadow-xl">
+        <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase">JIRET G&B <span className="text-orange-500">Finance</span></h1>
+        <button onClick={() => setView('config')} className="bg-white hover:bg-gray-100 text-black border border-gray-300 px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center gap-2">
+           <Database size={14} className="text-orange-500"/> Config.
+        </button>
       </header>
-
-      {/* PANEL GRID */}
-      <main className="max-w-5xl mx-auto px-6 py-12">
+      <main className="max-w-5xl mx-auto px-6 py-20">
         <div className="text-center mb-10">
           <h2 className="text-black font-black text-3xl tracking-[0.2em] uppercase mb-2">Panel Principal</h2>
           <div className="w-16 h-1 bg-orange-500 mx-auto rounded-full"/>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {modules.map(mod => (
-            <button
-              key={mod.id}
-              onClick={mod.disabled ? undefined : mod.onClick}
-              disabled={mod.disabled}
-              className={`group relative rounded-2xl p-6 text-left transition-all duration-300 overflow-hidden shadow-lg border-2 
-                ${mod.dark
-                  ? 'bg-black text-white hover:shadow-2xl hover:-translate-y-1'
-                  : 'bg-white text-black hover:shadow-2xl hover:-translate-y-1'
-                }
-                ${mod.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
-              `}
-              style={{ borderColor: mod.disabled ? '#e5e7eb' : (mod.dark ? 'black' : '#f97316') }}
-            >
-              <div className="mb-4 transition-transform duration-200 group-hover:scale-110"
-                style={{ color: mod.dark ? '#f97316' : '#f97316' }}>
-                {mod.icon}
-              </div>
-              <h3 className={`font-black text-sm uppercase tracking-tight leading-tight mb-1.5`}>
-                {mod.title}
-              </h3>
-              <p className={`text-[11px] font-bold leading-relaxed ${mod.dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                {mod.desc}
-              </p>
-            </button>
-          ))}
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <button onClick={() => dbData.length > 0 ? setView('resultado') : alert('Carga datos en Configuración primero.')} className="bg-white border-2 border-orange-500 p-10 rounded-2xl text-left hover:shadow-2xl transition-all group">
+            <LineChart className="text-orange-500 mb-4 group-hover:scale-110 transition-transform" size={48} />
+            <h3 className="font-black text-2xl uppercase">Resultados</h3>
+            <p className="text-gray-500 text-xs font-bold mt-2 tracking-widest">INGRESOS {'>'} COSTOS {'>'} GASTOS</p>
+          </button>
+          <button onClick={() => dbData.length > 0 ? setView('balance') : alert('Carga datos en Configuración primero.')} className="bg-black p-10 rounded-2xl text-left hover:shadow-2xl transition-all group">
+            <Scale className="text-orange-500 mb-4 group-hover:scale-110 transition-transform" size={48} />
+            <h3 className="font-black text-2xl text-white uppercase">Balance General</h3>
+            <p className="text-gray-400 text-xs font-bold mt-2 tracking-widest">SITUACIÓN FINANCIERA</p>
+          </button>
+          <button onClick={() => dbData.length >= 2 ? setView('comparativo') : alert('Necesitas al menos 2 meses cargados.')} className="bg-black p-10 rounded-2xl text-left hover:shadow-2xl transition-all group">
+            <GitCompare className="text-orange-500 mb-4 group-hover:scale-110 transition-transform" size={48} />
+            <h3 className="font-black text-2xl text-white uppercase">Variaciones</h3>
+            <p className="text-gray-400 text-xs font-bold mt-2 tracking-widest">MES VS MES</p>
+          </button>
+          <button onClick={() => hasActivos ? setView('inversiones') : alert('Carga tus Activos Fijos en Configuración.')} className="bg-white border-2 border-orange-500 p-10 rounded-2xl text-left hover:shadow-2xl transition-all group">
+            <Landmark className="text-orange-500 mb-4 group-hover:scale-110 transition-transform" size={48} />
+            <h3 className="font-black text-2xl uppercase">Inversiones</h3>
+            <p className="text-gray-500 text-xs font-bold mt-2 tracking-widest">ACTIVOS FIJOS Y MEJORAS</p>
+          </button>
         </div>
-
-        {/* FOOTER NOTE */}
-        <p className="text-center text-gray-400 text-[10px] font-black uppercase tracking-widest mt-12">
-          Módulo de Reportes Financieros · Jiret G&B Finance v3.1 Completo
-        </p>
       </main>
+
+      {view === 'config' && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-6 z-50">
+          <div className="bg-white p-10 rounded-3xl w-full max-w-lg shadow-2xl border-t-8 border-orange-500">
+            <h2 className="text-3xl font-black text-black uppercase mb-6">Panel de Carga</h2>
+            <div className="space-y-4">
+              <label className="block p-4 bg-gray-100 rounded-xl cursor-pointer hover:bg-orange-100 border border-gray-200">
+                <p className="font-black text-[10px] uppercase text-gray-500">1. Plan de Cuentas (.txt)</p>
+                <input type="file" className="mt-2 text-xs" onChange={handleUploadPlan} />
+              </label>
+              <label className="block p-4 bg-gray-100 rounded-xl cursor-pointer hover:bg-orange-100 border border-gray-200">
+                <p className="font-black text-[10px] uppercase text-gray-500">2. Saldos Iniciales Balance (.txt)</p>
+                <input type="file" className="mt-2 text-xs" onChange={handleUploadSaldos} />
+              </label>
+              <label className="block p-4 bg-gray-100 rounded-xl cursor-pointer hover:bg-orange-100 border border-gray-200">
+                <p className="font-black text-[10px] uppercase text-gray-500">3. Estados de Resultado (.xlsx)</p>
+                <input type="file" multiple className="mt-2 text-xs" onChange={handleUploadResultados} />
+              </label>
+              <label className="block p-4 bg-gray-100 rounded-xl cursor-pointer hover:bg-orange-100 border border-gray-200">
+                <p className="font-black text-[10px] uppercase text-gray-500">4. Auxiliar Activos Fijos (.xlsx)</p>
+                <input type="file" className="mt-2 text-xs" onChange={handleUploadActivos} />
+              </label>
+            </div>
+            <div className="mt-6 flex justify-between">
+               <button onClick={() => { if(window.confirm("¿Limpiar todo?")) {setDbData([]); setActivosData([]); }}} className="text-red-500 font-black text-[10px] uppercase underline hover:text-red-700">Borrar Datos</button>
+               <button onClick={() => setView('dashboard')} className="bg-black hover:bg-gray-800 text-white px-8 py-3 rounded-xl font-black uppercase text-xs transition-colors">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
