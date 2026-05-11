@@ -504,56 +504,123 @@ function AdminDash({ onSelectModule, onBack }) {
 // REPORTES FINANCIEROS — lógica y componentes (estructura copiada de App 98)
 // ============================================================================
 
-// ── Procesador de archivos TXT / CSV ────────────────────────────────────────
+// ── Cargador dinámico de SheetJS (sin npm install) ──────────────────────────
+const loadSheetJS = () => new Promise((resolve, reject) => {
+  if (window.XLSX) { resolve(window.XLSX); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload  = () => resolve(window.XLSX);
+  s.onerror = () => reject(new Error('No se pudo cargar SheetJS'));
+  document.head.appendChild(s);
+});
+
+// ── Procesador de archivos XLSX / TXT / CSV ──────────────────────────────────
 const processFiles = async (files) => {
   let allParsedData = [];
+
+  // Detectar mes desde nombre de archivo
+  const detectMonth = (name) => {
+    const m = name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+    return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).toLowerCase() : 'Sin Mes';
+  };
+
+  // Emite una fila al array de datos usando el pathStack actual
+  const emit = (pathStack, month, name, usd, bs) => {
+    const cleanPath = [];
+    pathStack.forEach(p => { if (cleanPath.length === 0 || cleanPath[cleanPath.length - 1] !== p) cleanPath.push(p); });
+    allParsedData.push({ month, path: cleanPath.join('>'), name, usd, bs: bs || 0 });
+  };
+
+  // Filtros de líneas/filas que siempre se omiten
+  const skipLine = (n) => !n || n.includes('SERVICIOS JIRET') || n.includes('RIF:') ||
+    n === 'Etiquetas de fila' || n === 'SALDO NETO EN USD' ||
+    n.includes('ESTADO DE RESULTADO');
+
   for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const text = await file.text();
-    let month = 'Enero';
-    const monthMatch = file.name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
-    if (monthMatch) month = monthMatch[0].charAt(0).toUpperCase() + monthMatch[0].slice(1).toLowerCase();
-    const lines = text.split(/\r?\n/);
+    const file   = files[i];
+    const ext    = file.name.split('.').pop().toLowerCase();
+    const month  = detectMonth(file.name);
     let pathStack = [];
-    const isCsv = file.name.toLowerCase().endsWith('.csv');
-    lines.forEach(line => {
-      const cleanLine = line.trim();
-      if (!cleanLine || cleanLine.includes('SERVICIOS JIRET') || cleanLine.includes('RIF:') || cleanLine.includes('Etiquetas de fila')) return;
-      if (cleanLine.includes('ESTADO DE RESULTADO') || cleanLine.startsWith('Total') || cleanLine.includes('RESULTADO')) return;
-      let name = '', usdValStr = null, bsValStr = null;
-      if (isCsv) {
-        const cols = cleanLine.split(/[,;](?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-        name = cols[0];
-        if (cols[1] !== undefined && cols[1] !== '') usdValStr = cols[1];
-        if (cols[2] !== undefined && cols[2] !== '') bsValStr = cols[2];
-      } else {
-        const usdMatch = line.match(/USD\s*([-\d.,]+|\s*-\s*)/);
-        const bsMatch  = line.match(/Bs\.\s*([-\d.,]+|\s*-\s*)/);
-        if (usdMatch && bsMatch) {
-          name = line.split('USD')[0].trim();
-          usdValStr = usdMatch[1];
-          bsValStr  = bsMatch[1];
-        } else {
-          name = line.split('\t')[0].trim();
+
+    // ── XLSX / XLS ──────────────────────────────────────────────────────────
+    if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm') {
+      const XL     = await loadSheetJS();
+      const buffer = await file.arrayBuffer();
+      const wb     = XL.read(buffer, { type: 'array' });
+      const ws     = wb.Sheets[wb.SheetNames[0]];
+      // header:1 → arrays; defval:null → celdas vacías = null
+      const rows   = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+      for (const row of rows) {
+        const name = row[0] != null ? String(row[0]).trim() : '';
+        if (skipLine(name)) continue;
+
+        // "Total XXX" → pop jerarquía
+        if (name.startsWith('Total ')) { pathStack.pop(); continue; }
+        // "RESULTADO DEL EJERCICIO" → nodo especial (tratarlo como cuenta)
+        const isResultado = name === 'RESULTADO DEL EJERCICIO';
+
+        const usdRaw = row[1];
+        const bsRaw  = row[2];
+        const hasUsd = usdRaw !== null && usdRaw !== undefined && usdRaw !== '';
+        const usd    = hasUsd ? Number(usdRaw) : null;
+        const bs     = (bsRaw !== null && bsRaw !== undefined && bsRaw !== '') ? Number(bsRaw) : 0;
+
+        if (hasUsd && !isResultado) {
+          // Fila con valores → nodo de cuenta (hoja del árbol)
+          emit(pathStack, month, name, usd, bs);
+        } else if (!hasUsd && !isResultado) {
+          // Fila sin valores → encabezado de sección (nodo padre)
+          pathStack.push(name);
         }
+        // RESULTADO DEL EJERCICIO lo ignoramos; se recalcula en el componente
       }
-      if (!name) return;
-      if (name.startsWith('Total ')) { pathStack.pop(); return; }
-      const cleanVal = (val) => {
-        if (!val || val.trim() === '-' || val.trim() === '') return null;
-        const num = parseFloat(val.trim().replace(/USD|Bs\.|Bs/g, '').replace(/\./g, '').replace(',', '.'));
-        return isNaN(num) ? null : num;
-      };
-      const usd = cleanVal(usdValStr);
-      const bs  = cleanVal(bsValStr);
-      if (usd !== null) {
-        let cleanPath = [];
-        pathStack.forEach(p => { if (cleanPath.length === 0 || cleanPath[cleanPath.length - 1] !== p) cleanPath.push(p); });
-        allParsedData.push({ month, path: cleanPath.join('>'), name, usd, bs: bs || 0 });
-      } else {
-        pathStack.push(name);
-      }
-    });
+
+    // ── CSV ─────────────────────────────────────────────────────────────────
+    } else if (ext === 'csv') {
+      const text  = await file.text();
+      const lines = text.split(/\r?\n/);
+      lines.forEach(line => {
+        const cleanLine = line.trim();
+        if (!cleanLine) return;
+        const cols      = cleanLine.split(/[,;](?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+        const name      = cols[0];
+        if (skipLine(name)) return;
+        if (name.startsWith('Total ')) { pathStack.pop(); return; }
+        const usdStr    = cols[1];
+        const bsStr     = cols[2];
+        const cleanVal  = (v) => { if (!v || v.trim() === '-') return null; const n = parseFloat(v.replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+        const usd       = cleanVal(usdStr);
+        const bs        = cleanVal(bsStr);
+        if (usd !== null) emit(pathStack, month, name, usd, bs);
+        else pathStack.push(name);
+      });
+
+    // ── TXT ─────────────────────────────────────────────────────────────────
+    } else {
+      const text  = await file.text();
+      const lines = text.split(/\r?\n/);
+      lines.forEach(line => {
+        const cleanLine = line.trim();
+        if (!cleanLine) return;
+        if (skipLine(cleanLine)) return;
+        if (cleanLine.startsWith('Total')) { pathStack.pop(); return; }
+
+        const usdMatch = line.match(/USD\s*([-\d.,]+)/);
+        const bsMatch  = line.match(/Bs\.\s*([-\d.,]+)/);
+        if (usdMatch && bsMatch) {
+          const name = line.split('USD')[0].trim();
+          if (!name) return;
+          const cleanVal = (v) => { const n = parseFloat(v.replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+          const usd = cleanVal(usdMatch[1]);
+          const bs  = cleanVal(bsMatch[1]);
+          if (usd !== null) emit(pathStack, month, name, usd, bs);
+        } else {
+          const name = line.split('\t')[0].trim();
+          if (name) pathStack.push(name);
+        }
+      });
+    }
   }
   return allParsedData;
 };
@@ -665,7 +732,7 @@ function EstadoResultadoView({ onBack, dbData }) {
         {dbData.length === 0 ? (
           <div className="bg-white p-12 text-center rounded-xl shadow-sm border-t-4 border-orange-500">
             <AlertTriangle size={48} className="mx-auto text-orange-400 mb-4"/>
-            <p className="text-gray-500 font-bold">No hay reportes cargados. Por favor, importa los archivos TXT o CSV.</p>
+            <p className="text-gray-500 font-bold">No hay reportes cargados. Por favor, importa archivos <strong>.xlsx</strong>, <strong>.txt</strong> o <strong>.csv</strong> desde el dashboard de Reportes Financieros.</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
@@ -791,13 +858,13 @@ function ReportesFinancierosApp({ onBack }) {
           <Upload className="mx-auto text-orange-400 mb-3" size={36}/>
           <h2 className="font-black text-base text-slate-800 uppercase mb-1">Cargar Reportes del Sistema</h2>
           <p className="text-slate-400 text-sm mb-5 max-w-lg mx-auto">
-            Selecciona archivos <strong>.txt</strong> o <strong>.csv</strong> exportados por tu sistema.
-            Nombra cada archivo con el mes (ej: <em>enero_2026.txt</em>) para que se detecte automáticamente.
+            Selecciona archivos <strong>.xlsx</strong>, <strong>.txt</strong> o <strong>.csv</strong> exportados por tu sistema.
+            Nombra cada archivo con el mes (ej: <em>abril_2026.xlsx</em>) para que se detecte automáticamente.
           </p>
           <div className="flex justify-center items-center gap-4 flex-wrap">
             <label className="bg-black text-white px-8 py-3 rounded-xl font-black uppercase text-xs cursor-pointer hover:bg-gray-900 transition-all flex items-center gap-2 shadow-lg">
               <Upload size={14}/> Buscar Archivos
-              <input type="file" multiple accept=".txt,.csv" className="hidden" onChange={handleUpload}/>
+              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUpload}/>
             </label>
             {dataOk && (
               <span className="flex items-center gap-1.5 text-emerald-700 font-black text-xs uppercase bg-emerald-50 px-4 py-3 rounded-xl border border-emerald-200">
