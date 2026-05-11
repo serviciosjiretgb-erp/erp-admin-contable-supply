@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// LÓGICA DE PROCESAMIENTO (Parser de TXT a Base de Datos)
+// LÓGICA DE PROCESAMIENTO AVANZADA (Parser Inteligente)
 // ============================================================================
 const processTxtFiles = async (files) => {
   let allParsedData = [];
@@ -24,7 +24,6 @@ const processTxtFiles = async (files) => {
     const file = files[i];
     const text = await file.text();
     
-    // Extraer el mes del nombre del archivo (ej. "abril 2026.txt" -> "Abril")
     let month = "Desconocido";
     const monthMatch = file.name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
     if (monthMatch) {
@@ -32,42 +31,48 @@ const processTxtFiles = async (files) => {
     }
 
     const lines = text.split('\n');
-    let currentAccount = "SIN_CUENTA";
+    let pathStack = [];
 
     lines.forEach(line => {
-      line = line.trim();
-      if (!line || line.startsWith('Total') || line.startsWith('RESULTADO') || line.startsWith('Etiquetas')) return;
+      const cleanLine = line.trim();
+      if (!cleanLine || cleanLine.includes("SERVICIOS JIRET") || cleanLine.includes("Etiquetas de fila")) return;
+      if (cleanLine.includes("ESTADO DE RESULTADO") || cleanLine.startsWith("Total") || cleanLine.includes("RESULTADO")) return;
 
-      // Detectar la cuenta contable (ej. 4.1.01.01.001-INGRESOS...)
-      if (/^[456]\.\d/.test(line)) {
-        currentAccount = line;
-        return;
-      }
+      // Detectar si es una línea de datos (contiene montos USD y Bs)
+      const usdMatch = line.match(/USD\s*([-\d.,]+|\s*-\s*)/);
+      const bsMatch = line.match(/Bs\.\s*([-\d.,]+|\s*-\s*)/);
 
-      // Detectar líneas con montos
-      if (line.includes('USD') && line.includes('Bs.')) {
+      if (usdMatch && bsMatch) {
+        // Es una factura o detalle
         const name = line.split('USD')[0].trim();
-        const usdMatch = line.match(/USD\s*([-\d.,]+|\s*-\s*)/);
-        const bsMatch = line.match(/Bs\.\s*([-\d.,]+|\s*-\s*)/);
+        
+        const cleanVal = (val) => {
+          if (!val || val.trim() === '-' || val.trim() === '') return '0.00';
+          return val.trim().replace(/\./g, '').replace(/,/g, '.');
+        };
 
-        if (usdMatch && bsMatch) {
-          let usdRaw = usdMatch[1].trim();
-          let bsRaw = bsMatch[1].trim();
+        const usd = cleanVal(usdMatch[1]);
+        const bs = cleanVal(bsMatch[1]);
+        
+        // Construir ruta jerárquica
+        const fullPath = pathStack.join('>');
+        allParsedData.push(`${month}|resultados|${fullPath}|${name}|${usd}|${bs}`);
+      } else {
+        // Es una categoría o cuenta contable
+        const parts = line.split('\t').map(p => p.trim()).filter(p => p !== "");
+        const categoryName = parts[0];
 
-          // Limpiar montos: convertir guiones en 0.00 y formato VE a formato informático
-          const cleanAmount = (val) => {
-            if (val === '-' || val === '') return '0.00';
-            return val.replace(/\./g, '').replace(/,/g, '.');
-          };
-
-          const usdVal = cleanAmount(usdRaw);
-          const bsVal = cleanAmount(bsRaw);
-
-          let root = "GASTOS";
-          if (currentAccount.startsWith('4')) root = "INGRESOS";
-          else if (currentAccount.startsWith('5')) root = "COSTOS";
-
-          allParsedData.push(`${month}|resultados|${root}>${currentAccount}|${name}|${usdVal}|${bsVal}`);
+        if (["INGRESOS", "COSTOS", "GASTOS"].includes(categoryName)) {
+          pathStack = [categoryName];
+        } else {
+          // Evitar duplicados en la ruta (como "INGRESOS OPERACIONALES" que sale dos veces)
+          if (pathStack[pathStack.length - 1] !== categoryName) {
+            // Si es una cuenta (empieza por número), reemplazamos la última cuenta si existía
+            if (/^[456]\.\d/.test(categoryName)) {
+              pathStack = pathStack.filter(p => !/^[456]\.\d/.test(p));
+            }
+            pathStack.push(categoryName);
+          }
         }
       }
     });
@@ -75,43 +80,40 @@ const processTxtFiles = async (files) => {
   return allParsedData;
 };
 
-
 // ============================================================================
-// COMPONENTE: FILA EXPANSIBLE (Maneja el árbol de datos)
+// COMPONENTE: FILA EXPANSIBLE
 // ============================================================================
 const ExpandableRow = ({ node, level = 0, isBalance, totalVentasUSD }) => {
   const isAccountNode = /^\d\./.test(node.n);
   const isLeaf = !node.c || node.c.length === 0;
   const isStructural = !isAccountNode && !isLeaf;
-  const [isOpen, setIsOpen] = useState(isStructural ? true : false);
+  const [isOpen, setIsOpen] = useState(isStructural);
 
   const formatCurrency = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 
-  const showPercent = !isBalance;
   let percentStr = '';
-  if (showPercent && totalVentasUSD) {
+  if (!isBalance && totalVentasUSD) {
     const percent = (Math.abs(node.u) / totalVentasUSD) * 100 * (node.u < 0 ? 1 : -1);
     percentStr = `${new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(percent)}%`;
   }
 
   const showRowBalance = isLeaf || isAccountNode;
-  let rowClass = "";
+  let rowClass = "cursor-pointer transition-colors border-b border-gray-100 ";
   let textClass = "";
 
   if (isLeaf) {
-    rowClass = "bg-white hover:bg-gray-50 border-b border-gray-100 transition-colors";
+    rowClass += "bg-white hover:bg-gray-50";
     textClass = "text-gray-600 font-normal text-sm";
   } else if (isAccountNode) {
-    rowClass = "bg-white hover:bg-orange-50 border-b border-gray-200 cursor-pointer transition-colors";
+    rowClass += "bg-white hover:bg-orange-50 border-gray-200";
     textClass = "text-black font-bold text-sm uppercase"; 
   } else {
-    rowClass = "cursor-pointer transition-colors border-b border-gray-300";
     if (level === 0) {
-      rowClass += " bg-[#111827] hover:bg-gray-800"; 
-      textClass = "text-white font-bold text-base uppercase tracking-wider";
+      rowClass += " bg-[#111827] hover:bg-gray-800 text-white";
+      textClass = "font-bold text-base uppercase tracking-wider";
     } else {
-      rowClass += " bg-[#F97316] hover:bg-orange-600"; 
-      textClass = "text-white font-bold text-sm uppercase";
+      rowClass += " bg-[#F97316] hover:bg-orange-600 text-white";
+      textClass = "font-bold text-sm uppercase";
     }
   }
 
@@ -119,30 +121,14 @@ const ExpandableRow = ({ node, level = 0, isBalance, totalVentasUSD }) => {
     <>
       <tr onClick={() => !isLeaf && setIsOpen(!isOpen)} className={rowClass}>
         <td className={`px-4 py-2.5 flex items-center gap-2 ${textClass} ${isAccountNode ? 'border-l-4 border-[#F97316]' : ''}`} style={{ paddingLeft: `${(level * 1.5) + (isAccountNode ? 0.5 : 1)}rem` }}>
-          {!isLeaf ? (isOpen ? <ChevronDown size={16} className={level === 0 || level === 1 ? "text-white" : "text-[#F97316]"}/> : <ChevronRight size={16} className={level === 0 || level === 1 ? "text-white" : "text-[#F97316]"}/>) : (<span className="w-4 inline-block"></span>)}
-          <span className={`${isLeaf ? 'truncate max-w-[300px] md:max-w-[500px]' : ''}`} title={node.n}>{node.n}</span>
+          {!isLeaf ? (isOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>) : (<span className="w-4"></span>)}
+          <span className={`${isLeaf ? 'truncate max-w-[400px]' : ''}`} title={node.n}>{node.n}</span>
         </td>
-        <td className={`px-4 py-2.5 text-right font-sans tabular-nums tracking-tight ${level===0||level===1 ? 'text-white' : 'text-gray-900'} ${isAccountNode || isLeaf ? '' : 'font-medium'}`}>
-          {showRowBalance ? formatCurrency(node.u) : ''}
-        </td>
-        <td className={`px-4 py-2.5 text-right font-sans tabular-nums tracking-tight hidden sm:table-cell ${level===0||level===1 ? 'text-white' : 'text-gray-500'}`}>
-          {showRowBalance ? formatCurrency(node.b) : ''}
-        </td>
-        {showPercent && (
-          <td className={`px-4 py-2.5 text-right font-sans tabular-nums tracking-tight ${isLeaf ? 'text-gray-400' : 'text-gray-600'}`}>
-            {showRowBalance && showPercent ? percentStr : ''}
-          </td>
-        )}
+        <td className="px-4 py-2.5 text-right font-sans tabular-nums">{showRowBalance ? formatCurrency(node.u) : ''}</td>
+        <td className="px-4 py-2.5 text-right font-sans tabular-nums hidden sm:table-cell">{showRowBalance ? formatCurrency(node.b) : ''}</td>
+        <td className="px-4 py-2.5 text-right font-sans tabular-nums">{showRowBalance ? percentStr : ''}</td>
       </tr>
       {isOpen && !isLeaf && node.c.map((child, idx) => (<ExpandableRow key={idx} node={child} level={level + 1} isBalance={isBalance} totalVentasUSD={totalVentasUSD} />))}
-      {isOpen && level === 0 && (
-        <tr className="bg-gray-300 border-t-2 border-b-4 border-black">
-          <td className="px-4 py-4 text-black font-black text-sm uppercase tracking-widest" style={{ paddingLeft: '1.5rem' }}>TOTAL {node.n}</td>
-          <td className="px-4 py-4 text-right font-sans tabular-nums font-black text-black text-base tracking-tight">{formatCurrency(node.u)}</td>
-          <td className="px-4 py-4 text-right font-sans tabular-nums font-black text-black text-base tracking-tight hidden sm:table-cell">{formatCurrency(node.b)}</td>
-          {showPercent && <td className="px-4 py-4 text-right font-sans tabular-nums font-black text-black text-base tracking-tight">{percentStr}</td>}
-        </tr>
-      )}
     </>
   );
 };
@@ -151,23 +137,13 @@ const ExpandableRow = ({ node, level = 0, isBalance, totalVentasUSD }) => {
 // MÓDULO: ESTADO DE RESULTADO
 // ============================================================================
 const EstadoResultado = ({ onBack, dbData }) => {
-  // Extraer meses disponibles dinámicamente
-  const availableMonths = useMemo(() => {
-    if (dbData.length === 0) return [];
-    const months = dbData.map(line => line.split('|')[0]);
-    return [...new Set(months)];
-  }, [dbData]);
-
-  const [selectedMonth, setSelectedMonth] = useState(availableMonths[0] || 'Sin Datos');
+  const availableMonths = useMemo(() => [...new Set(dbData.map(line => line.split('|')[0]))], [dbData]);
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[0] || '');
 
   const currentTree = useMemo(() => {
-    if (dbData.length === 0) return [];
     const root = [];
-    
-    dbData.forEach(line => {
-      const [mes, tab, pathStr, leafName, usdStr, bsStr] = line.split('|');
-      if (mes !== selectedMonth) return; // Solo resultados por ahora
-
+    dbData.filter(line => line.split('|')[0] === selectedMonth).forEach(line => {
+      const [,, pathStr, leafName, usdStr, bsStr] = line.split('|');
       const pathArray = pathStr.split('>');
       let currentLevel = root;
       pathArray.forEach(folderName => {
@@ -178,7 +154,7 @@ const EstadoResultado = ({ onBack, dbData }) => {
         }
         currentLevel = existingFolder.c;
       });
-      currentLevel.push({ n: leafName, u: parseFloat(usdStr) || 0, b: parseFloat(bsStr) || 0, isLeaf: true });
+      currentLevel.push({ n: leafName, u: parseFloat(usdStr), b: parseFloat(bsStr), isLeaf: true });
     });
 
     const computeTotals = (nodes) => {
@@ -198,81 +174,49 @@ const EstadoResultado = ({ onBack, dbData }) => {
     return root;
   }, [dbData, selectedMonth]);
 
-  const formatResult = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
-  
-  let baseVentasUSD = 1;
-  const ingresosNode = currentTree.find(n => n.n === 'INGRESOS');
-  if (ingresosNode) baseVentasUSD = Math.abs(ingresosNode.u);
-
   const totalTreeUSD = currentTree.reduce((acc, n) => acc + n.u, 0);
   const totalTreeBs = currentTree.reduce((acc, n) => acc + n.b, 0);
-  const percentResultStr = `${new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format((Math.abs(totalTreeUSD) / baseVentasUSD) * 100 * (totalTreeUSD < 0 ? 1 : -1))}%`;
+  const ingresosNode = currentTree.find(n => n.n === 'INGRESOS');
+  const baseVentasUSD = ingresosNode ? Math.abs(ingresosNode.u) : 1;
+  const formatResult = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2 }).format(val);
 
   return (
-    <div className="min-h-screen bg-gray-100 pb-12">
-      <header className="bg-white border-b border-gray-300 py-3 shadow-sm sticky top-0 z-20 px-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-black font-bold uppercase text-sm transition-colors">
-            <ArrowLeft size={18} /> Volver al Dashboard
-          </button>
-
-          {availableMonths.length > 0 && (
-            <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg border border-gray-300">
-              <Calendar size={16} className="text-[#F97316] ml-2 mr-1" />
-              <span className="text-xs font-bold text-gray-500 uppercase mr-2">Corte:</span>
-              {availableMonths.map(mes => (
-                <button 
-                  key={mes} 
-                  onClick={() => setSelectedMonth(mes)} 
-                  className={`px-4 py-1.5 rounded text-sm font-bold ${selectedMonth === mes ? 'bg-[#F97316] text-white shadow-sm' : 'text-gray-600'}`}
-                >
-                  {mes}
-                </button>
-              ))}
-            </div>
-          )}
+    <div className="min-h-screen bg-gray-100">
+      <header className="bg-white border-b border-gray-300 py-3 px-8 flex justify-between items-center sticky top-0 z-20">
+        <button onClick={onBack} className="flex items-center gap-2 text-gray-600 font-bold uppercase text-xs"><ArrowLeft size={18}/> Volver</button>
+        <div className="flex gap-2">
+          {availableMonths.map(m => (
+            <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded text-xs font-bold ${selectedMonth === m ? 'bg-[#F97316] text-white' : 'bg-gray-100'}`}>{m}</button>
+          ))}
         </div>
       </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className="bg-white px-8 py-8 border-t-8 border-[#F97316] mb-8 shadow-sm flex flex-col items-center text-center">
-          <h1 className="text-2xl sm:text-3xl font-bold font-serif text-[#111827] uppercase tracking-tight mb-2">Servicios Jiret G&B, C.A.</h1>
-          <div className="w-16 h-1 bg-[#F97316] mb-4"></div>
-          <p className="font-sans text-sm text-[#111827] font-bold mb-1">RIF: J412309374</p>
-          <h2 className="mt-8 text-xl font-bold font-serif text-gray-500 uppercase tracking-widest border-b border-gray-300 pb-2 inline-block">Estado de Resultado Integral</h2>
-          <p className="font-sans text-sm text-gray-500 font-bold mt-2 uppercase">Periodo: {selectedMonth}</p>
-        </div>
-
+      <main className="p-8 max-w-6xl mx-auto">
         {dbData.length === 0 ? (
-          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-6 rounded-lg flex items-center gap-3 shadow-sm justify-center">
-            <AlertCircle size={24} />
-            <p className="font-medium text-lg">No hay datos cargados. Ve al Dashboard e importa los reportes TXT.</p>
+          <div className="bg-white p-12 text-center rounded shadow-sm border-t-4 border-orange-500">
+            <AlertCircle size={48} className="mx-auto text-orange-400 mb-4"/>
+            <p className="text-gray-500 font-bold">No hay reportes cargados. Por favor, importa los archivos TXT en el Dashboard.</p>
           </div>
         ) : (
-          <div className="animate-in fade-in duration-500">
-            <div className="bg-white rounded shadow border border-gray-300 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100 border-b-2 border-gray-400 text-xs uppercase tracking-wider text-black font-black">
-                      <th className="px-6 py-4 border-r border-gray-300 w-[60%]">Cuenta Contable</th>
-                      <th className="px-4 py-4 text-right border-r border-gray-300 w-32">SALDO (USD)</th>
-                      <th className="px-4 py-4 text-right border-r border-gray-300 hidden sm:table-cell w-36">SALDO (BS)</th>
-                      <th className="px-4 py-4 text-right w-24">SUMA DE %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentTree.map((node, idx) => (<ExpandableRow key={idx} node={node} isBalance={false} totalVentasUSD={baseVentasUSD} />))}
-                    <tr className="bg-[#111827]">
-                      <td className="px-6 py-6 font-black font-sans text-xl text-white border-r border-gray-700">RESULTADO DEL EJERCICIO</td>
-                      <td className="px-4 py-6 text-right font-sans tabular-nums font-black text-[#F97316] text-xl tracking-tight border-r border-gray-700">{formatResult(totalTreeUSD)}</td>
-                      <td className="px-4 py-6 text-right font-sans tabular-nums font-black text-[#F97316] text-xl tracking-tight border-r border-gray-700 hidden sm:table-cell">{formatResult(totalTreeBs)}</td>
-                      <td className="px-4 py-6 text-right font-sans tabular-nums font-black text-[#F97316] text-xl tracking-tight">{percentResultStr}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          <div className="bg-white rounded shadow-sm overflow-hidden border border-gray-200">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
+                  <th className="px-4 py-4 w-[50%]">Etiquetas de Fila</th>
+                  <th className="px-4 py-4 text-right">Saldo USD</th>
+                  <th className="px-4 py-4 text-right hidden sm:table-cell">Saldo Bs.</th>
+                  <th className="px-4 py-4 text-right">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentTree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentasUSD}/>)}
+                <tr className="bg-[#111827] text-white font-black">
+                  <td className="px-4 py-6 text-lg">RESULTADO DEL EJERCICIO</td>
+                  <td className="px-4 py-6 text-right text-lg text-[#F97316]">{formatResult(totalTreeUSD)}</td>
+                  <td className="px-4 py-6 text-right text-lg hidden sm:table-cell">{formatResult(totalTreeBs)}</td>
+                  <td className="px-4 py-6 text-right">100%</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         )}
       </main>
@@ -281,98 +225,45 @@ const EstadoResultado = ({ onBack, dbData }) => {
 };
 
 // ============================================================================
-// MÓDULO: BALANCE GENERAL (EN BLANCO)
+// DASHBOARD PRINCIPAL
 // ============================================================================
-const BalanceGeneral = ({ onBack }) => {
-  return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <button onClick={onBack} className="flex items-center gap-2 mb-6 text-gray-600 hover:text-black font-bold uppercase text-sm transition-colors">
-        <ArrowLeft size={18} /> Volver al Dashboard
-      </button>
-      <div className="bg-white p-8 rounded shadow-sm border-t-4 border-[#111827]">
-        <h1 className="text-2xl font-bold font-serif text-[#111827] uppercase mb-2">Estado de Situación Financiera</h1>
-        <p className="text-gray-500 mb-8">Próximamente... Estructura para integrar los Activos y Pasivos.</p>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg h-64 flex items-center justify-center bg-gray-50">
-          <p className="text-gray-400 font-bold uppercase">Espacio para la tabla del balance</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// DASHBOARD CONTABLE (CON IMPORTACIÓN MULTIPLE)
-// ============================================================================
-const ContDash = ({ onSelectModule, onLogout, dbData, setDbData }) => {
-  
-  const handleFileUpload = async (e) => {
-    if(!e.target.files || e.target.files.length === 0) return;
-    try {
-      const parsedRecords = await processTxtFiles(e.target.files);
-      setDbData(parsedRecords);
-      alert(`¡Se procesaron ${e.target.files.length} reportes exitosamente!`);
-    } catch (error) {
-      alert("Hubo un error leyendo los archivos. Asegúrate de que sean los TXT correctos.");
-    }
+const ContDash = ({ onSelectModule, dbData, setDbData }) => {
+  const handleUpload = async (e) => {
+    if (e.target.files.length === 0) return;
+    const newData = await processTxtFiles(e.target.files);
+    setDbData(newData);
+    alert("Archivos procesados correctamente.");
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans">
+    <div className="min-h-screen bg-gray-100">
       <header className="bg-white border-b border-gray-300 px-8 py-4 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-3">
           <Building2 size={28} className="text-[#F97316]" />
-          <div>
-            <h1 className="text-xl font-bold text-[#111827] uppercase tracking-tight">Servicios Jiret G&B, C.A.</h1>
-            <p className="text-xs text-gray-500 font-bold uppercase">Módulo Financiero y Contable</p>
-          </div>
+          <h1 className="text-xl font-black text-[#111827] uppercase">Servicios Jiret G&B, C.A.</h1>
         </div>
-        <button onClick={onLogout} className="flex items-center gap-2 text-gray-500 hover:text-red-600 font-bold text-sm uppercase transition-colors">
-          <LogOut size={18} /> Salir
-        </button>
       </header>
-
       <main className="p-8 max-w-6xl mx-auto">
-        <div className="flex items-center gap-2 mb-8">
-          <LayoutDashboard size={24} className="text-gray-700" />
-          <h2 className="text-2xl font-bold text-gray-800">Panel de Reportes</h2>
-        </div>
-
-        {/* ÁREA DE IMPORTACIÓN DE DATOS */}
-        <div className="mb-10 bg-white p-6 rounded-lg shadow-sm border border-gray-200 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="bg-white p-6 rounded-lg border-2 border-dashed border-gray-300 mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div>
-            <h3 className="text-lg font-bold text-gray-800 mb-1">Importar Reportes Mensuales</h3>
-            <p className="text-sm text-gray-500">Selecciona los archivos TXT (Ej. "abril 2026.txt", "mayo 2026.txt") exportados de tu sistema matriz.</p>
+            <h2 className="font-bold text-gray-800">Importación de Datos</h2>
+            <p className="text-sm text-gray-500">Sube los archivos TXT de Enero, Febrero, Marzo y Abril.</p>
           </div>
-          
-          <div className="flex items-center gap-4">
-            {dbData.length > 0 && (
-              <span className="flex items-center gap-1 text-green-600 font-bold text-sm bg-green-50 px-3 py-1.5 rounded-full">
-                <CheckCircle size={16} /> Datos Cargados
-              </span>
-            )}
-            <label className="cursor-pointer bg-[#111827] hover:bg-gray-800 text-white font-bold py-2.5 px-6 rounded transition-colors flex items-center gap-2 shadow-sm">
-              <Upload size={18} />
-              Seleccionar TXTs
-              <input type="file" multiple accept=".txt" className="hidden" onChange={handleFileUpload} />
-            </label>
-          </div>
+          <label className="bg-[#111827] text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 cursor-pointer hover:bg-black transition-all">
+            <Upload size={20}/> Cargar Reportes
+            <input type="file" multiple accept=".txt" className="hidden" onChange={handleUpload}/>
+          </label>
         </div>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div onClick={() => onSelectModule('estado_resultado')} className="bg-white p-6 rounded-lg shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-1 transition-all border-t-4 border-[#F97316] group">
-            <div className="w-14 h-14 bg-orange-50 rounded-full flex items-center justify-center mb-4 group-hover:bg-[#F97316] transition-colors">
-              <FileSpreadsheet size={28} className="text-[#F97316] group-hover:text-white" />
-            </div>
-            <h3 className="text-xl font-bold text-[#111827] mb-2">Estado de Resultado</h3>
-            <p className="text-gray-500 text-sm">Visualizar el desglose de ingresos y gastos de los meses importados.</p>
+          <div onClick={() => onSelectModule('resultado')} className="bg-white p-8 rounded-xl shadow-sm border-t-8 border-[#F97316] cursor-pointer hover:shadow-lg transition-all group">
+            <FileSpreadsheet size={40} className="text-orange-500 mb-4 group-hover:scale-110 transition-transform"/>
+            <h3 className="text-xl font-black text-gray-800 uppercase">Estado de Resultado</h3>
+            <p className="text-gray-500 text-sm mt-2">Visualiza el flujo de ingresos y gastos de forma jerárquica.</p>
           </div>
-
-          <div onClick={() => onSelectModule('balance')} className="bg-white p-6 rounded-lg shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-1 transition-all border-t-4 border-[#111827] group">
-            <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mb-4 group-hover:bg-[#111827] transition-colors">
-              <Wallet size={28} className="text-[#111827] group-hover:text-white" />
-            </div>
-            <h3 className="text-xl font-bold text-[#111827] mb-2">Balance General</h3>
-            <p className="text-gray-500 text-sm">Estructura en blanco para los activos circulantes, pasivos y patrimonio.</p>
+          <div onClick={() => alert("Módulo en desarrollo")} className="bg-white p-8 rounded-xl shadow-sm border-t-8 border-[#111827] cursor-pointer hover:shadow-lg transition-all group">
+            <Wallet size={40} className="text-gray-800 mb-4 group-hover:scale-110 transition-transform"/>
+            <h3 className="text-xl font-black text-gray-800 uppercase">Balance General</h3>
+            <p className="text-gray-500 text-sm mt-2">Control de Activos, Pasivos y Patrimonio de la empresa.</p>
           </div>
         </div>
       </main>
@@ -380,20 +271,14 @@ const ContDash = ({ onSelectModule, onLogout, dbData, setDbData }) => {
   );
 };
 
-// ============================================================================
-// COMPONENTE PRINCIPAL ENRUTADOR
-// ============================================================================
 export default function App() {
-  const [view, setView] = useState('cont_dash');
-  
-  // Almacenamos los datos aquí para que sobrevivan si el usuario sale y vuelve a entrar al reporte.
+  const [view, setView] = useState('dash');
   const [dbData, setDbData] = useState([]);
 
   return (
     <>
-      {view === 'cont_dash' && <ContDash onSelectModule={setView} onLogout={() => alert('Cerrando sesión...')} dbData={dbData} setDbData={setDbData} />}
-      {view === 'estado_resultado' && <EstadoResultado onBack={() => setView('cont_dash')} dbData={dbData} />}
-      {view === 'balance' && <BalanceGeneral onBack={() => setView('cont_dash')} />}
+      {view === 'dash' && <ContDash onSelectModule={setView} dbData={dbData} setDbData={setDbData} />}
+      {view === 'resultado' && <EstadoResultado onBack={() => setView('dash')} dbData={dbData} />}
     </>
   );
 }
