@@ -537,6 +537,12 @@ const processFiles = async (files) => {
     n === 'Etiquetas de fila' || n === 'SALDO NETO EN USD' ||
     n.includes('ESTADO DE RESULTADO');
 
+  // Pop inteligente: solo quita del stack si el último elemento coincide con la sección totalizada
+  const smartPop = (stack, totalName) => {
+    const what = totalName.replace(/^Total\s+/i, '').trim();
+    if (stack.length > 0 && stack[stack.length - 1].trim() === what) stack.pop();
+  };
+
   for (let i = 0; i < files.length; i++) {
     const file   = files[i];
     const ext    = file.name.split('.').pop().toLowerCase();
@@ -556,10 +562,10 @@ const processFiles = async (files) => {
         const name = row[0] != null ? String(row[0]).trim() : '';
         if (skipLine(name)) continue;
 
-        // "Total XXX" → pop jerarquía
-        if (name.startsWith('Total ')) { pathStack.pop(); continue; }
-        // "RESULTADO DEL EJERCICIO" → nodo especial (tratarlo como cuenta)
-        const isResultado = name === 'RESULTADO DEL EJERCICIO';
+        // "Total XXX" → pop inteligente
+        if (name.startsWith('Total ')) { smartPop(pathStack, name); continue; }
+        // "RESULTADO DEL EJERCICIO" → ignorar, se recalcula en el componente
+        if (name === 'RESULTADO DEL EJERCICIO') continue;
 
         const usdRaw = row[1];
         const bsRaw  = row[2];
@@ -567,14 +573,11 @@ const processFiles = async (files) => {
         const usd    = hasUsd ? Number(usdRaw) : null;
         const bs     = (bsRaw !== null && bsRaw !== undefined && bsRaw !== '') ? Number(bsRaw) : 0;
 
-        if (hasUsd && !isResultado) {
-          // Fila con valores → nodo de cuenta (hoja del árbol)
+        if (hasUsd) {
           emit(pathStack, month, name, usd, bs);
-        } else if (!hasUsd && !isResultado) {
-          // Fila sin valores → encabezado de sección (nodo padre)
+        } else {
           pathStack.push(name);
         }
-        // RESULTADO DEL EJERCICIO lo ignoramos; se recalcula en el componente
       }
 
     // ── CSV ─────────────────────────────────────────────────────────────────
@@ -587,7 +590,8 @@ const processFiles = async (files) => {
         const cols      = cleanLine.split(/[,;](?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
         const name      = cols[0];
         if (skipLine(name)) return;
-        if (name.startsWith('Total ')) { pathStack.pop(); return; }
+        if (name.startsWith('Total ')) { smartPop(pathStack, name); return; }
+        if (name === 'RESULTADO DEL EJERCICIO') return;
         const usdStr    = cols[1];
         const bsStr     = cols[2];
         const cleanVal  = (v) => { if (!v || v.trim() === '-') return null; const n = parseFloat(v.replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
@@ -605,8 +609,8 @@ const processFiles = async (files) => {
         const cleanLine = line.trim();
         if (!cleanLine) return;
         if (skipLine(cleanLine)) return;
-        if (cleanLine.startsWith('Total')) { pathStack.pop(); return; }
-        if (cleanLine === 'RESULTADO DEL EJERCICIO') return; // calculado por el componente
+        if (cleanLine.startsWith('Total')) { smartPop(pathStack, cleanLine.split('\t')[0].trim()); return; }
+        if (cleanLine === 'RESULTADO DEL EJERCICIO') return;
 
         const usdMatch = line.match(/USD\s*([-\d.,]+)/);
         const bsMatch  = line.match(/Bs\.\s*([-\d.,]+)/);
@@ -628,10 +632,10 @@ const processFiles = async (files) => {
 };
 
 // ── Fila tipo tabla dinámica: secciones fijas, cuentas con +/− ───────────────
-const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
-  const isAccountNode = /^\d\./.test(node.n);           // 4.x, 5.x, 6.x
+const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false }) => {
+  const isAccountNode = /^\d\./.test(node.n);
   const isLeaf = !node.c || node.c.length === 0;
-  const [isOpen, setIsOpen] = useState(false);           // cuentas empiezan cerradas
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const fmtCur = (v) =>
     new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
@@ -666,7 +670,7 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
         </tr>
         {/* hijos siempre renderizados */}
         {node.c.map((child, i) => (
-          <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} />
+          <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} defaultOpen={defaultOpen}/>
         ))}
         {/* fila de total solo para secciones raíz */}
         {isRoot && (
@@ -689,8 +693,8 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
     );
   }
 
-  // ── CUENTAS CONTABLES (4.x.x.x, 5.x.x.x, 6.x.x.x) — +/− expansible ────────
-  if (!isLeaf && isAccountNode) {
+  // ── CUENTA CON HIJOS (TXT — expande a transacciones individuales) ─────────────
+  if (isAccountNode && !isLeaf) {
     return (
       <>
         <tr
@@ -699,45 +703,56 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
           style={{ borderLeft: '3px solid #F97316' }}
         >
           <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-black uppercase">
-            {/* botón estilo Excel */}
             <span
               className="inline-flex items-center justify-center w-[15px] h-[15px] border border-gray-400 text-gray-600 font-black text-[11px] mr-2 select-none flex-shrink-0 bg-white hover:border-orange-500 hover:text-orange-600 transition-colors"
               style={{ lineHeight: 1, fontFamily: 'monospace' }}
-            >
-              {isOpen ? '−' : '+'}
-            </span>
+            >{isOpen ? '−' : '+'}</span>
             {node.n}
           </td>
           <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold whitespace-nowrap">
-            <span className="text-gray-400 text-[9px] font-normal mr-1">USD</span>
-            {fmtCur(node.u)}
+            <span className="text-gray-400 text-[9px] font-normal mr-1">USD</span>{fmtCur(node.u)}
           </td>
           <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell whitespace-nowrap">
-            <span className="text-gray-400 text-[9px] font-normal mr-1">Bs.</span>
-            {fmtCur(node.b)}
+            <span className="text-gray-400 text-[9px] font-normal mr-1">Bs.</span>{fmtCur(node.b)}
           </td>
           <td className="py-2.5 px-3 text-right font-mono text-[11px] text-gray-600">{pct}</td>
         </tr>
-        {/* transacciones, visibles solo al expandir */}
         {isOpen && node.c.map((child, i) => (
-          <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} />
+          <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} defaultOpen={defaultOpen}/>
         ))}
       </>
     );
   }
 
-  // ── HOJA (transacción individual) ────────────────────────────────────────────
+  // ── CUENTA HOJA (XLSX — valor ya consolidado, sin detalle de transacciones) ───
+  if (isAccountNode && isLeaf) {
+    return (
+      <tr className="bg-white border-b border-gray-200" style={{ borderLeft: '3px solid #F97316' }}>
+        <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-black uppercase">
+          <span
+            className="inline-flex items-center justify-center w-[15px] h-[15px] border border-gray-200 text-gray-300 text-[11px] mr-2 select-none flex-shrink-0 bg-gray-50"
+            style={{ lineHeight: 1, fontFamily: 'monospace' }}
+            title="Cargue el TXT con detalle de transacciones para expandir"
+          >+</span>
+          {node.n}
+        </td>
+        <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold whitespace-nowrap">
+          <span className="text-gray-400 text-[9px] font-normal mr-1">USD</span>{fmtCur(node.u)}
+        </td>
+        <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell whitespace-nowrap">
+          <span className="text-gray-400 text-[9px] font-normal mr-1">Bs.</span>{fmtCur(node.b)}
+        </td>
+        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-gray-600">{pct}</td>
+      </tr>
+    );
+  }
+
+  // ── HOJA de transacción individual (TXT) ─────────────────────────────────────
   return (
     <tr className="bg-slate-50 border-b border-gray-100 hover:bg-amber-50 transition-colors">
-      <td style={indent} className="py-1.5 px-3 text-[10px] text-gray-600 max-w-xs">
-        {node.n}
-      </td>
-      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-700 whitespace-nowrap">
-        {fmtCur(node.u)}
-      </td>
-      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-500 hidden sm:table-cell whitespace-nowrap">
-        {fmtCur(node.b)}
-      </td>
+      <td style={indent} className="py-1.5 px-3 text-[10px] text-gray-600 max-w-xs">{node.n}</td>
+      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-700 whitespace-nowrap">{fmtCur(node.u)}</td>
+      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-500 hidden sm:table-cell whitespace-nowrap">{fmtCur(node.b)}</td>
       <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-400">{pct}</td>
     </tr>
   );
@@ -747,6 +762,12 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
 function EstadoResultadoView({ onBack, dbData }) {
   const availableMonths = React.useMemo(() => [...new Set(dbData.map(d => d.month))], [dbData]);
   const [selectedMonth, setSelectedMonth] = useState(availableMonths[0] || '');
+  // Expandir / Contraer todo: cambia key para forzar re-mount con nuevo defaultOpen
+  const [expandKey,    setExpandKey]    = useState(0);
+  const [defaultOpen,  setDefaultOpen]  = useState(false);
+
+  const expandAll   = () => { setDefaultOpen(true);  setExpandKey(k => k + 1); };
+  const collapseAll = () => { setDefaultOpen(false); setExpandKey(k => k + 1); };
   const tree = React.useMemo(() => {
     const root = [];
     const monthData = dbData.filter(d => d.month === selectedMonth);
@@ -783,6 +804,17 @@ function EstadoResultadoView({ onBack, dbData }) {
         <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 hover:text-black uppercase transition-colors">
           <ArrowLeft size={16}/> Volver
         </button>
+        <div className="flex items-center gap-2 flex-wrap justify-center">
+          {/* Expandir / Contraer todo */}
+          <button onClick={expandAll}
+            className="px-3 py-1.5 bg-orange-500 text-white text-[10px] font-black uppercase rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1">
+            ⊞ Expandir todo
+          </button>
+          <button onClick={collapseAll}
+            className="px-3 py-1.5 bg-slate-700 text-white text-[10px] font-black uppercase rounded-lg hover:bg-black transition-colors flex items-center gap-1">
+            ⊟ Contraer todo
+          </button>
+        </div>
         <div className="flex gap-2 flex-wrap justify-end">
           {availableMonths.map(m => (
             <button key={m} onClick={() => setSelectedMonth(m)}
@@ -823,8 +855,8 @@ function EstadoResultadoView({ onBack, dbData }) {
                   <th className="px-3 py-3 text-right">Suma de %</th>
                 </tr>
               </thead>
-              <tbody>
-                {mainTree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas}/>)}
+              <tbody key={expandKey}>
+                {mainTree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas} defaultOpen={defaultOpen}/>)}
                 <tr className="bg-[#111827] text-white font-black border-t-4 border-orange-500">
                   <td className="px-4 py-5 text-sm uppercase tracking-widest" style={{paddingLeft:28}}>
                     RESULTADO DEL EJERCICIO
