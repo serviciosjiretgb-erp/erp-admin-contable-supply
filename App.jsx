@@ -606,6 +606,7 @@ const processFiles = async (files) => {
         if (!cleanLine) return;
         if (skipLine(cleanLine)) return;
         if (cleanLine.startsWith('Total')) { pathStack.pop(); return; }
+        if (cleanLine === 'RESULTADO DEL EJERCICIO') return; // calculado por el componente
 
         const usdMatch = line.match(/USD\s*([-\d.,]+)/);
         const bsMatch  = line.match(/Bs\.\s*([-\d.,]+)/);
@@ -626,45 +627,119 @@ const processFiles = async (files) => {
   return allParsedData;
 };
 
-// ── Fila expansible ──────────────────────────────────────────────────────────
+// ── Fila tipo tabla dinámica: secciones fijas, cuentas con +/− ───────────────
 const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
-  const isAccountNode = /^\d\./.test(node.n);
+  const isAccountNode = /^\d\./.test(node.n);           // 4.x, 5.x, 6.x
   const isLeaf = !node.c || node.c.length === 0;
-  const [isOpen, setIsOpen] = useState(level < 2);
-  const fmtCur = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
-  let percentStr = '0,00%';
-  if (totalVentasUSD && node.u !== 0) {
-    const pct = (Math.abs(node.u) / Math.abs(totalVentasUSD)) * 100;
-    percentStr = `${fmtCur(pct)}%`;
-  }
-  let rowClass = 'cursor-pointer transition-colors border-b border-gray-200 ';
-  let textClass = '';
-  if (isLeaf) { rowClass += 'bg-white hover:bg-gray-50'; textClass = 'text-gray-600 font-normal text-xs'; }
-  else if (isAccountNode) { rowClass += 'bg-white hover:bg-orange-50'; textClass = 'text-black font-bold text-sm uppercase'; }
-  else { rowClass += level === 0 ? ' bg-[#111827] text-white' : ' bg-[#F97316] text-white'; textClass = 'font-black text-xs uppercase tracking-widest'; }
-  return (
-    <>
-      <tr onClick={() => !isLeaf && setIsOpen(!isOpen)} className={rowClass}>
-        <td className={`px-4 py-3 flex items-center gap-2 ${textClass} ${isAccountNode ? 'border-l-4 border-[#F97316]' : ''}`} style={{ paddingLeft: `${level * 1.5 + 1}rem` }}>
-          {!isLeaf ? (isOpen ? <ChevronDown size={14}/> : <ChevronRight size={14}/>) : <span className="w-4"/>}
-          <span className={isLeaf ? 'truncate max-w-[450px]' : ''}>{node.n}</span>
-        </td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-bold">{fmtCur(node.u)}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs hidden sm:table-cell">{fmtCur(node.b)}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs">{percentStr}</td>
-      </tr>
-      {isOpen && !isLeaf && node.c.map((child, idx) => (
-        <ExpandableRow key={idx} node={child} level={level + 1} totalVentasUSD={totalVentasUSD}/>
-      ))}
-      {isOpen && !isLeaf && (
-        <tr className={level === 0 ? 'bg-gray-200 border-b-2 border-black' : 'bg-orange-100 border-b border-orange-200'}>
-          <td className="px-4 py-2 font-black text-[10px] uppercase italic text-gray-800" style={{ paddingLeft: `${level * 1.5 + 2}rem` }}>TOTAL {node.n}</td>
-          <td className="px-4 py-2 text-right font-mono text-[10px] font-black">{fmtCur(node.u)}</td>
-          <td className="px-4 py-2 text-right font-mono text-[10px] font-black hidden sm:table-cell">{fmtCur(node.b)}</td>
-          <td className="px-4 py-2 text-right font-mono text-[10px] font-black">{percentStr}</td>
+  const [isOpen, setIsOpen] = useState(false);           // cuentas empiezan cerradas
+
+  const fmtCur = (v) =>
+    new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+  const pct =
+    totalVentasUSD && node.u !== 0
+      ? `${fmtCur((Math.abs(node.u) / Math.abs(totalVentasUSD)) * 100)}%`
+      : '';
+  const indent = { paddingLeft: `${level * 18 + 10}px` };
+
+  // ── ENCABEZADOS DE SECCIÓN (siempre visibles, sin botón de colapso) ─────────
+  if (!isLeaf && !isAccountNode) {
+    const isRoot   = level === 0;   // INGRESOS / COSTOS / GASTOS
+    const isOrange = level >= 3;    // VENTAS BRUTAS, COSTO DE VENTA, etc.
+    return (
+      <>
+        {/* fila de encabezado */}
+        <tr className={isRoot ? 'bg-[#111827]' : 'bg-white border-b border-gray-100'}>
+          <td
+            style={indent}
+            className={
+              isRoot
+                ? 'py-2 px-3 text-white font-black text-[11px] uppercase tracking-widest'
+                : isOrange
+                ? 'py-1.5 px-3 font-bold text-[11px] uppercase text-[#F97316]'
+                : 'py-1.5 px-3 font-black text-[11px] uppercase text-slate-800'
+            }
+          >
+            <span className="mr-1.5 opacity-40 text-[9px]">⊟</span>
+            {node.n}
+          </td>
+          <td colSpan={3} />
         </tr>
-      )}
-    </>
+        {/* hijos siempre renderizados */}
+        {node.c.map((child, i) => (
+          <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} />
+        ))}
+        {/* fila de total solo para secciones raíz */}
+        {isRoot && (
+          <tr className="bg-[#111827] text-white border-t-2 border-orange-500">
+            <td style={{ paddingLeft: 28 }} className="py-3 px-3 font-black text-[11px] uppercase tracking-widest">
+              Total {node.n}
+            </td>
+            <td className="py-3 px-3 text-right font-mono text-[11px] font-black text-[#F97316] whitespace-nowrap">
+              <span className="text-white opacity-40 text-[9px] mr-1">USD</span>
+              {fmtCur(node.u)}
+            </td>
+            <td className="py-3 px-3 text-right font-mono text-[11px] font-black text-[#F97316] hidden sm:table-cell whitespace-nowrap">
+              <span className="text-white opacity-40 text-[9px] mr-1">Bs.</span>
+              {fmtCur(node.b)}
+            </td>
+            <td className="py-3 px-3 text-right font-mono text-[11px] font-black text-[#F97316]">{pct}</td>
+          </tr>
+        )}
+      </>
+    );
+  }
+
+  // ── CUENTAS CONTABLES (4.x.x.x, 5.x.x.x, 6.x.x.x) — +/− expansible ────────
+  if (!isLeaf && isAccountNode) {
+    return (
+      <>
+        <tr
+          onClick={() => setIsOpen(o => !o)}
+          className="bg-white border-b border-gray-200 cursor-pointer hover:bg-orange-50 transition-colors"
+          style={{ borderLeft: '3px solid #F97316' }}
+        >
+          <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-black uppercase">
+            {/* botón estilo Excel */}
+            <span
+              className="inline-flex items-center justify-center w-[15px] h-[15px] border border-gray-400 text-gray-600 font-black text-[11px] mr-2 select-none flex-shrink-0 bg-white hover:border-orange-500 hover:text-orange-600 transition-colors"
+              style={{ lineHeight: 1, fontFamily: 'monospace' }}
+            >
+              {isOpen ? '−' : '+'}
+            </span>
+            {node.n}
+          </td>
+          <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold whitespace-nowrap">
+            <span className="text-gray-400 text-[9px] font-normal mr-1">USD</span>
+            {fmtCur(node.u)}
+          </td>
+          <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell whitespace-nowrap">
+            <span className="text-gray-400 text-[9px] font-normal mr-1">Bs.</span>
+            {fmtCur(node.b)}
+          </td>
+          <td className="py-2.5 px-3 text-right font-mono text-[11px] text-gray-600">{pct}</td>
+        </tr>
+        {/* transacciones, visibles solo al expandir */}
+        {isOpen && node.c.map((child, i) => (
+          <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} />
+        ))}
+      </>
+    );
+  }
+
+  // ── HOJA (transacción individual) ────────────────────────────────────────────
+  return (
+    <tr className="bg-slate-50 border-b border-gray-100 hover:bg-amber-50 transition-colors">
+      <td style={indent} className="py-1.5 px-3 text-[10px] text-gray-600 max-w-xs">
+        {node.n}
+      </td>
+      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-700 whitespace-nowrap">
+        {fmtCur(node.u)}
+      </td>
+      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-500 hidden sm:table-cell whitespace-nowrap">
+        {fmtCur(node.b)}
+      </td>
+      <td className="py-1.5 px-3 text-right font-mono text-[10px] text-gray-400">{pct}</td>
+    </tr>
   );
 };
 
@@ -696,8 +771,10 @@ function EstadoResultadoView({ onBack, dbData }) {
 
   const ingresosNode = tree.find(n => n.n === 'INGRESOS');
   const baseVentas  = ingresosNode ? Math.abs(ingresosNode.u) : 1;
-  const totalUSD    = tree.reduce((acc, n) => acc + n.u, 0);
-  const totalBs     = tree.reduce((acc, n) => acc + n.b, 0);
+  // Excluir nodos hoja sueltos (como RESULTADO DEL EJERCICIO si quedó en el árbol)
+  const mainTree    = tree.filter(n => n.n !== 'RESULTADO DEL EJERCICIO');
+  const totalUSD    = mainTree.reduce((acc, n) => acc + n.u, 0);
+  const totalBs     = mainTree.reduce((acc, n) => acc + n.b, 0);
   const fmtR = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 
   return (
@@ -739,20 +816,30 @@ function EstadoResultadoView({ onBack, dbData }) {
           <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b-2 border-slate-300">
-                  <th className="px-4 py-4 w-[50%]">Etiquetas de Fila</th>
-                  <th className="px-4 py-4 text-right">Saldo USD</th>
-                  <th className="px-4 py-4 text-right hidden sm:table-cell">Saldo Bs.</th>
-                  <th className="px-4 py-4 text-right">Suma de %</th>
+                <tr className="bg-slate-100 text-[9px] uppercase font-black text-slate-500 border-b-2 border-slate-300 sticky top-0">
+                  <th className="px-3 py-3 w-[52%] text-left">Etiquetas de fila</th>
+                  <th className="px-3 py-3 text-right">Saldo Neto en USD</th>
+                  <th className="px-3 py-3 text-right hidden sm:table-cell">Saldo Neto en Bs.</th>
+                  <th className="px-3 py-3 text-right">Suma de %</th>
                 </tr>
               </thead>
               <tbody>
-                {tree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas}/>)}
-                <tr className="bg-[#111827] text-white font-black">
-                  <td className="px-4 py-6 text-sm uppercase tracking-widest">RESULTADO DEL EJERCICIO</td>
-                  <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{fmtR(totalUSD)}</td>
-                  <td className="px-4 py-6 text-right text-base hidden sm:table-cell font-mono">{fmtR(totalBs)}</td>
-                  <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{(Math.abs(totalUSD) / baseVentas * 100).toFixed(2)}%</td>
+                {mainTree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas}/>)}
+                <tr className="bg-[#111827] text-white font-black border-t-4 border-orange-500">
+                  <td className="px-4 py-5 text-sm uppercase tracking-widest" style={{paddingLeft:28}}>
+                    RESULTADO DEL EJERCICIO
+                  </td>
+                  <td className="px-3 py-5 text-right text-base text-[#F97316] font-mono whitespace-nowrap">
+                    <span className="text-white opacity-40 text-[9px] mr-1">USD</span>
+                    {fmtR(totalUSD)}
+                  </td>
+                  <td className="px-3 py-5 text-right text-base hidden sm:table-cell text-[#F97316] font-mono whitespace-nowrap">
+                    <span className="text-white opacity-40 text-[9px] mr-1">Bs.</span>
+                    {fmtR(totalBs)}
+                  </td>
+                  <td className="px-3 py-5 text-right text-base text-[#F97316] font-mono">
+                    {(Math.abs(totalUSD) / baseVentas * 100).toFixed(2)}%
+                  </td>
                 </tr>
               </tbody>
             </table>
