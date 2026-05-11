@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, Upload, CheckCircle, Scale, 
-  LineChart, CalendarDays, AlertTriangle, ChevronRight, ChevronDown, Star, PlusCircle
+  LineChart, CalendarDays, AlertTriangle, ChevronRight, ChevronDown, Star, PlusCircle, Trash2
 } from 'lucide-react';
 
 // ============================================================================
@@ -136,7 +136,6 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false, h
           <ExpandableRow key={i} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>
         ))}
 
-        {/* FILA DE SUBTOTALES */}
         <tr className={`${isRoot ? 'bg-slate-900 text-white border-t-2 border-orange-500' : 'bg-slate-200 text-slate-800 border-t border-slate-300'} shadow-sm transition-colors`}>
           <td style={{ paddingLeft: level * 18 + 28 }} className="py-2.5 px-3 font-black text-[10px] uppercase tracking-wider">
             TOTAL {node.n}
@@ -152,7 +151,6 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false, h
   // --- CUENTAS CONTABLES (Resaltables con la Estrella) ---
   if (!isLeaf && isAccountNode) {
     const isHighlighted = highlightedAccounts.has(node.n);
-    
     return (
       <>
         <tr 
@@ -169,16 +167,12 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false, h
             </span>
             
             <button
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                toggleHighlight(node.n); 
-              }}
+              onClick={(e) => { e.stopPropagation(); toggleHighlight(node.n); }}
               className="mr-2 focus:outline-none transition-transform hover:scale-110"
-              title={isHighlighted ? "Quitar resaltado" : "Resaltar cuenta para revisión del Director"}
+              title={isHighlighted ? "Quitar resaltado" : "Resaltar cuenta"}
             >
               <Star size={16} fill={isHighlighted ? "#f59e0b" : "none"} color={isHighlighted ? "#f59e0b" : "#cbd5e1"} />
             </button>
-
             <span className="truncate">{node.n}</span>
           </td>
           <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${isHighlighted ? 'text-amber-900' : 'text-slate-800'}`}>{fmtCur(node.u)}</td>
@@ -213,28 +207,13 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false, h
 // ============================================================================
 // VISTA: ESTADO DE RESULTADOS
 // ============================================================================
-function EstadoResultadoView({ onBack, dbData, onUpload }) {
-  // Generar la lista de meses disponibles en base a los datos cargados
-  const availableMonths = useMemo(() => {
-    const months = [...new Set(dbData.map(d => d.month))];
-    // Ordenar cronológicamente si lo deseas, por ahora los lista como entran.
-    return months;
-  }, [dbData]);
-
-  // Si se sube un mes nuevo y no había seleccionado, se selecciona el último.
-  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || '');
-
-  // Asegurar que si availableMonths cambia (se sube uno nuevo), nos actualicemos al nuevo si estaba vacío
-  useEffect(() => {
-    if (availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
-      setSelectedMonth(availableMonths[availableMonths.length - 1]);
-    }
-  }, [availableMonths, selectedMonth]);
-
+function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
+  const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))], [dbData]);
+  const [selectedMonth, setSelectedMonth] = useState('General'); // <--- Por defecto inicia en GENERAL
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
 
-  // --- MEMORIA LOCAL PARA LAS ESTRELLAS ---
+  // Memoria de estrellas
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => {
     try {
       const saved = localStorage.getItem('jiret_highlighted_accounts');
@@ -255,10 +234,18 @@ function EstadoResultadoView({ onBack, dbData, onUpload }) {
     });
   };
 
-  // Creación del Árbol Filtrado por el Mes Seleccionado
+  const handleRemoveMonth = (month) => {
+    onDeleteMonth(month);
+    if (selectedMonth === month) {
+      setSelectedMonth('General');
+    }
+  };
+
+  // Creación del Árbol (Acumula automáticamente si es GENERAL)
   const tree = useMemo(() => {
     const root = [];
-    const monthData = dbData.filter(d => d.month === selectedMonth);
+    const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
+    
     monthData.forEach(item => {
       const pathArray = item.path.split('>');
       let cur = root;
@@ -267,8 +254,17 @@ function EstadoResultadoView({ onBack, dbData, onUpload }) {
         if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
         cur = folder.c;
       });
-      cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
+
+      // Lógica de suma inteligente para el consolidado (General)
+      let leaf = cur.find(n => n.n === item.name && n.isLeaf);
+      if (!leaf) {
+        cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
+      } else {
+        leaf.u += item.usd;
+        leaf.b += item.bs;
+      }
     });
+
     const compute = (nodes) => {
       let u = 0, b = 0;
       nodes.forEach(n => {
@@ -297,17 +293,28 @@ function EstadoResultadoView({ onBack, dbData, onUpload }) {
 
   return (
     <div className="min-h-screen bg-[#f1f5f9]">
-      {/* BARRA SUPERIOR FIJA - FILTROS Y CONTROLES */}
       <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-4">
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600 transition-colors">
             <ArrowLeft size={16}/> Volver
           </button>
 
-          {/* Selector Dinámico de Meses */}
-          <div className="hidden md:flex items-center gap-2 border-l-2 border-slate-200 pl-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Filtro:</span>
+          {/* Filtros de Meses + Botón General */}
+          <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4 flex-wrap">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Filtro:</span>
+            
+            {/* BOTÓN GENERAL (ACUMULADO) */}
+            <button onClick={() => setSelectedMonth('General')}
+              className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${
+                selectedMonth === 'General' 
+                  ? 'bg-slate-800 text-white ring-2 ring-slate-300' 
+                  : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+              }`}>
+              General (Acumulado)
+            </button>
+
+            {/* BOTONES DE MESES INDIVIDUALES */}
             {availableMonths.map(m => (
               <button key={m} onClick={() => setSelectedMonth(m)}
                 className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${
@@ -319,7 +326,17 @@ function EstadoResultadoView({ onBack, dbData, onUpload }) {
               </button>
             ))}
             
-            {/* BOTÓN PARA AÑADIR MÁS MESES SIN SALIR DE LA PANTALLA */}
+            {/* BOTÓN ELIMINAR MES (Solo aparece si hay un mes específico seleccionado) */}
+            {selectedMonth !== 'General' && (
+              <button 
+                onClick={() => handleRemoveMonth(selectedMonth)}
+                className="ml-2 px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-[10px] font-black uppercase hover:bg-red-100 transition-colors flex items-center gap-1 shadow-sm"
+              >
+                <Trash2 size={12}/> Eliminar {selectedMonth}
+              </button>
+            )}
+
+            {/* BOTÓN PARA AÑADIR MÁS MESES */}
             <label className="ml-2 px-3 py-1.5 rounded-full bg-slate-800 text-white text-[10px] font-black uppercase cursor-pointer hover:bg-orange-500 transition-colors flex items-center gap-1 shadow-sm">
               <PlusCircle size={14}/> Cargar Mes
               <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={onUpload}/>
@@ -342,15 +359,17 @@ function EstadoResultadoView({ onBack, dbData, onUpload }) {
           <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
           <div className="w-20 h-1.5 bg-orange-500 mb-4 rounded-full"/>
           <p className="font-sans text-xs text-slate-500 font-black tracking-[0.3em] mb-4">RIF: J-412309374</p>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Estado de Resultado Integral</h2>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">
+            Estado de Resultado {selectedMonth === 'General' ? 'Acumulado' : 'Mensual'}
+          </h2>
           <div className="flex gap-2">
-            <p className="text-orange-600 font-black uppercase flex items-center gap-2 bg-orange-50 px-5 py-2 rounded-full text-[10px] border border-orange-100">
-              <CalendarDays size={14}/> {selectedMonth || 'Ninguno'}
+            <p className={`font-black uppercase flex items-center gap-2 px-5 py-2 rounded-full text-[10px] border shadow-sm ${selectedMonth === 'General' ? 'bg-slate-800 text-white border-slate-700' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
+              <CalendarDays size={14}/> {selectedMonth === 'General' ? 'Todos los meses registrados' : `Periodo Fiscal: ${selectedMonth}`}
             </p>
           </div>
         </div>
         
-        {dbData.length === 0 || !selectedMonth ? (
+        {dbData.length === 0 ? (
           <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-sm">
              <AlertTriangle className="mx-auto text-orange-400 mb-4" size={48}/>
              <p className="text-slate-500 font-black text-xs uppercase tracking-wider">No hay información cargada.</p>
@@ -369,12 +388,8 @@ function EstadoResultadoView({ onBack, dbData, onUpload }) {
               <tbody key={expandKey}>
                 {tree.map((node, i) => (
                   <ExpandableRow 
-                    key={i} 
-                    node={node} 
-                    totalVentasUSD={baseVentas} 
-                    defaultOpen={defaultOpen} 
-                    highlightedAccounts={highlightedAccounts} 
-                    toggleHighlight={toggleHighlight}
+                    key={i} node={node} totalVentasUSD={baseVentas} defaultOpen={defaultOpen} 
+                    highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}
                   />
                 ))}
                 <tr className="bg-slate-900 text-white font-black border-t-4 border-orange-600">
@@ -406,30 +421,31 @@ function ReportesFinancierosApp() {
   const [view, setView] = useState('dashboard');
   const [dbData, setDbData] = useState([]);
 
-  // Lógica de Carga Acumulativa
   const handleUpload = async (e) => {
     if (!e.target.files.length) return;
     try {
       const newData = await processFiles(e.target.files);
-      
       setDbData(prev => {
-        // Detectar los meses que se acaban de subir
         const newlyUploadedMonths = [...new Set(newData.map(d => d.month))];
-        // Filtrar lo viejo: quitamos esos mismos meses por si es una actualización, pero conservamos los demás
         const keepData = prev.filter(d => !newlyUploadedMonths.includes(d.month));
         return [...keepData, ...newData];
       });
-      
-      alert(`✅ Carga exitosa: Los archivos fueron procesados.`);
+      alert(`✅ Archivo(s) procesado(s) exitosamente.`);
     } catch (error) { 
       alert("Error al procesar el archivo. Revisa el formato."); 
       console.error(error);
     }
   };
 
+  const handleDeleteMonth = (monthToDelete) => {
+    if (window.confirm(`¿Estás seguro de que deseas eliminar permanentemente la información de ${monthToDelete}?`)) {
+      setDbData(prev => prev.filter(d => d.month !== monthToDelete));
+    }
+  };
+
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
 
-  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} onUpload={handleUpload}/>;
+  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} onUpload={handleUpload} onDeleteMonth={handleDeleteMonth}/>;
   
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -442,7 +458,7 @@ function ReportesFinancierosApp() {
           <Upload className="mx-auto text-orange-500 mb-5" size={56}/>
           <h2 className="text-2xl font-black uppercase mb-3 text-slate-800">Carga de Reportes Multi-Mes</h2>
           <p className="text-slate-500 text-sm mb-6 max-w-lg mx-auto font-medium">
-            Sube múltiples archivos a la vez (ej. Enero, Febrero, Marzo) o súbelos uno a uno. El sistema agrupará la información para que puedas filtrarla sin perder el historial.
+            Sube los archivos de todos los meses que necesites. El sistema te permitirá filtrar por un mes específico o ver un <strong>consolidado general</strong>.
           </p>
           
           <div className="flex justify-center items-center gap-4 flex-wrap">
@@ -473,7 +489,7 @@ function ReportesFinancierosApp() {
             className={`bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-orange-500 text-left transition-all ${dbData.length > 0 ? 'hover:shadow-xl hover:-translate-y-1' : 'opacity-60 grayscale'}`}>
             <LineChart className="text-orange-500 mb-4" size={32}/>
             <h3 className="font-black uppercase text-lg text-slate-900">Estado de Resultados</h3>
-            <p className="text-sm text-slate-500 mt-2">Accede al reporte filtrable por mes, donde podrás resaltar cuentas con la <strong>estrella amarilla</strong> para revisión.</p>
+            <p className="text-sm text-slate-500 mt-2">Accede al reporte filtrable o al acumulado (General). Resalta cuentas y elimina los meses que necesites corregir.</p>
           </button>
           
           <div className="bg-white p-8 rounded-[2rem] shadow-sm border-b-4 border-blue-500 opacity-50 text-left">
