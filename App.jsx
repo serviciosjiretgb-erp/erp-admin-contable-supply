@@ -494,68 +494,6 @@ const DEFAULT_AUX_DATA = {
     mkR('P0531','LOSDEKLUZ 2.0., C.A','Factura','27/03/2026','27/03/2026',34,'000000644','Doc : 000000644',311.63,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
     mkR('P0531','LOSDEKLUZ 2.0., C.A','Adelanto','27/03/2026','27/03/2026',34,'6184','ABONO 70% LOSDKLUZ 2.0, C.A FAC: 000000644',-222.59,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
   ]
-};                               doc:'00002973',   emision:'30/04/2026', vence:'07/05/2026', monto:519.51 },
-    { cod:'C0084', nombre:'ANIMAL FEED SOLUTIONS., C.A',                         doc:'00002962',   emision:'28/04/2026', vence:'05/05/2026', monto:13444.42 },
-    { cod:'C0400', nombre:'C.A RON SANTA TERESA, S.A.C.A',                       doc:'00002933',   emision:'16/04/2026', vence:'28/04/2026', monto:3524.54 },
-    { cod:'C0119', nombre:'C.A. CENTRAL LA PASTORA',                             doc:'00000552',   emision:'24/04/2026', vence:'24/04/2026', monto:4000.00 },
-    { cod:'C0012', nombre:'CONVELAC, C.A.',                                      doc:'00002932',   emision:'16/04/2026', vence:'16/04/2026', monto:201.60 },
-    { cod:'C0051', nombre:'ENVASES MUNDIAL, C.A',                                doc:'2437',       emision:'30/04/2026', vence:'30/04/2026', monto:4287.60 },
-    { cod:'C0004', nombre:'INDUSTRIA ALIMENTICIA NACIONAL DE CEREALES Y HARINAS',doc:'00002938',   emision:'22/04/2026', vence:'29/04/2026', monto:14043.09 },
-    { cod:'C0094', nombre:'INDUSTRIAS MAROS, C.A.',                              doc:'18021',      emision:'18/02/2026', vence:'25/02/2026', monto:5265.26 },
-    { cod:'C0363', nombre:'INGENIERIA CREATIVA, C.A',                            doc:'2434',       emision:'30/04/2026', vence:'07/05/2026', monto:286.72 },
-    { cod:'C0043', nombre:'INVERSIONES AVICOLAS, C.A.',                          doc:'00002972',   emision:'30/04/2026', vence:'07/05/2026', monto:9572.90 },
-    { cod:'C0011', nombre:'INVERSIONES LACTEAS SAN SIMON, C.A',                  doc:'00002952',   emision:'24/04/2026', vence:'01/05/2026', monto:5881.20 },
-    { cod:'C0037', nombre:'INVERSIONES LUXÓS, C.A.',                             doc:'00000415',   emision:'23/02/2026', vence:'23/02/2026', monto:1254.20 },
-    { cod:'C0165', nombre:'INVERSIONES NESMOCA, C.A',                            doc:'00001575',   emision:'11/04/2024', vence:'02/05/2024', monto:13482.32 },
-    { cod:'C0164', nombre:'INVERSIONES SELVA, C. A.',                            doc:'00002967',   emision:'29/04/2026', vence:'14/05/2026', monto:1577.31 },
-    { cod:'C0202', nombre:'JOSE LUIS BOHORQUEZ',                                 doc:'2393',       emision:'14/04/2026', vence:'21/04/2026', monto:122.15 },
-    { cod:'C0312', nombre:'JULIO CESAR OJEDA CASANOVA',                          doc:'2347',       emision:'23/03/2026', vence:'30/03/2026', monto:444.97 },
-    { cod:'C0054', nombre:'LA EXCELENCIA C.A.',                                  doc:'2417',       emision:'24/04/2026', vence:'01/05/2026', monto:193.02 },
-    { cod:'C0140', nombre:'MARCOS ANTONIO RODRIGUEZ FINOL',                      doc:'00000561',   emision:'20/04/2026', vence:'20/04/2026', monto:1227.20 },
-    { cod:'C0155', nombre:'MUEBLES & PRESTIGIOS, C.A',                           doc:'00002564',   emision:'23/09/2025', vence:'30/09/2025', monto:37.31 },
-    { cod:'C0013', nombre:'PAPELES VENEZOLANOS, C.A.',                           doc:'00002939',   emision:'22/04/2026', vence:'02/05/2026', monto:42316.80 },
-    { cod:'C0319', nombre:'PEGAMENTOS UTILES DE VENEZUELA, C.A',                 doc:'2436',       emision:'30/04/2026', vence:'07/05/2026', monto:1820.00 },
-    { cod:'C0195', nombre:'PINTURAS DEL CARIBE, S.A.',                           doc:'2353',       emision:'24/03/2026', vence:'31/03/2026', monto:3377.92 },
-    { cod:'C0188', nombre:'PRODUCTOS DE VIDRIO S.A (PRODUVISA)',                 doc:'00002968',   emision:'29/04/2026', vence:'06/05/2026', monto:25839.71 },
-    { cod:'C0223', nombre:'PRODUCTOS LACTEOS LA ARGENTINA, C.A.',                doc:'00002421',   emision:'13/11/2025', vence:'13/11/2025', monto:-6.86 },
-    { cod:'C0005', nombre:'RIAS, CA',                                            doc:'2369',       emision:'31/03/2026', vence:'07/04/2026', monto:1948.80 },
-    { cod:'C0139', nombre:'VE-PACK INVESTMENT, C.A',                             doc:'2367',       emision:'30/03/2026', vence:'06/04/2026', monto:1391.48 },
-    { cod:'C0184', nombre:'VENEZOLANA DEL VIDRIO C.A. (VENVIDRIO)',              doc:'00002548',   emision:'21/11/2025', vence:'21/11/2025', monto:441.56 },
-    { cod:'C0002', nombre:'VENILAC C.A',                                         doc:'00002957',   emision:'24/04/2026', vence:'24/04/2026', monto:11072.61 },
-    { cod:'C0216', nombre:'VICTOR HUGO RODRIGUEZ ARAMBULO',                      doc:'2381',       emision:'10/04/2026', vence:'17/04/2026', monto:6815.00 },
-    { cod:'C0227', nombre:'VIDRIOS DOMESTICOS MAV C.C.S',                        doc:'00002940',   emision:'22/04/2026', vence:'29/04/2026', monto:1067.99 }
-  ],
-  // Anticipos pagados a Zuliana exceden facturas recibidas → saldo deudor = activo 1.1.05.01.008
-  cxc_zuliana: [
-    { cod:'P0424', nombre:'ZULIANA DE EMPAQUE, C.A', doc:'000042', emision:'27/02/2026', vence:'27/02/2026', monto:70949.15 }
-  ],
-  cxp_yancarlos: [
-    { cod:'P0005', nombre:'YANCARLOS PEREZ CASANOVA', doc:'001075', emision:'23/04/2026', vence:'23/04/2026', monto:15506.95 }
-  ],
-  cxp_surepack: [
-    { cod:'P0082', nombre:'SURE PACK', doc:'3353', emision:'18/03/2026', vence:'17/05/2026', monto:131616.68 }
-  ],
-  cxp_pacomela: [
-    { cod:'P0511', nombre:'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', doc:'2602', emision:'02/01/2026', vence:'02/01/2026', monto:20173.60 }
-  ],
-  cxp_autototal: [
-    { cod:'P0338', nombre:'AUTO TOTAL, C.A', doc:'11166', emision:'07/10/2025', vence:'07/10/2025', monto:8438.85 }
-  ],
-  cxp_general: [
-    { cod:'P0040', nombre:'PAPELERIA ESTEVA EL TRANSITO, C.A.',             doc:'0000034154', emision:'24/04/2026', vence:'01/05/2026', monto:342.54 },
-    { cod:'P0074', nombre:'OK PIZZA, COMPAÑIA ANONIMA',                     doc:'003077',     emision:'09/09/2025', vence:'09/09/2025', monto:18.02 },
-    { cod:'P0103', nombre:'SERVICIOS Y MANT. ENRIQUE FLEIRES FP',           doc:'000934',     emision:'23/04/2026', vence:'23/04/2026', monto:455.62 },
-    { cod:'P0117', nombre:'E. P. & O. ASOCIADOS, C. A.',                    doc:'00003147',   emision:'24/04/2026', vence:'24/04/2026', monto:3957.00 },
-    { cod:'P0293', nombre:'RUTA 70 CAR WASH AND SERVICE, C.A',              doc:'PRSPTO 08',  emision:'28/04/2026', vence:'04/05/2026', monto:104.75 },
-    { cod:'P0348', nombre:'ANGEL EDUARDO GARCIA RINCON',                    doc:'000056',     emision:'20/03/2026', vence:'20/03/2026', monto:176.00 },
-    { cod:'P0369', nombre:'CORPORACION VENEZOLANA DE SEGURIDAD I, C.A.',    doc:'PROFORMA 01',emision:'13/04/2026', vence:'19/04/2026', monto:918.72 },
-    { cod:'P0418', nombre:'PINTURAS Y DECORACIONES, C.A',                   doc:'00026073',   emision:'21/04/2026', vence:'28/04/2026', monto:43.93 },
-    { cod:'P0466', nombre:'DISTRIBUIDORA Y SERVICIOS INTEGRALES C A',       doc:'ODC 84',     emision:'30/04/2026', vence:'07/05/2026', monto:131.54 },
-    { cod:'P0467', nombre:'FERRETERIA ELECTRICA INDUSTRIAL, C.A.',          doc:'ODC 0066',   emision:'24/03/2026', vence:'31/03/2026', monto:4302.60 },
-    { cod:'P0492', nombre:'EMPAQUES PLASTICOS CABIMAS C.A (EMPLASCA)',      doc:'ODC 0040',   emision:'30/01/2026', vence:'20/02/2026', monto:15113.70 },
-    { cod:'P0515', nombre:'SUMINISTROS QUIVEN, C.A.',                       doc:'33333',      emision:'30/04/2026', vence:'30/04/2026', monto:-601.64 },
-    { cod:'P0531', nombre:'LOSDEKLUZ 2.0., C.A',                            doc:'000000644',  emision:'27/03/2026', vence:'27/03/2026', monto:89.04 }
-  ]
 };
 
 // ============================================================================
@@ -1201,98 +1139,264 @@ function ReportesFinancierosApp() {
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
   const hasPlan = Object.keys(planCuentas).length > 0;
   const hasAuxData = Object.keys(auxDataConfig).length > 0;
+  const auxTotal = (auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_general?.length||0);
 
-  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} />;
-  if (view === 'comparativo') return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
-  if (view === 'balance') return <BalanceGeneralView onBack={() => setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} />;
-  
-  return (
-    <div className="min-h-screen bg-[#f8fafc]">
-      <header className="px-6 py-4 bg-[#111827] border-b-4 border-orange-500 flex justify-between items-center shadow-lg">
-        <h1 className="text-white font-black text-xl tracking-widest uppercase flex items-center gap-2">Jiret G&B <span className="text-orange-500 px-2 py-0.5 rounded bg-orange-500/10 text-sm">Finance</span></h1>
-        <button onClick={() => { if(window.confirm("¿Borrar todos los datos?")) { setDbData([]); setPlanCuentas({}); setAuxDataConfig({}); } }} className="text-red-400 hover:text-red-500 transition-colors text-[10px] font-black uppercase">Limpiar Memoria</button>
+  if (view === 'resultado')     return <EstadoResultadoView   onBack={() => setView('dashboard')} dbData={dbData} />;
+  if (view === 'comparativo')   return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
+  if (view === 'balance')       return <BalanceGeneralView    onBack={() => setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} />;
+
+  // ── VISTA CONFIGURACIÓN ────────────────────────────────────────────────────
+  if (view === 'configuracion') return (
+    <div className="min-h-screen bg-[#0f0f0f]">
+      <header className="px-6 py-4 bg-[#111827] border-b-4 border-orange-500 flex items-center gap-4 shadow-lg">
+        <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-slate-400 hover:text-white font-black text-xs uppercase transition-colors"><ArrowLeft size={16}/> Panel</button>
+        <h1 className="text-white font-black text-lg tracking-widest uppercase flex items-center gap-2">
+          Configuración <span className="text-orange-500 text-sm">/ Ingesta de Datos</span>
+        </h1>
       </header>
-      <main className="max-w-7xl mx-auto p-6 lg:p-8 mt-4 grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
-        {/* PANEL LATERAL DE CARGA */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 text-center">
-            <Database className="mx-auto text-slate-300 mb-4" size={40}/>
-            <h3 className="font-black text-slate-800 text-sm uppercase mb-2">Ingesta de Datos</h3>
-            <p className="text-[11px] text-slate-500 mb-5 leading-relaxed font-medium">Carga en orden para habilitar los módulos de Balance y Resultados.</p>
-            
-            <label className={`${hasPlan ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-800 text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer hover:bg-emerald-500 hover:text-white transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3`}>
-              {hasPlan ? <CheckCircle size={14}/> : <BookOpen size={14}/>} {hasPlan ? 'Plan Cargado' : '1. Cargar Plan Cuentas'}
-              <input type="file" accept=".txt" className="hidden" onChange={handleUploadPlan}/>
-            </label>
+      <main className="max-w-3xl mx-auto p-8 space-y-6">
 
-            <label className={`${!hasPlan ? 'opacity-50 cursor-not-allowed' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3`}>
-              <Scale size={14}/> 2. Saldos Iniciales (Bal)
-              <input type="file" disabled={!hasPlan} accept=".txt" className="hidden" onChange={handleUploadSaldos}/>
-            </label>
+        {/* STATUS BAR */}
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label:'Plan de Cuentas', ok: hasPlan,   val: hasPlan ? 'Cargado' : 'Pendiente' },
+            { label:'Meses en Memoria', ok: loadedMonths.length > 0, val: loadedMonths.length > 0 ? loadedMonths.join(', ') : 'Ninguno' },
+            { label:'Auxiliares CxC/CxP', ok: hasAuxData, val: hasAuxData ? `${auxTotal} registros` : 'Pendiente' },
+          ].map(s => (
+            <div key={s.label} className={`rounded-2xl p-4 border ${s.ok ? 'bg-emerald-950/40 border-emerald-700' : 'bg-slate-900 border-slate-700'}`}>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{s.label}</p>
+              <p className={`text-xs font-bold truncate ${s.ok ? 'text-emerald-400' : 'text-slate-500'}`}>{s.val}</p>
+            </div>
+          ))}
+        </div>
 
-            <label className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer hover:bg-orange-500 hover:text-white transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3">
-              <LineChart size={14}/> 3. Subir Resultados
-              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUploadResultados}/>
-            </label>
+        {/* UPLOAD STEPS */}
+        <div className="bg-[#1a1a2e] rounded-3xl p-8 border border-slate-700 space-y-4">
+          <h2 className="text-white font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
 
-            <label className={`${(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxp_surepack?.length > 0) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-2`}>
-              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxp_surepack?.length > 0) ? <CheckCircle size={14}/> : <FileText size={14}/>}
-              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxp_surepack?.length > 0)
-                ? `Aux. cargados (${(auxDataConfig.cxc_general?.length||0)+(auxDataConfig.cxp_general?.length||0)+(auxDataConfig.cxp_surepack?.length||0)} reg.)`
-                : '4. Auxiliares CxC / CxP'}
-              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.txt" className="hidden" onChange={handleUploadAuxiliar}/>
-            </label>
+          {[
+            { num:'01', label: hasPlan ? '✓ Plan de Cuentas Cargado' : 'Plan de Cuentas (.txt)', color:'orange', active: true, accept:'.txt', handler: handleUploadPlan },
+            { num:'02', label:'Saldos Iniciales — Balance (.txt)', color:'blue', active: hasPlan, accept:'.txt', handler: handleUploadSaldos },
+            { num:'03', label:'Estado de Resultados (.xlsx / .csv)', color:'purple', active: true, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler: handleUploadResultados, multiple: true },
+            { num:'04', label: auxTotal > 0 ? `✓ Auxiliares cargados (${auxTotal} reg.)` : 'Auxiliares CxC + CxP (.xlsx)', color:'teal', active: true, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler: handleUploadAuxiliar, multiple: true },
+          ].map(step => {
+            const colors = {
+              orange: 'border-orange-500 text-orange-400 bg-orange-500/10',
+              blue:   'border-blue-500 text-blue-400 bg-blue-500/10',
+              purple: 'border-purple-500 text-purple-400 bg-purple-500/10',
+              teal:   'border-teal-500 text-teal-400 bg-teal-500/10',
+            };
+            return (
+              <label key={step.num} className={`flex items-center gap-4 p-4 rounded-2xl border ${step.active ? `${colors[step.color]} cursor-pointer hover:brightness-125 transition-all` : 'border-slate-700 opacity-40 cursor-not-allowed'}`}>
+                <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
+                <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
+                <Upload size={16} className="opacity-50"/>
+                <input type="file" accept={step.accept} multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
+              </label>
+            );
+          })}
 
-            <button onClick={handleSimulatePDFs} className="bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 px-4 py-2 rounded-xl font-black uppercase text-[8px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm">
-              <FileOutput size={12}/> Cargar PDFs Abr 2026
+          <div className="pt-2 border-t border-slate-700">
+            <button onClick={handleSimulatePDFs} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-600 px-4 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors">
+              <FileOutput size={12}/> Cargar datos demo Abr 2026
             </button>
           </div>
-          
-          {loadedMonths.length > 0 && (
-            <div className="bg-emerald-50 rounded-3xl p-6 border border-emerald-100">
-              <p className="text-emerald-800 font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2"><CheckCircle size={14}/> Meses en Memoria</p>
-              <div className="flex flex-wrap gap-2">
-                {loadedMonths.map(m => (
-                  <span key={m} className="bg-white text-emerald-600 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm">
-                    {m} <button onClick={() => handleDeleteMonth(m)}><Trash2 size={10} className="text-red-300 hover:text-red-500"/></button>
-                  </span>
-                ))}
+        </div>
+
+        {/* MESES EN MEMORIA */}
+        {loadedMonths.length > 0 && (
+          <div className="bg-[#1a1a2e] rounded-3xl p-6 border border-slate-700">
+            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-500"/> Meses en Memoria</p>
+            <div className="flex flex-wrap gap-2">
+              {loadedMonths.map(m => (
+                <span key={m} className="bg-slate-800 text-emerald-400 border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2">
+                  {m}
+                  <button onClick={() => handleDeleteMonth(m)} className="hover:text-red-400 transition-colors"><Trash2 size={10}/></button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ZONA PELIGROSA */}
+        <div className="bg-red-950/20 rounded-2xl p-5 border border-red-900/40 flex items-center justify-between">
+          <div>
+            <p className="text-red-400 font-black text-xs uppercase tracking-wider">Zona de Peligro</p>
+            <p className="text-slate-500 text-[11px] mt-0.5">Elimina todos los datos cargados en memoria</p>
+          </div>
+          <button onClick={() => { if(window.confirm("¿Borrar TODOS los datos?")) { setDbData([]); setPlanCuentas({}); setAuxDataConfig({}); }}}
+            className="bg-red-900/60 hover:bg-red-600 text-red-300 hover:text-white border border-red-700 px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest transition-all">
+            Limpiar Todo
+          </button>
+        </div>
+
+      </main>
+    </div>
+  );
+
+  // ── DASHBOARD PRINCIPAL (estilo ERP Panel) ─────────────────────────────────
+  const modules = [
+    {
+      id: 'resultado',
+      title: 'Estado de Resultados',
+      desc: 'P&L mensual y acumulado por cuentas',
+      icon: <LineChart size={32}/>,
+      accent: '#f97316',
+      dark: true,
+      onClick: () => dbData.length > 0 ? setView('resultado') : alert('Carga datos en Configuración primero.'),
+    },
+    {
+      id: 'balance',
+      title: 'Balance General',
+      desc: 'Situación financiera multimoneda USD/Bs',
+      icon: <Scale size={32}/>,
+      accent: '#3b82f6',
+      dark: true,
+      onClick: () => dbData.length > 0 ? setView('balance') : alert('Carga datos en Configuración primero.'),
+    },
+    {
+      id: 'comparativo',
+      title: 'Análisis de Variaciones',
+      desc: 'Comparativo mes a mes de resultados',
+      icon: <GitCompare size={32}/>,
+      accent: '#8b5cf6',
+      dark: true,
+      onClick: () => dbData.length >= 2 ? setView('comparativo') : alert('Necesitas al menos 2 meses cargados.'),
+    },
+    {
+      id: 'inversiones',
+      title: 'Libro Diario',
+      desc: 'Asientos y movimientos contables',
+      icon: <BookOpen size={32}/>,
+      accent: '#14b8a6',
+      dark: true,
+      disabled: true,
+    },
+    {
+      id: 'cxc',
+      title: 'Cuentas por Cobrar',
+      desc: `${(auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxc_zuliana?.length||0)} registros cargados`,
+      icon: <Users size={32}/>,
+      accent: '#06b6d4',
+      dark: false,
+      onClick: () => {
+        if (!hasAuxData) { alert('Carga los auxiliares en Configuración.'); return; }
+        setView('balance');
+      },
+    },
+    {
+      id: 'cxp',
+      title: 'Cuentas por Pagar',
+      desc: `${(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_yancarlos?.length||0)+(auxDataConfig?.cxp_general?.length||0)+(auxDataConfig?.cxp_autototal?.length||0)+(auxDataConfig?.cxp_pacomela?.length||0)} registros cargados`,
+      icon: <Briefcase size={32}/>,
+      accent: '#f43f5e',
+      dark: false,
+      onClick: () => {
+        if (!hasAuxData) { alert('Carga los auxiliares en Configuración.'); return; }
+        setView('balance');
+      },
+    },
+    {
+      id: 'dashboard_inv',
+      title: 'Inversiones',
+      desc: 'Portafolio y rentabilidad',
+      icon: <Landmark size={32}/>,
+      accent: '#a855f7',
+      dark: false,
+      disabled: true,
+    },
+    {
+      id: 'configuracion',
+      title: 'Configuración',
+      desc: `Plan: ${hasPlan ? '✓' : '—'} · Meses: ${loadedMonths.length} · Aux: ${hasAuxData ? '✓' : '—'}`,
+      icon: <Database size={32}/>,
+      accent: '#64748b',
+      dark: false,
+      onClick: () => setView('configuracion'),
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#0f0f0f]">
+      {/* HEADER */}
+      <header className="px-8 py-5 bg-[#111827] border-b-4 border-orange-500 shadow-2xl">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase">
+              JIRET G&B <span className="text-orange-500">Finance</span>
+            </h1>
+            <p className="text-slate-500 text-[11px] font-bold tracking-[0.3em] uppercase mt-0.5">Servicios Jiret G&B, C.A. · RIF: J-412309374</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {loadedMonths.length > 0 && (
+              <span className="bg-emerald-900/40 border border-emerald-700 text-emerald-400 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest">
+                {loadedMonths.length} mes{loadedMonths.length !== 1 ? 'es' : ''} en memoria
+              </span>
+            )}
+            <button onClick={() => setView('configuracion')} className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center gap-2">
+              <Database size={14}/> Config.
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* PANEL GRID */}
+      <main className="max-w-7xl mx-auto px-6 py-10">
+        <div className="text-center mb-10">
+          <h2 className="text-white font-black text-3xl tracking-[0.2em] uppercase mb-2">Panel Principal</h2>
+          <div className="w-16 h-1 bg-orange-500 mx-auto rounded-full"/>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          {modules.map(mod => (
+            <button
+              key={mod.id}
+              onClick={mod.disabled ? undefined : mod.onClick}
+              disabled={mod.disabled}
+              className={`group relative rounded-2xl p-6 text-left transition-all duration-200 overflow-hidden
+                ${mod.dark
+                  ? 'bg-[#111827] hover:brightness-125 border-2'
+                  : 'bg-white hover:shadow-2xl hover:-translate-y-1 border-2 border-transparent'
+                }
+                ${mod.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+              `}
+              style={{ borderColor: mod.dark ? mod.accent : 'transparent' }}
+            >
+              {/* accent glow for dark cards */}
+              {mod.dark && !mod.disabled && (
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-2xl"
+                  style={{ background: mod.accent }}/>
+              )}
+              {/* left accent bar for light cards */}
+              {!mod.dark && (
+                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl transition-all duration-200 group-hover:w-1.5"
+                  style={{ background: mod.accent }}/>
+              )}
+
+              <div className="mb-4 transition-transform duration-200 group-hover:scale-110"
+                style={{ color: mod.dark ? mod.accent : mod.accent }}>
+                {mod.icon}
               </div>
-            </div>
-          )}
+              <h3 className={`font-black text-sm uppercase tracking-tight leading-tight mb-1.5
+                ${mod.dark ? 'text-white' : 'text-slate-900'}`}>
+                {mod.title}
+              </h3>
+              <p className={`text-[11px] font-medium leading-relaxed
+                ${mod.dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                {mod.desc}
+              </p>
+            </button>
+          ))}
         </div>
 
-        {/* MÓDULOS PRINCIPALES */}
-        <div className="lg:col-span-3 space-y-8">
-          <div className="bg-white rounded-3xl p-8 lg:p-10 shadow-sm border-l-8 border-orange-500 relative overflow-hidden flex flex-col justify-center min-h-[220px]">
-            <div className="absolute top-0 right-0 w-80 h-80 bg-orange-50 rounded-full blur-3xl -mr-20 -mt-20 opacity-70"></div>
-            <h2 className="text-3xl lg:text-4xl font-black text-slate-900 uppercase tracking-tight mb-2 relative z-10">Servicios Jiret G&B, C.A.</h2>
-            <p className="text-sm font-bold text-slate-500 tracking-[0.3em] mb-6 relative z-10">RIF: J-412309374</p>
-            <p className="text-sm text-slate-600 max-w-2xl relative z-10 leading-relaxed font-medium">Panel financiero integral. El Balance General ahora te permite ver cortes mensuales limpios y cuenta con el mapeo de auxiliares pre-cargado.</p>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-6">
-            <button onClick={() => dbData.length > 0 ? setView('resultado') : alert('Carga Resultados primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-orange-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
-              <div className="bg-orange-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><LineChart className="text-orange-500" size={28}/></div>
-              <h3 className="font-black uppercase text-base text-slate-900">Estado de Resultados</h3>
-            </button>
-            <button onClick={() => dbData.length > 0 ? setView('balance') : alert('Carga Saldos de Balance primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-blue-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
-              <div className="bg-blue-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><Scale className="text-blue-500" size={28}/></div>
-              <h3 className="font-black uppercase text-base text-slate-900">Balance General</h3>
-            </button>
-            <button onClick={() => dbData.length >= 2 ? setView('comparativo') : alert('Para comparar necesitas cargar al menos 2 meses.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-indigo-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
-              <div className="bg-indigo-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><GitCompare className="text-indigo-500" size={28}/></div>
-              <h3 className="font-black uppercase text-base text-slate-900">Variaciones</h3>
-            </button>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-teal-500 opacity-50 text-left cursor-not-allowed">
-              <div className="bg-teal-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5"><Landmark className="text-teal-500" size={28}/></div>
-              <h3 className="font-black uppercase text-base text-slate-900">Inversiones</h3>
-            </div>
-          </div>
-        </div>
+        {/* FOOTER NOTE */}
+        <p className="text-center text-slate-600 text-[10px] font-bold uppercase tracking-widest mt-10">
+          Módulo de Reportes Financieros · Jiret G&B Finance v2.0
+        </p>
       </main>
     </div>
   );
 }
 
 export default ReportesFinancierosApp;
+
