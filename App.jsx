@@ -723,10 +723,16 @@ function EstadoResultadoView({ onBack, dbData }) {
       <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600 transition-colors"><ArrowLeft size={16}/> Volver al Panel</button>
-          <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4 flex-wrap">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Filtro:</span>
-            <button onClick={() => setSelectedMonth('General')} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === 'General' ? 'bg-slate-800 text-white ring-2 ring-slate-300' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'}`}>General</button>
-            {availableMonths.map(m => <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === m ? 'bg-orange-600 text-white ring-2 ring-orange-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>{m}</button>)}
+          <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Período:</span>
+            <select
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(e.target.value)}
+              className="bg-orange-50 border-2 border-orange-300 text-orange-800 text-xs rounded-lg p-1.5 font-black uppercase cursor-pointer outline-none focus:ring-2 focus:ring-orange-400 min-w-[120px]"
+            >
+              <option value="General">General (Acumulado)</option>
+              {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
           </div>
         </div>
         <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
@@ -964,6 +970,38 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
       return { u, b };
     };
     compute(root);
+
+    // ── Ordenar por ecuación patrimonial: Activos → Pasivos → Patrimonio ──────
+    const sectionOrder = (name) => {
+      const n = name.toUpperCase();
+      if (n.includes('ACTIVO') || n.startsWith('1')) return 1;
+      if (n.includes('PASIVO') || n.startsWith('2')) return 2;
+      if (n.includes('PATRIMONIO') || n.startsWith('3')) return 3;
+      return 9;
+    };
+    root.sort((a, b) => sectionOrder(a.n) - sectionOrder(b.n));
+
+    // Dentro de Activos: disponible/caja/banco primero, luego CxC, luego resto
+    const assetSubOrder = (name) => {
+      const n = name.toUpperCase();
+      if (n.includes('DISPONIBLE') || n.includes('CAJA') || n.includes('BANCO')) return 1;
+      if (n.includes('POR COBRAR') || n.includes('COBRAR'))                       return 2;
+      if (n.includes('INVENTARIO') || n.includes('MERCANCIA'))                    return 3;
+      if (n.includes('ANTICIPO') || n.includes('PREPAGO'))                        return 4;
+      if (n.includes('FIJO') || n.includes('INMUEBLE') || n.includes('VEHICLE')) return 6;
+      return 5;
+    };
+    const sortNodes = (nodes, depth) => {
+      if (depth === 0) return; // root already sorted above
+      nodes.sort((a, b) => {
+        const ao = assetSubOrder(a.n), bo = assetSubOrder(b.n);
+        if (ao !== bo) return ao - bo;
+        return a.n.localeCompare(b.n);
+      });
+      nodes.forEach(n => { if (!n.isLeaf && n.c) sortNodes(n.c, depth - 1); });
+    };
+    root.forEach(r => { if (r.c) sortNodes(r.c, 3); });
+
     return root;
   }, [dbData, selectedMonth, tasa]);
 
@@ -1144,81 +1182,64 @@ function ReportesFinancierosApp() {
   if (view === 'resultado')     return <EstadoResultadoView   onBack={() => setView('dashboard')} dbData={dbData} />;
   if (view === 'comparativo')   return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
   if (view === 'balance')       return <BalanceGeneralView    onBack={() => setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} />;
+  if (view === 'inversiones')   return <InversionesView       onBack={() => setView('dashboard')} />;
 
   // ── VISTA CONFIGURACIÓN ────────────────────────────────────────────────────
   if (view === 'configuracion') return (
-    <div className="min-h-screen bg-[#0f0f0f]">
-      <header className="px-6 py-4 bg-[#111827] border-b-4 border-orange-500 flex items-center gap-4 shadow-lg">
+    <div className="min-h-screen bg-[#111111]">
+      <header className="px-6 py-4 bg-[#111111] border-b-4 border-orange-500 flex items-center gap-4 shadow-lg">
         <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-slate-400 hover:text-white font-black text-xs uppercase transition-colors"><ArrowLeft size={16}/> Panel</button>
         <h1 className="text-white font-black text-lg tracking-widest uppercase flex items-center gap-2">
           Configuración <span className="text-orange-500 text-sm">/ Ingesta de Datos</span>
         </h1>
       </header>
       <main className="max-w-3xl mx-auto p-8 space-y-6">
-
-        {/* STATUS BAR */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label:'Plan de Cuentas', ok: hasPlan,   val: hasPlan ? 'Cargado' : 'Pendiente' },
-            { label:'Meses en Memoria', ok: loadedMonths.length > 0, val: loadedMonths.length > 0 ? loadedMonths.join(', ') : 'Ninguno' },
-            { label:'Auxiliares CxC/CxP', ok: hasAuxData, val: hasAuxData ? `${auxTotal} registros` : 'Pendiente' },
+            { label:'Plan de Cuentas',    ok: hasPlan,              val: hasPlan ? 'Cargado' : 'Pendiente' },
+            { label:'Meses en Memoria',   ok: loadedMonths.length > 0, val: loadedMonths.length > 0 ? loadedMonths.join(', ') : 'Ninguno' },
+            { label:'Auxiliares CxC/CxP', ok: hasAuxData,           val: hasAuxData ? `${auxTotal} registros` : 'Pendiente' },
           ].map(s => (
-            <div key={s.label} className={`rounded-2xl p-4 border ${s.ok ? 'bg-emerald-950/40 border-emerald-700' : 'bg-slate-900 border-slate-700'}`}>
+            <div key={s.label} className={`rounded-2xl p-4 border ${s.ok ? 'bg-emerald-950/40 border-emerald-700' : 'bg-[#1a1a1a] border-slate-700'}`}>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{s.label}</p>
               <p className={`text-xs font-bold truncate ${s.ok ? 'text-emerald-400' : 'text-slate-500'}`}>{s.val}</p>
             </div>
           ))}
         </div>
-
-        {/* UPLOAD STEPS */}
-        <div className="bg-[#1a1a2e] rounded-3xl p-8 border border-slate-700 space-y-4">
+        <div className="bg-[#1a1a1a] rounded-3xl p-8 border border-slate-700 space-y-4">
           <h2 className="text-white font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
-
           {[
             { num:'01', label: hasPlan ? '✓ Plan de Cuentas Cargado' : 'Plan de Cuentas (.txt)', color:'orange', active: true, accept:'.txt', handler: handleUploadPlan },
             { num:'02', label:'Saldos Iniciales — Balance (.txt)', color:'blue', active: hasPlan, accept:'.txt', handler: handleUploadSaldos },
-            { num:'03', label:'Estado de Resultados (.xlsx / .csv)', color:'purple', active: true, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler: handleUploadResultados, multiple: true },
-            { num:'04', label: auxTotal > 0 ? `✓ Auxiliares cargados (${auxTotal} reg.)` : 'Auxiliares CxC + CxP (.xlsx)', color:'teal', active: true, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler: handleUploadAuxiliar, multiple: true },
-          ].map(step => {
-            const colors = {
-              orange: 'border-orange-500 text-orange-400 bg-orange-500/10',
-              blue:   'border-blue-500 text-blue-400 bg-blue-500/10',
-              purple: 'border-purple-500 text-purple-400 bg-purple-500/10',
-              teal:   'border-teal-500 text-teal-400 bg-teal-500/10',
-            };
-            return (
-              <label key={step.num} className={`flex items-center gap-4 p-4 rounded-2xl border ${step.active ? `${colors[step.color]} cursor-pointer hover:brightness-125 transition-all` : 'border-slate-700 opacity-40 cursor-not-allowed'}`}>
-                <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
-                <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
-                <Upload size={16} className="opacity-50"/>
-                <input type="file" accept={step.accept} multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
-              </label>
-            );
-          })}
-
+            { num:'03', label:'Estado de Resultados (.xlsx / .csv)', color:'orange', active: true, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler: handleUploadResultados, multiple: true },
+            { num:'04', label: auxTotal > 0 ? `✓ Auxiliares cargados (${auxTotal} reg.)` : 'Auxiliares CxC + CxP (.xlsx)', color:'orange', active: true, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler: handleUploadAuxiliar, multiple: true },
+          ].map(step => (
+            <label key={step.num} className={`flex items-center gap-4 p-4 rounded-2xl border cursor-pointer transition-all
+              ${step.active ? 'border-orange-500/50 text-orange-300 bg-orange-500/5 hover:bg-orange-500/10 hover:border-orange-500' : 'border-slate-700 text-slate-600 opacity-40 cursor-not-allowed'}`}>
+              <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
+              <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
+              <Upload size={16} className="opacity-50"/>
+              <input type="file" accept={step.accept} multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
+            </label>
+          ))}
           <div className="pt-2 border-t border-slate-700">
-            <button onClick={handleSimulatePDFs} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-600 px-4 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors">
+            <button onClick={handleSimulatePDFs} className="w-full flex items-center justify-center gap-2 bg-[#222] hover:bg-[#333] text-slate-400 hover:text-white border border-slate-600 px-4 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors">
               <FileOutput size={12}/> Cargar datos demo Abr 2026
             </button>
           </div>
         </div>
-
-        {/* MESES EN MEMORIA */}
         {loadedMonths.length > 0 && (
-          <div className="bg-[#1a1a2e] rounded-3xl p-6 border border-slate-700">
+          <div className="bg-[#1a1a1a] rounded-3xl p-6 border border-slate-700">
             <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-500"/> Meses en Memoria</p>
             <div className="flex flex-wrap gap-2">
               {loadedMonths.map(m => (
-                <span key={m} className="bg-slate-800 text-emerald-400 border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2">
-                  {m}
-                  <button onClick={() => handleDeleteMonth(m)} className="hover:text-red-400 transition-colors"><Trash2 size={10}/></button>
+                <span key={m} className="bg-[#222] text-emerald-400 border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2">
+                  {m}<button onClick={() => handleDeleteMonth(m)} className="hover:text-red-400 transition-colors"><Trash2 size={10}/></button>
                 </span>
               ))}
             </div>
           </div>
         )}
-
-        {/* ZONA PELIGROSA */}
         <div className="bg-red-950/20 rounded-2xl p-5 border border-red-900/40 flex items-center justify-between">
           <div>
             <p className="text-red-400 font-black text-xs uppercase tracking-wider">Zona de Peligro</p>
@@ -1229,167 +1250,73 @@ function ReportesFinancierosApp() {
             Limpiar Todo
           </button>
         </div>
-
       </main>
     </div>
   );
 
-  // ── DASHBOARD PRINCIPAL (estilo ERP Panel) ─────────────────────────────────
+  // ── DASHBOARD PRINCIPAL (colores: negro · blanco · naranja) ─────────────────
   const modules = [
-    {
-      id: 'resultado',
-      title: 'Estado de Resultados',
-      desc: 'P&L mensual y acumulado por cuentas',
-      icon: <LineChart size={32}/>,
-      accent: '#f97316',
-      dark: true,
-      onClick: () => dbData.length > 0 ? setView('resultado') : alert('Carga datos en Configuración primero.'),
-    },
-    {
-      id: 'balance',
-      title: 'Balance General',
-      desc: 'Situación financiera multimoneda USD/Bs',
-      icon: <Scale size={32}/>,
-      accent: '#3b82f6',
-      dark: true,
-      onClick: () => dbData.length > 0 ? setView('balance') : alert('Carga datos en Configuración primero.'),
-    },
-    {
-      id: 'comparativo',
-      title: 'Análisis de Variaciones',
-      desc: 'Comparativo mes a mes de resultados',
-      icon: <GitCompare size={32}/>,
-      accent: '#8b5cf6',
-      dark: true,
-      onClick: () => dbData.length >= 2 ? setView('comparativo') : alert('Necesitas al menos 2 meses cargados.'),
-    },
-    {
-      id: 'inversiones',
-      title: 'Libro Diario',
-      desc: 'Asientos y movimientos contables',
-      icon: <BookOpen size={32}/>,
-      accent: '#14b8a6',
-      dark: true,
-      disabled: true,
-    },
-    {
-      id: 'cxc',
-      title: 'Cuentas por Cobrar',
-      desc: `${(auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxc_zuliana?.length||0)} registros cargados`,
-      icon: <Users size={32}/>,
-      accent: '#06b6d4',
-      dark: false,
-      onClick: () => {
-        if (!hasAuxData) { alert('Carga los auxiliares en Configuración.'); return; }
-        setView('balance');
-      },
-    },
-    {
-      id: 'cxp',
-      title: 'Cuentas por Pagar',
-      desc: `${(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_yancarlos?.length||0)+(auxDataConfig?.cxp_general?.length||0)+(auxDataConfig?.cxp_autototal?.length||0)+(auxDataConfig?.cxp_pacomela?.length||0)} registros cargados`,
-      icon: <Briefcase size={32}/>,
-      accent: '#f43f5e',
-      dark: false,
-      onClick: () => {
-        if (!hasAuxData) { alert('Carga los auxiliares en Configuración.'); return; }
-        setView('balance');
-      },
-    },
-    {
-      id: 'dashboard_inv',
-      title: 'Inversiones',
-      desc: 'Portafolio y rentabilidad',
-      icon: <Landmark size={32}/>,
-      accent: '#a855f7',
-      dark: false,
-      disabled: true,
-    },
-    {
-      id: 'configuracion',
-      title: 'Configuración',
-      desc: `Plan: ${hasPlan ? '✓' : '—'} · Meses: ${loadedMonths.length} · Aux: ${hasAuxData ? '✓' : '—'}`,
-      icon: <Database size={32}/>,
-      accent: '#64748b',
-      dark: false,
-      onClick: () => setView('configuracion'),
-    },
+    { id:'resultado',   title:'Estado de Resultados',   desc:'P&L mensual y acumulado por cuentas',       icon:<LineChart size={30}/>,  onClick:() => dbData.length > 0 ? setView('resultado')   : alert('Carga datos en Configuración.') },
+    { id:'balance',     title:'Balance General',         desc:'Situación financiera multimoneda USD / Bs', icon:<Scale size={30}/>,      onClick:() => dbData.length > 0 ? setView('balance')     : alert('Carga datos en Configuración.') },
+    { id:'comparativo', title:'Análisis de Variaciones', desc:'Comparativo mes a mes de resultados',       icon:<GitCompare size={30}/>, onClick:() => dbData.length >= 2 ? setView('comparativo') : alert('Necesitas al menos 2 meses.') },
+    { id:'inversiones', title:'Activos Fijos',           desc:'Registro y depreciación de activos fijos',  icon:<Landmark size={30}/>,   onClick:() => setView('inversiones') },
+    { id:'diario',      title:'Libro Diario',            desc:'Asientos y movimientos contables',          icon:<BookOpen size={30}/>,   disabled:true },
+    { id:'config',      title:'Configuración',           desc:`Plan: ${hasPlan?'✓':'—'} · Meses: ${loadedMonths.length} · Aux: ${hasAuxData?'✓':'—'}`, icon:<Database size={30}/>, onClick:() => setView('configuracion') },
   ];
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f]">
-      {/* HEADER */}
-      <header className="px-8 py-5 bg-[#111827] border-b-4 border-orange-500 shadow-2xl">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
+    <div className="min-h-screen bg-[#111111]">
+      <header className="px-8 py-5 bg-[#111111] border-b-4 border-orange-500 shadow-2xl">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div>
-            <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase">
-              JIRET G&B <span className="text-orange-500">Finance</span>
-            </h1>
+            <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase">JIRET G&B <span className="text-orange-500">Finance</span></h1>
             <p className="text-slate-500 text-[11px] font-bold tracking-[0.3em] uppercase mt-0.5">Servicios Jiret G&B, C.A. · RIF: J-412309374</p>
           </div>
           <div className="flex items-center gap-3">
             {loadedMonths.length > 0 && (
-              <span className="bg-emerald-900/40 border border-emerald-700 text-emerald-400 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest">
+              <span className="bg-orange-500/10 border border-orange-500/40 text-orange-400 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest">
                 {loadedMonths.length} mes{loadedMonths.length !== 1 ? 'es' : ''} en memoria
               </span>
             )}
-            <button onClick={() => setView('configuracion')} className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center gap-2">
+            <button onClick={() => setView('configuracion')} className="bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center gap-2">
               <Database size={14}/> Config.
             </button>
           </div>
         </div>
       </header>
 
-      {/* PANEL GRID */}
-      <main className="max-w-7xl mx-auto px-6 py-10">
+      <main className="max-w-6xl mx-auto px-6 py-12">
         <div className="text-center mb-10">
-          <h2 className="text-white font-black text-3xl tracking-[0.2em] uppercase mb-2">Panel Principal</h2>
-          <div className="w-16 h-1 bg-orange-500 mx-auto rounded-full"/>
+          <h2 className="text-white font-black text-3xl tracking-[0.3em] uppercase mb-3">Panel Principal</h2>
+          <div className="w-14 h-1 bg-orange-500 mx-auto rounded-full"/>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-          {modules.map(mod => (
-            <button
-              key={mod.id}
-              onClick={mod.disabled ? undefined : mod.onClick}
-              disabled={mod.disabled}
-              className={`group relative rounded-2xl p-6 text-left transition-all duration-200 overflow-hidden
-                ${mod.dark
-                  ? 'bg-[#111827] hover:brightness-125 border-2'
-                  : 'bg-white hover:shadow-2xl hover:-translate-y-1 border-2 border-transparent'
-                }
-                ${mod.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
-              `}
-              style={{ borderColor: mod.dark ? mod.accent : 'transparent' }}
-            >
-              {/* accent glow for dark cards */}
-              {mod.dark && !mod.disabled && (
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-300 rounded-2xl"
-                  style={{ background: mod.accent }}/>
-              )}
-              {/* left accent bar for light cards */}
-              {!mod.dark && (
-                <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl transition-all duration-200 group-hover:w-1.5"
-                  style={{ background: mod.accent }}/>
-              )}
-
-              <div className="mb-4 transition-transform duration-200 group-hover:scale-110"
-                style={{ color: mod.dark ? mod.accent : mod.accent }}>
-                {mod.icon}
-              </div>
-              <h3 className={`font-black text-sm uppercase tracking-tight leading-tight mb-1.5
-                ${mod.dark ? 'text-white' : 'text-slate-900'}`}>
-                {mod.title}
-              </h3>
-              <p className={`text-[11px] font-medium leading-relaxed
-                ${mod.dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                {mod.desc}
-              </p>
+        {/* Row 1: 4 financial modules */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+          {modules.slice(0,4).map(mod => (
+            <button key={mod.id} onClick={mod.disabled ? undefined : mod.onClick} disabled={mod.disabled}
+              className={`group bg-white rounded-2xl p-6 text-left border-l-4 border-orange-500 shadow-sm transition-all duration-200
+                hover:shadow-xl hover:-translate-y-1 hover:border-l-[6px] ${mod.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+              <div className="mb-4 text-orange-500 transition-transform duration-200 group-hover:scale-110">{mod.icon}</div>
+              <h3 className="font-black text-sm uppercase tracking-tight leading-tight mb-1.5 text-[#111111]">{mod.title}</h3>
+              <p className="text-[11px] font-medium leading-relaxed text-slate-500">{mod.desc}</p>
             </button>
           ))}
         </div>
 
-        {/* FOOTER NOTE */}
+        {/* Row 2: Libro Diario + Config */}
+        <div className="grid grid-cols-2 gap-5">
+          {modules.slice(4).map(mod => (
+            <button key={mod.id} onClick={mod.disabled ? undefined : mod.onClick} disabled={mod.disabled}
+              className={`group bg-white rounded-2xl p-6 text-left border-l-4 border-orange-500 shadow-sm transition-all duration-200
+                hover:shadow-xl hover:-translate-y-1 hover:border-l-[6px] ${mod.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+              <div className="mb-4 text-orange-500 transition-transform duration-200 group-hover:scale-110">{mod.icon}</div>
+              <h3 className="font-black text-sm uppercase tracking-tight leading-tight mb-1.5 text-[#111111]">{mod.title}</h3>
+              <p className="text-[11px] font-medium leading-relaxed text-slate-500">{mod.desc}</p>
+            </button>
+          ))}
+        </div>
+
         <p className="text-center text-slate-600 text-[10px] font-bold uppercase tracking-widest mt-10">
           Módulo de Reportes Financieros · Jiret G&B Finance v2.0
         </p>
@@ -1398,5 +1325,109 @@ function ReportesFinancierosApp() {
   );
 }
 
-export default ReportesFinancierosApp;
+// ============================================================================
+// 9. VISTA: ACTIVOS FIJOS / INVERSIONES
+// ============================================================================
+const ACTIVOS_FIJOS = [
+  { grupo:'Vehículos',                   cod:'AF-V001', descripcion:'Camión Reparto — Chevrolet N300',          fechaAdq:'07/10/2025', costoOriginal:21110.23, depAcum:2637.53, vidaUtil:60,  proveedor:'AUTO TOTAL, C.A' },
+  { grupo:'Inmuebles',                   cod:'AF-I001', descripcion:'Local Comercial — Contrato Pacomela',      fechaAdq:'02/01/2026', costoOriginal:169547.91,depAcum:4238.70, vidaUtil:240, proveedor:'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A' },
+  { grupo:'Maquinaria y Equipos',        cod:'AF-M001', descripcion:'Equipos de Producción y Empaque',         fechaAdq:'01/06/2024', costoOriginal:15000.00, depAcum:3750.00, vidaUtil:60,  proveedor:'—' },
+  { grupo:'Maquinaria y Equipos',        cod:'AF-M002', descripcion:'Sistema de Refrigeración Industrial',     fechaAdq:'15/08/2024', costoOriginal:8500.00,  depAcum:1487.50, vidaUtil:84,  proveedor:'—' },
+  { grupo:'Mobiliario y Equipos Oficina',cod:'AF-O001', descripcion:'Mobiliario Oficina Administrativa',       fechaAdq:'01/03/2024', costoOriginal:3200.00,  depAcum:1280.00, vidaUtil:60,  proveedor:'—' },
+  { grupo:'Mobiliario y Equipos Oficina',cod:'AF-O002', descripcion:'Equipos de Computación y Periféricos',   fechaAdq:'15/09/2024', costoOriginal:4800.00,  depAcum:1200.00, vidaUtil:36,  proveedor:'—' },
+];
 
+function InversionesView({ onBack }) {
+  const grupos = [...new Set(ACTIVOS_FIJOS.map(a => a.grupo))];
+  const fmt = v => new Intl.NumberFormat('es-VE', { minimumFractionDigits:2, maximumFractionDigits:2 }).format(v);
+  const totalCosto = ACTIVOS_FIJOS.reduce((s,a) => s + a.costoOriginal, 0);
+  const totalDep   = ACTIVOS_FIJOS.reduce((s,a) => s + a.depAcum, 0);
+  const totalNeto  = totalCosto - totalDep;
+
+  return (
+    <div className="min-h-screen bg-[#f1f5f9]">
+      <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600 transition-colors"><ArrowLeft size={16}/> Volver al Panel</button>
+          <span className="text-slate-200">|</span>
+          <span className="font-black text-xs text-slate-700 uppercase tracking-widest flex items-center gap-2"><Landmark size={14} className="text-orange-500"/> Activos Fijos</span>
+        </div>
+        <span className="bg-orange-50 border border-orange-200 text-orange-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest">Corte: Abril 2026</span>
+      </header>
+
+      <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
+        <div className="bg-white px-8 py-10 border-t-8 border-orange-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+          <h1 className="text-3xl font-black text-slate-900 uppercase mb-1 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
+          <div className="w-16 h-1 bg-orange-500 mb-4 rounded-full"/>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest mb-5">Registro de Activos Fijos</h2>
+          <div className="grid grid-cols-3 gap-6 w-full max-w-2xl">
+            {[
+              { label:'Costo Original', val:fmt(totalCosto), color:'text-slate-800' },
+              { label:'Dep. Acumulada', val:fmt(totalDep),   color:'text-red-600' },
+              { label:'Valor Neto USD', val:fmt(totalNeto),  color:'text-orange-600' },
+            ].map(k => (
+              <div key={k.label} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p>
+                <p className={`text-lg font-black font-mono ${k.color}`}>{k.val}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {grupos.map(grupo => {
+          const items = ACTIVOS_FIJOS.filter(a => a.grupo === grupo);
+          const gCosto = items.reduce((s,a) => s + a.costoOriginal, 0);
+          const gDep   = items.reduce((s,a) => s + a.depAcum, 0);
+          return (
+            <div key={grupo} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200 mb-5">
+              <div className="bg-[#111111] px-6 py-3 flex justify-between items-center">
+                <span className="text-orange-400 font-black text-xs uppercase tracking-widest">{grupo}</span>
+                <span className="text-slate-400 text-[10px] font-bold">Neto: <span className="text-white font-black">USD {fmt(gCosto-gDep)}</span></span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" style={{minWidth:'780px'}}>
+                  <thead className="bg-slate-50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Código</th><th className="px-4 py-3">Descripción</th>
+                      <th className="px-4 py-3">Fecha Adq.</th><th className="px-4 py-3">Proveedor</th>
+                      <th className="px-4 py-3 text-right">Costo USD</th><th className="px-4 py-3 text-right">Dep. Acum.</th>
+                      <th className="px-4 py-3 text-right text-orange-600">Valor Neto</th><th className="px-4 py-3 text-center">Vida Útil</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((a,i) => (
+                      <tr key={i} className="border-b border-slate-100 hover:bg-orange-50/30 transition-colors">
+                        <td className="px-4 py-3 text-[11px] font-black text-slate-500 font-mono">{a.cod}</td>
+                        <td className="px-4 py-3 text-[11px] font-bold text-slate-800">{a.descripcion}</td>
+                        <td className="px-4 py-3 text-[11px] text-slate-500 font-mono">{a.fechaAdq}</td>
+                        <td className="px-4 py-3 text-[10px] text-slate-400 max-w-[140px] truncate" title={a.proveedor}>{a.proveedor}</td>
+                        <td className="px-4 py-3 text-right text-[11px] font-mono text-slate-700">{fmt(a.costoOriginal)}</td>
+                        <td className="px-4 py-3 text-right text-[11px] font-mono text-red-500">({fmt(a.depAcum)})</td>
+                        <td className="px-4 py-3 text-right text-[12px] font-mono font-black text-orange-600">{fmt(a.costoOriginal-a.depAcum)}</td>
+                        <td className="px-4 py-3 text-center text-[10px] text-slate-400">{a.vidaUtil} meses</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-100 font-black text-[11px] border-t-2 border-slate-300">
+                      <td colSpan={4} className="px-4 py-2.5 text-slate-700 uppercase tracking-wider">Total {grupo}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-slate-800">{fmt(gCosto)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-red-600">({fmt(gDep)})</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-orange-700">{fmt(gCosto-gDep)}</td>
+                      <td/>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="bg-[#111111] rounded-2xl p-6 flex justify-between items-center border-2 border-orange-500 shadow-xl">
+          <span className="text-white font-black uppercase tracking-widest text-sm">TOTAL ACTIVOS FIJOS NETOS</span>
+          <span className="text-orange-400 font-black font-mono text-2xl">USD {fmt(totalNeto)}</span>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default ReportesFinancierosApp;
