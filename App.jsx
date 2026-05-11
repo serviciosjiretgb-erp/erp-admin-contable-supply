@@ -87,10 +87,13 @@ const processFiles = async (files) => {
         pathStack.push(name);
         continue;
       }
+      
       const usd = parseVal(usdStr);
       const bs = parseVal(bsStr);
+      
       if (usd !== null) {
-        allParsedData.push({ month, path: pathStack.join('>'), name, usd: Math.abs(usd), bs: bs !== null ? Math.abs(bs) : 0 });
+        // YA NO USAMOS Math.abs() AQUÍ. Mantener los signos reales para que las anulaciones cuadren a cero.
+        allParsedData.push({ month, path: pathStack.join('>'), name, usd: usd, bs: bs || 0 });
       } else {
         pathStack.push(name);
       }
@@ -195,8 +198,9 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false, h
           <div className="absolute left-4 top-1/2 w-2 h-px bg-slate-200"></div>
           <span className="ml-2 italic">{node.n}</span>
         </td>
-        <td className="py-1.5 px-3 text-right font-mono text-[10px] whitespace-nowrap text-slate-700">{fmtCur(node.u)}</td>
-        <td className="py-1.5 px-3 text-right font-mono text-[10px] hidden sm:table-cell whitespace-nowrap text-slate-500">{fmtCur(node.b)}</td>
+        {/* Las anulaciones/devoluciones se verán en rojo gracias a la lógica contable implementada */}
+        <td className={`py-1.5 px-3 text-right font-mono text-[10px] whitespace-nowrap ${node.u < 0 ? 'text-red-500' : 'text-slate-700'}`}>{fmtCur(node.u)}</td>
+        <td className={`py-1.5 px-3 text-right font-mono text-[10px] hidden sm:table-cell whitespace-nowrap ${node.b < 0 ? 'text-red-500' : 'text-slate-500'}`}>{fmtCur(node.b)}</td>
         <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-400">{pct}</td>
       </tr>
     );
@@ -209,7 +213,7 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD, defaultOpen = false, h
 // ============================================================================
 function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))], [dbData]);
-  const [selectedMonth, setSelectedMonth] = useState('General'); // <--- Por defecto inicia en GENERAL
+  const [selectedMonth, setSelectedMonth] = useState('General'); 
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
 
@@ -241,7 +245,7 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
     }
   };
 
-  // Creación del Árbol (Acumula automáticamente si es GENERAL)
+  // ÁRBOL INTELIGENTE QUE RESPETA NATURALEZAS CONTABLES
   const tree = useMemo(() => {
     const root = [];
     const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
@@ -255,7 +259,6 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
         cur = folder.c;
       });
 
-      // Lógica de suma inteligente para el consolidado (General)
       let leaf = cur.find(n => n.n === item.name && n.isLeaf);
       if (!leaf) {
         cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
@@ -274,6 +277,25 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
       return { u, b };
     };
     compute(root);
+
+    // Ajuste contable para mostrar en positivo: Multiplicamos los INGRESOS por -1.
+    // De esta forma, las ventas normales se ven en positivo, y las anulaciones se ven en negativo.
+    root.forEach(rootNode => {
+      const name = rootNode.n.toUpperCase();
+      const isIngreso = name.includes('INGRESO') || name.includes('VENTA') || name.startsWith('4');
+      const multiplier = isIngreso ? -1 : 1;
+      
+      const applySign = (nodes) => {
+        nodes.forEach(n => {
+          n.u = (n.u * multiplier) === 0 ? 0 : (n.u * multiplier);
+          n.b = (n.b * multiplier) === 0 ? 0 : (n.b * multiplier);
+          if (!n.isLeaf) applySign(n.c);
+        });
+      };
+      
+      applySign([rootNode]);
+    });
+
     return root;
   }, [dbData, selectedMonth]);
 
@@ -282,8 +304,10 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
   tree.forEach(rootNode => {
     const name = rootNode.n.toUpperCase();
     if (name.includes('INGRESO') || name.includes('VENTA') || name.startsWith('4')) {
+      // Como ya invertimos la carpeta Ingresos, aquí se suman a la utilidad
       totalUSD += rootNode.u; totalBs += rootNode.b; baseVentas += rootNode.u; 
     } else {
+      // Costos y Gastos se restan de la utilidad
       totalUSD -= rootNode.u; totalBs -= rootNode.b;
     }
   });
@@ -304,7 +328,6 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
           <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4 flex-wrap">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Filtro:</span>
             
-            {/* BOTÓN GENERAL (ACUMULADO) */}
             <button onClick={() => setSelectedMonth('General')}
               className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${
                 selectedMonth === 'General' 
@@ -314,7 +337,6 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
               General (Acumulado)
             </button>
 
-            {/* BOTONES DE MESES INDIVIDUALES */}
             {availableMonths.map(m => (
               <button key={m} onClick={() => setSelectedMonth(m)}
                 className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${
@@ -326,7 +348,7 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
               </button>
             ))}
             
-            {/* BOTÓN ELIMINAR MES (Solo aparece si hay un mes específico seleccionado) */}
+            {/* BOTÓN ELIMINAR MES */}
             {selectedMonth !== 'General' && (
               <button 
                 onClick={() => handleRemoveMonth(selectedMonth)}
@@ -336,7 +358,6 @@ function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
               </button>
             )}
 
-            {/* BOTÓN PARA AÑADIR MÁS MESES */}
             <label className="ml-2 px-3 py-1.5 rounded-full bg-slate-800 text-white text-[10px] font-black uppercase cursor-pointer hover:bg-orange-500 transition-colors flex items-center gap-1 shadow-sm">
               <PlusCircle size={14}/> Cargar Mes
               <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={onUpload}/>
@@ -430,7 +451,7 @@ function ReportesFinancierosApp() {
         const keepData = prev.filter(d => !newlyUploadedMonths.includes(d.month));
         return [...keepData, ...newData];
       });
-      alert(`✅ Archivo(s) procesado(s) exitosamente.`);
+      alert(`✅ Archivo(s) procesado(s) exitosamente respetando la naturaleza contable.`);
     } catch (error) { 
       alert("Error al procesar el archivo. Revisa el formato."); 
       console.error(error);
@@ -458,7 +479,7 @@ function ReportesFinancierosApp() {
           <Upload className="mx-auto text-orange-500 mb-5" size={56}/>
           <h2 className="text-2xl font-black uppercase mb-3 text-slate-800">Carga de Reportes Multi-Mes</h2>
           <p className="text-slate-500 text-sm mb-6 max-w-lg mx-auto font-medium">
-            Sube los archivos de todos los meses que necesites. El sistema te permitirá filtrar por un mes específico o ver un <strong>consolidado general</strong>.
+            Sube los archivos de todos los meses que necesites. El sistema agrupa la data contablemente y te permite ver resultados mensuales o consolidados.
           </p>
           
           <div className="flex justify-center items-center gap-4 flex-wrap">
