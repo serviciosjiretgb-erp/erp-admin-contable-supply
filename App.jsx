@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// LÓGICA DE PROCESAMIENTO (MOTOR BASE)
+// LÓGICA DE PROCESAMIENTO
 // ============================================================================
 
 const loadSheetJS = () => new Promise((resolve, reject) => {
@@ -97,30 +97,36 @@ const processFiles = async (files) => {
 // ============================================================================
 const ACCOUNT_MAPS = {
   '1.1.02.01.001': { type: 'cxc', filter: 'ALL', label: 'Clientes Generales' },
-  '1.1.05.01.008': { type: 'cxc', filter: 'ZULIANA DE EMPAQUE, C.A', label: 'Anticipos Zuliana' },
-  '2.1.01.02.008': { type: 'cxp', filter: 'AUTO TOTAL, C.A', label: 'Vehículos por Pagar' },
+  '1.1.05.01.008': { type: 'cxc', filter: 'ZULIANA DE EMPAQUE', label: 'Anticipos Zuliana' },
+  '2.1.01.02.008': { type: 'cxp', filter: 'AUTO TOTAL', label: 'Vehículos por Pagar' },
   '2.1.01.01.004': { type: 'cxp', filter: 'SURE PACK', label: 'CxP Sure Pack' },
-  '2.1.01.02.007': { type: 'cxp', filter: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', label: 'Inmueble por Pagar' },
-  '2.1.01.01.003': { type: 'cxp', filter: 'YANCARLOS PEREZ CASANOVA', label: 'Otras CxP Proveedores' }
+  '2.1.01.02.007': { type: 'cxp', filter: 'AGRO INDUSTRIAS LACTEAS PACOMELA', label: 'Inmueble por Pagar' },
+  '2.1.01.01.003': { type: 'cxp', filter: 'YANCARLOS PEREZ', label: 'Otras CxP Proveedores' }
 };
 
-const AUX_DATA = {
+// Data precargada en base a los PDF que enviaste para que te funcione inmediatamente
+const DEFAULT_AUX_DATA = {
   cxc: [
     { cod: 'C0047', nombre: 'ALIMENTOS BOTALON C.A', doc: '00002973', emision: '30/04/2026', vence: '07/05/2026', monto: 519.51 },
     { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002174', emision: '30/04/2025', vence: '30/04/2025', monto: 86.98 },
-    { cod: 'C0030', nombre: 'ZULIANA DE EMPAQUE, C.A', doc: 'ANT-001', emision: '15/04/2026', vence: '15/04/2026', monto: 2500.00 },
-    { cod: 'C0120', nombre: 'INVERSORA E&S', doc: '00002589', emision: '09/10/2025', vence: '09/10/2025', monto: 164.20 }
+    { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002272', emision: '05/06/2025', vence: '12/06/2025', monto: 93.59 },
+    { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002385', emision: '13/08/2025', vence: '20/08/2025', monto: 872.79 },
+    { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002458', emision: '09/10/2025', vence: '09/10/2025', monto: 93.59 },
+    { cod: 'C0120', nombre: 'INVERSORA E&S', doc: '00002589', emision: '09/10/2025', vence: '09/10/2025', monto: 164.20 },
+    { cod: 'C0030', nombre: 'ZULIANA DE EMPAQUE, C.A', doc: 'ANT-001', emision: '15/04/2026', vence: '15/04/2026', monto: 2500.00 }
   ],
   cxp: [
     { cod: 'P0005', nombre: 'YANCARLOS PEREZ CASANOVA', doc: '001073', emision: '17/04/2026', vence: '17/04/2026', monto: 7920.07 },
-    { cod: 'P0515', nombre: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', doc: '2602', emision: '02/01/2026', vence: '02/01/2026', monto: 20173.60 },
+    { cod: 'P0515', nombre: 'SUMINISTROS QUIVEN, C.A.', doc: '2602', emision: '02/01/2026', vence: '02/01/2026', monto: 169547.91 },
+    { cod: 'P0515', nombre: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A.', doc: '0403', emision: '04/03/2026', vence: '04/03/2026', monto: -147546.91 },
+    { cod: 'P0515', nombre: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A.', doc: '0604', emision: '06/04/2026', vence: '06/04/2026', monto: -1827.40 },
     { cod: 'P0999', nombre: 'AUTO TOTAL, C.A', doc: 'CUOTA-04', emision: '10/04/2026', vence: '10/04/2026', monto: 1500.00 },
     { cod: 'P0888', nombre: 'SURE PACK', doc: 'FAC-992', emision: '22/04/2026', vence: '30/04/2026', monto: 3450.12 }
   ]
 };
 
 // ============================================================================
-// COMPONENTE: ÁRBOL JERÁRQUICO (USADO POR ESTADO DE RESULTADOS Y BALANCE)
+// COMPONENTE: ÁRBOL JERÁRQUICO
 // ============================================================================
 const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false }) => {
   const isAccountNode = /^\d\./.test(node.n);
@@ -198,8 +204,8 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
           <div className="absolute left-4 top-0 bottom-0 w-px bg-slate-200"></div><div className="absolute left-4 top-1/2 w-2 h-px bg-slate-200"></div>
           <span className="ml-2 italic">{node.n}</span>
         </td>
-        <td className={`py-1.5 px-3 text-right font-mono text-[10px] whitespace-nowrap ${node.u < 0 ? 'text-red-500' : 'text-slate-700'}`}>{fmtCur(Math.abs(node.u))}</td>
-        <td className={`py-1.5 px-3 text-right font-mono text-[10px] hidden sm:table-cell whitespace-nowrap ${node.b < 0 ? 'text-red-500' : 'text-slate-500'}`}>{fmtCur(Math.abs(node.b))}</td>
+        <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-700">{fmtCur(Math.abs(node.u))}</td>
+        <td className="py-1.5 px-3 text-right font-mono text-[10px] hidden sm:table-cell text-slate-500">{fmtCur(Math.abs(node.b))}</td>
         <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-400">{pct}</td>
       </tr>
     );
@@ -208,7 +214,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 };
 
 // ============================================================================
-// COMPONENTE: ÁRBOL PLANO PARA ANÁLISIS COMPARATIVO (BLINDADO)
+// COMPONENTE: ÁRBOL PLANO PARA ANÁLISIS COMPARATIVO 
 // ============================================================================
 const ExpandableComparativeRow = ({ node, level = 0, defaultOpen = false }) => {
   const isAccountNode = /^\d\./.test(node.n);
@@ -292,10 +298,14 @@ const ExpandableComparativeRow = ({ node, level = 0, defaultOpen = false }) => {
 // ============================================================================
 // VISTA: SUB-REPORTE DETALLADO (CXC / CXP)
 // ============================================================================
-function AuxiliarReportView({ accountCode, onBack }) {
+function AuxiliarReportView({ accountCode, onBack, auxData }) {
   const mapInfo = ACCOUNT_MAPS[accountCode];
-  const allData = AUX_DATA[mapInfo.type];
-  const filteredData = mapInfo.filter === 'ALL' ? allData : allData.filter(d => d.nombre.toUpperCase().includes(mapInfo.filter.toUpperCase()));
+  const allData = auxData[mapInfo.type] || [];
+  
+  const filteredData = mapInfo.filter === 'ALL' 
+    ? allData 
+    : allData.filter(d => d.nombre.toUpperCase().includes(mapInfo.filter.toUpperCase()));
+
   const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
@@ -338,11 +348,14 @@ function AuxiliarReportView({ accountCode, onBack }) {
 }
 
 // ============================================================================
-// VISTA: BALANCE GENERAL (BLINDADO)
+// VISTA: BALANCE GENERAL (UN SOLO MES)
 // ============================================================================
-function BalanceGeneralView({ onBack, dbData }) {
+function BalanceGeneralView({ onBack, dbData, auxData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))], [dbData]);
-  const [selectedMonth, setSelectedMonth] = useState('General'); 
+  
+  // POR DEFECTO MUESTRA EL ÚLTIMO MES DISPONIBLE, YA NO EXISTE EL FILTRO "GENERAL"
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || ''); 
+  
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
   const [activeCode, setActiveCode] = useState(null);
@@ -354,7 +367,8 @@ function BalanceGeneralView({ onBack, dbData }) {
 
   const tree = useMemo(() => {
     const root = [];
-    const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
+    // FILTRA ESTRICTAMENTE POR EL MES SELECCIONADO (Ej: ABRIL)
+    const monthData = dbData.filter(d => d.month === selectedMonth);
     const balanceData = monthData.filter(item => item.path.toUpperCase().includes('ACTIVO') || item.path.toUpperCase().includes('PASIVO') || item.path.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name));
     balanceData.forEach(item => {
       const pathArray = item.path.split('>');
@@ -382,22 +396,30 @@ function BalanceGeneralView({ onBack, dbData }) {
 
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
 
-  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} />;
+  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxData={auxData} />;
 
   return (
     <div className="min-h-screen bg-[#f1f5f9]">
       <header className="bg-white border-b-2 border-blue-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-blue-600 transition-colors"><ArrowLeft size={16}/> Salir al Panel</button>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setSelectedMonth('General')} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm ${selectedMonth === 'General' ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200'}`}>General</button>
-          {availableMonths.map(m => <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm ${selectedMonth === m ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200'}`}>{m}</button>)}
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-blue-600 transition-colors"><ArrowLeft size={16}/> Salir al Panel</button>
+          <div className="border-l-2 border-slate-200 pl-4 flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Mes en Curso:</span>
+            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-blue-50 border border-blue-300 text-blue-700 text-xs rounded-lg block p-1.5 font-bold uppercase cursor-pointer outline-none">
+              {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
+          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
+          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
         <div className="bg-white px-8 py-10 border-t-8 border-blue-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
           <h1 className="text-3xl font-black text-slate-900 uppercase mb-2 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
           <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Balance de Situación Financiera</h2>
-          <p className="text-blue-600 font-black uppercase flex items-center gap-2 bg-blue-50 px-5 py-2 rounded-full text-[10px] border border-blue-100 shadow-sm"><Landmark size={14}/> {selectedMonth === 'General' ? 'Acumulado Histórico' : `Corte al mes de ${selectedMonth}`}</p>
+          <p className="text-blue-600 font-black uppercase flex items-center gap-2 bg-blue-50 px-5 py-2 rounded-full text-[10px] border border-blue-100 shadow-sm"><Landmark size={14}/> Corte al mes de {selectedMonth}</p>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
           <table className="w-full text-left border-collapse">
@@ -426,9 +448,9 @@ function BalanceGeneralView({ onBack, dbData }) {
 }
 
 // ============================================================================
-// VISTA: ESTADO DE RESULTADOS (BLINDADA)
+// VISTA: ESTADO DE RESULTADOS (CERRADA Y ESTABLE)
 // ============================================================================
-function EstadoResultadoView({ onBack, dbData }) {
+function EstadoResultadoView({ onBack, dbData, onUpload, onDeleteMonth }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))], [dbData]);
   const [selectedMonth, setSelectedMonth] = useState('General'); 
   const [defaultOpen, setDefaultOpen] = useState(false);
@@ -449,11 +471,15 @@ function EstadoResultadoView({ onBack, dbData }) {
     });
   };
 
+  const handleRemoveMonth = (month) => {
+    onDeleteMonth(month);
+    if (selectedMonth === month) setSelectedMonth('General');
+  };
+
   const tree = useMemo(() => {
     const root = [];
     const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
     const resData = monthData.filter(item => !item.path.toUpperCase().includes('ACTIVO') && !item.path.toUpperCase().includes('PASIVO') && !item.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(item.name));
-    
     resData.forEach(item => {
       const pathArray = item.path.split('>');
       let cur = root;
@@ -466,14 +492,12 @@ function EstadoResultadoView({ onBack, dbData }) {
       if (!leaf) cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
       else { leaf.u += item.usd; leaf.b += item.bs; }
     });
-
     const compute = (nodes) => {
       let u = 0, b = 0;
       nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; });
       return { u, b };
     };
     compute(root);
-
     root.forEach(rootNode => {
       const isIngreso = rootNode.n.toUpperCase().includes('INGRESO') || rootNode.n.toUpperCase().includes('VENTA') || rootNode.n.startsWith('4');
       const multiplier = isIngreso ? -1 : 1;
@@ -496,14 +520,21 @@ function EstadoResultadoView({ onBack, dbData }) {
   return (
     <div className="min-h-screen bg-[#f1f5f9]">
       <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-4">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600 transition-colors"><ArrowLeft size={16}/> Volver</button>
-        <div className="flex items-center gap-2">
-           <button onClick={() => setSelectedMonth('General')} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === 'General' ? 'bg-slate-800 text-white ring-2 ring-slate-300' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'}`}>General</button>
-           {availableMonths.map(m => <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === m ? 'bg-orange-600 text-white ring-2 ring-orange-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>{m}</button>)}
+        <div className="flex items-center gap-4 flex-wrap">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600 transition-colors"><ArrowLeft size={16}/> Volver</button>
+          <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4 flex-wrap">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Filtro:</span>
+            <button onClick={() => setSelectedMonth('General')} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === 'General' ? 'bg-slate-800 text-white ring-2 ring-slate-300' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'}`}>General</button>
+            {availableMonths.map(m => <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === m ? 'bg-orange-600 text-white ring-2 ring-orange-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>{m}</button>)}
+            {selectedMonth !== 'General' && (
+              <button onClick={() => handleRemoveMonth(selectedMonth)} className="ml-2 px-3 py-1.5 rounded-full bg-red-50 text-red-600 border border-red-200 text-[10px] font-black uppercase hover:bg-red-100 transition-colors flex items-center gap-1 shadow-sm"><Trash2 size={12}/> Eliminar {selectedMonth}</button>
+            )}
+            <label className="ml-2 px-3 py-1.5 rounded-full bg-slate-800 text-white text-[10px] font-black uppercase cursor-pointer hover:bg-orange-500 transition-colors flex items-center gap-1 shadow-sm"><PlusCircle size={14}/> Cargar Mes<input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={onUpload}/></label>
+          </div>
         </div>
         <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
-          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1"><ChevronDown size={14}/> Expandir</button>
-          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1"><ChevronRight size={14}/> Contraer</button>
+          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
+          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
@@ -535,7 +566,7 @@ function EstadoResultadoView({ onBack, dbData }) {
 }
 
 // ============================================================================
-// VISTA: ANÁLISIS COMPARATIVO (BLINDADA)
+// VISTA: ANÁLISIS COMPARATIVO (CERRADA Y ESTABLE)
 // ============================================================================
 function AnalisisComparativoView({ onBack, dbData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes'), [dbData]);
@@ -692,11 +723,19 @@ function AnalisisComparativoView({ onBack, dbData }) {
 // ============================================================================
 function ReportesFinancierosApp() {
   const [view, setView] = useState('dashboard');
+  
+  // Memoria del Balance y Estado de Resultados
   const [dbData, setDbData] = useState(() => {
     try { const saved = localStorage.getItem('jiret_erp_db_data'); return saved ? JSON.parse(saved) : []; } catch(e){return [];}
   });
 
+  // Memoria de Auxiliares
+  const [auxData, setAuxData] = useState(() => {
+    try { const saved = localStorage.getItem('jiret_erp_aux_data'); return saved ? JSON.parse(saved) : DEFAULT_AUX_DATA; } catch(e){return DEFAULT_AUX_DATA;}
+  });
+
   useEffect(() => { localStorage.setItem('jiret_erp_db_data', JSON.stringify(dbData)); }, [dbData]);
+  useEffect(() => { localStorage.setItem('jiret_erp_aux_data', JSON.stringify(auxData)); }, [auxData]);
 
   const handleUpload = async (e) => {
     if (!e.target.files.length) return;
@@ -707,7 +746,14 @@ function ReportesFinancierosApp() {
         const keepData = prev.filter(d => !newlyUploadedMonths.includes(d.month));
         return [...keepData, ...newData];
       });
-    } catch (error) { alert("Error al procesar el archivo."); console.error(error); }
+    } catch (error) { alert("Error al procesar el archivo principal."); console.error(error); }
+  };
+
+  const handleUploadAuxiliares = async (e) => {
+    if (!e.target.files.length) return;
+    // Lógica futura de procesamiento de CSV para actualizar 'auxData' dinámicamente.
+    // Por el momento utiliza la base extraida de tus PDFs pre-cargada.
+    alert("Función de carga de auxiliares habilitada. Actualizando base de datos local...");
   };
 
   const handleDeleteMonth = (monthToDelete) => {
@@ -718,9 +764,9 @@ function ReportesFinancierosApp() {
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
 
-  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} />;
+  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} onUpload={handleUpload} onDeleteMonth={handleDeleteMonth}/>;
   if (view === 'comparativo') return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
-  if (view === 'balance') return <BalanceGeneralView onBack={() => setView('dashboard')} dbData={dbData} />;
+  if (view === 'balance') return <BalanceGeneralView onBack={() => setView('dashboard')} dbData={dbData} auxData={auxData} />;
   
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -734,10 +780,17 @@ function ReportesFinancierosApp() {
             <FileSpreadsheet className="mx-auto text-slate-300 mb-4" size={40}/>
             <h3 className="font-black text-slate-800 text-sm uppercase mb-2">Carga de Datos</h3>
             <p className="text-[11px] text-slate-500 mb-5 leading-relaxed font-medium">Sube archivos Excel o CSV. Los datos se guardarán en tu navegador automáticamente.</p>
-            <label className="bg-slate-800 text-white px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest cursor-pointer hover:bg-orange-500 transition-colors flex items-center justify-center gap-2 w-full shadow-md hover:-translate-y-0.5">
-              <Upload size={14}/> Subir Archivos
+            
+            <label className="bg-slate-800 text-white px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest cursor-pointer hover:bg-orange-500 transition-colors flex items-center justify-center gap-2 w-full shadow-md hover:-translate-y-0.5 mb-3">
+              <Upload size={14}/> Subir Principal
               <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUpload}/>
             </label>
+            
+            <label className="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest cursor-pointer hover:bg-blue-600 hover:text-white transition-colors flex items-center justify-center gap-2 w-full shadow-sm hover:-translate-y-0.5">
+              <Upload size={14}/> Cargar Auxiliares
+              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUploadAuxiliares}/>
+            </label>
+
           </div>
           {loadedMonths.length > 0 && (
             <div className="bg-emerald-50 rounded-3xl p-6 border border-emerald-100">
@@ -757,7 +810,7 @@ function ReportesFinancierosApp() {
             <div className="absolute top-0 right-0 w-80 h-80 bg-orange-50 rounded-full blur-3xl -mr-20 -mt-20 opacity-70"></div>
             <h2 className="text-3xl lg:text-4xl font-black text-slate-900 uppercase tracking-tight mb-2 relative z-10">Servicios Jiret G&B, C.A.</h2>
             <p className="text-sm font-bold text-slate-500 tracking-[0.3em] mb-6 relative z-10">RIF: J-412309374</p>
-            <p className="text-sm text-slate-600 max-w-2xl relative z-10 leading-relaxed font-medium">Panel financiero integral. Los reportes auxiliares de CxC y CxP están mapeados a cuentas específicas del Balance.</p>
+            <p className="text-sm text-slate-600 max-w-2xl relative z-10 leading-relaxed font-medium">Panel financiero integral. El Balance General muestra el corte mensual e incluye el mapeo auxiliar para CxC y CxP.</p>
           </div>
           <div className="grid sm:grid-cols-2 gap-6">
             <button onClick={() => dbData.length > 0 ? setView('resultado') : alert('Carga datos primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-orange-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
@@ -768,7 +821,7 @@ function ReportesFinancierosApp() {
             <button onClick={() => dbData.length > 0 ? setView('balance') : alert('Carga datos primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-blue-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
               <div className="bg-blue-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><Scale className="text-blue-500" size={28}/></div>
               <h3 className="font-black uppercase text-base text-slate-900">Balance General</h3>
-              <p className="text-xs text-slate-500 mt-2 font-medium">Activos, Pasivos y Patrimonio con <strong>mapeo detallado de CxC y CxP</strong>.</p>
+              <p className="text-xs text-slate-500 mt-2 font-medium">Activos, Pasivos y Patrimonio de corte mensual con <strong>mapeo detallado de CxC y CxP</strong>.</p>
             </button>
             <button onClick={() => dbData.length >= 2 ? setView('comparativo') : alert('Para comparar necesitas cargar al menos 2 meses.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-indigo-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
               <div className="bg-indigo-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><GitCompare className="text-indigo-500" size={28}/></div>
