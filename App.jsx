@@ -160,7 +160,7 @@ const processSaldosBalance = async (file, planCuentas) => {
 // 1b. PROCESADOR DE AUXILIARES (CxC / CxP)
 // ============================================================================
 const processAuxFile = async (files, fileType) => {
-  const result = { cxc_general: [], cxc_zuliana: [], cxp_autototal: [], cxp_surepack: [], cxp_pacomela: [], cxp_yancarlos: [] };
+  const result = { cxc_general: [], cxc_zuliana: [], cxp_autototal: [], cxp_surepack: [], cxp_pacomela: [], cxp_yancarlos: [], cxp_general: [] };
 
   const parseVal = (v) => {
     if (v === null || v === undefined || v === '') return null;
@@ -254,11 +254,12 @@ const processAuxFile = async (files, fileType) => {
         if (nombre.includes('ZULIANA DE EMPAQUE')) result.cxc_zuliana.push(record);
         else result.cxc_general.push(record);
       } else { // cxp
-        if      (nombre.includes('AUTO TOTAL'))                                   result.cxp_autototal.push(record);
-        else if (nombre.includes('SURE PACK'))                                    result.cxp_surepack.push(record);
+        if      (nombre.includes('AUTO TOTAL'))                                              result.cxp_autototal.push(record);
+        else if (nombre.includes('SURE PACK'))                                             result.cxp_surepack.push(record);
         else if (nombre.includes('PACOMELA') || nombre.includes('AGRO INDUSTRIAS LACTEAS')) result.cxp_pacomela.push(record);
-        else if (nombre.includes('YANCARLOS') || nombre.includes('PEREZ CASANOVA'))         result.cxp_yancarlos.push(record);
-        // Proveedor no reconocido: se ignora silenciosamente (se puede ampliar)
+        else if (nombre.includes('YANCARLOS') || nombre.includes('PEREZ CASANOVA'))        result.cxp_yancarlos.push(record);
+        else if (nombre.includes('ZULIANA DE EMPAQUE'))                                    result.cxc_zuliana.push({...record, monto: Math.abs(record.monto)});
+        else                                                                               result.cxp_general.push(record);
       }
     }
   }
@@ -269,26 +270,80 @@ const processAuxFile = async (files, fileType) => {
 // 2. CONFIGURACIÓN DE MAPEO Y DATA PRECARGADA (PDFs)
 // ============================================================================
 const ACCOUNT_MAPS = {
-  '1.1.02.01.001': { type: 'cxc_general', label: 'Clientes Generales' },
-  '1.1.05.01.008': { type: 'cxc_zuliana', label: 'Anticipos Zuliana' },
+  '1.1.02.01.001': { type: 'cxc_general',  label: 'Cuentas por Cobrar Clientes' },
+  '1.1.05.01.008': { type: 'cxc_zuliana',  label: 'Anticipos a Proveedores Zuliana' },
   '2.1.01.02.008': { type: 'cxp_autototal', label: 'Vehículos por Pagar' },
-  '2.1.01.01.004': { type: 'cxp_surepack', label: 'CxP Sure Pack' },
-  '2.1.01.02.007': { type: 'cxp_pacomela', label: 'Inmueble por Pagar' },
-  '2.1.01.01.003': { type: 'cxp_yancarlos', label: 'Otras CxP Proveedores' }
+  '2.1.01.01.004': { type: 'cxp_surepack',  label: 'CxP Sure Pack' },
+  '2.1.01.02.007': { type: 'cxp_pacomela',  label: 'Inmueble por Pagar' },
+  '2.1.01.01.003': { type: 'cxp_yancarlos', label: 'Otras CxP Proveedores' },
+  '2.1.01.01.001': { type: 'cxp_general',   label: 'Cuentas por Pagar Proveedores' }
 };
 
+// Datos reales extraídos de los PDFs auxiliares al 30/04/2026
 const DEFAULT_AUX_DATA = {
   cxc_general: [
-    { cod: 'C0047', nombre: 'ALIMENTOS BOTALON C.A', doc: '00002973', emision: '30/04/2026', vence: '07/05/2026', monto: 519.51 },
-    { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002174', emision: '30/04/2025', vence: '30/04/2025', monto: 86.98 },
-    { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002385', emision: '13/08/2025', vence: '20/08/2025', monto: 873.38 },
-    { cod: 'C0120', nombre: 'INVERSORA E&S', doc: '00002589', emision: '09/10/2025', vence: '09/10/2025', monto: 164.20 }
+    { cod:'C0047', nombre:'ALIMENTOS BOTALON C.A',                               doc:'00002973',   emision:'30/04/2026', vence:'07/05/2026', monto:519.51 },
+    { cod:'C0084', nombre:'ANIMAL FEED SOLUTIONS., C.A',                         doc:'00002962',   emision:'28/04/2026', vence:'05/05/2026', monto:13444.42 },
+    { cod:'C0400', nombre:'C.A RON SANTA TERESA, S.A.C.A',                       doc:'00002933',   emision:'16/04/2026', vence:'28/04/2026', monto:3524.54 },
+    { cod:'C0119', nombre:'C.A. CENTRAL LA PASTORA',                             doc:'00000552',   emision:'24/04/2026', vence:'24/04/2026', monto:4000.00 },
+    { cod:'C0012', nombre:'CONVELAC, C.A.',                                      doc:'00002932',   emision:'16/04/2026', vence:'16/04/2026', monto:201.60 },
+    { cod:'C0051', nombre:'ENVASES MUNDIAL, C.A',                                doc:'2437',       emision:'30/04/2026', vence:'30/04/2026', monto:4287.60 },
+    { cod:'C0004', nombre:'INDUSTRIA ALIMENTICIA NACIONAL DE CEREALES Y HARINAS',doc:'00002938',   emision:'22/04/2026', vence:'29/04/2026', monto:14043.09 },
+    { cod:'C0094', nombre:'INDUSTRIAS MAROS, C.A.',                              doc:'18021',      emision:'18/02/2026', vence:'25/02/2026', monto:5265.26 },
+    { cod:'C0363', nombre:'INGENIERIA CREATIVA, C.A',                            doc:'2434',       emision:'30/04/2026', vence:'07/05/2026', monto:286.72 },
+    { cod:'C0043', nombre:'INVERSIONES AVICOLAS, C.A.',                          doc:'00002972',   emision:'30/04/2026', vence:'07/05/2026', monto:9572.90 },
+    { cod:'C0011', nombre:'INVERSIONES LACTEAS SAN SIMON, C.A',                  doc:'00002952',   emision:'24/04/2026', vence:'01/05/2026', monto:5881.20 },
+    { cod:'C0037', nombre:'INVERSIONES LUXÓS, C.A.',                             doc:'00000415',   emision:'23/02/2026', vence:'23/02/2026', monto:1254.20 },
+    { cod:'C0165', nombre:'INVERSIONES NESMOCA, C.A',                            doc:'00001575',   emision:'11/04/2024', vence:'02/05/2024', monto:13482.32 },
+    { cod:'C0164', nombre:'INVERSIONES SELVA, C. A.',                            doc:'00002967',   emision:'29/04/2026', vence:'14/05/2026', monto:1577.31 },
+    { cod:'C0202', nombre:'JOSE LUIS BOHORQUEZ',                                 doc:'2393',       emision:'14/04/2026', vence:'21/04/2026', monto:122.15 },
+    { cod:'C0312', nombre:'JULIO CESAR OJEDA CASANOVA',                          doc:'2347',       emision:'23/03/2026', vence:'30/03/2026', monto:444.97 },
+    { cod:'C0054', nombre:'LA EXCELENCIA C.A.',                                  doc:'2417',       emision:'24/04/2026', vence:'01/05/2026', monto:193.02 },
+    { cod:'C0140', nombre:'MARCOS ANTONIO RODRIGUEZ FINOL',                      doc:'00000561',   emision:'20/04/2026', vence:'20/04/2026', monto:1227.20 },
+    { cod:'C0155', nombre:'MUEBLES & PRESTIGIOS, C.A',                           doc:'00002564',   emision:'23/09/2025', vence:'30/09/2025', monto:37.31 },
+    { cod:'C0013', nombre:'PAPELES VENEZOLANOS, C.A.',                           doc:'00002939',   emision:'22/04/2026', vence:'02/05/2026', monto:42316.80 },
+    { cod:'C0319', nombre:'PEGAMENTOS UTILES DE VENEZUELA, C.A',                 doc:'2436',       emision:'30/04/2026', vence:'07/05/2026', monto:1820.00 },
+    { cod:'C0195', nombre:'PINTURAS DEL CARIBE, S.A.',                           doc:'2353',       emision:'24/03/2026', vence:'31/03/2026', monto:3377.92 },
+    { cod:'C0188', nombre:'PRODUCTOS DE VIDRIO S.A (PRODUVISA)',                 doc:'00002968',   emision:'29/04/2026', vence:'06/05/2026', monto:25839.71 },
+    { cod:'C0223', nombre:'PRODUCTOS LACTEOS LA ARGENTINA, C.A.',                doc:'00002421',   emision:'13/11/2025', vence:'13/11/2025', monto:-6.86 },
+    { cod:'C0005', nombre:'RIAS, CA',                                            doc:'2369',       emision:'31/03/2026', vence:'07/04/2026', monto:1948.80 },
+    { cod:'C0139', nombre:'VE-PACK INVESTMENT, C.A',                             doc:'2367',       emision:'30/03/2026', vence:'06/04/2026', monto:1391.48 },
+    { cod:'C0184', nombre:'VENEZOLANA DEL VIDRIO C.A. (VENVIDRIO)',              doc:'00002548',   emision:'21/11/2025', vence:'21/11/2025', monto:441.56 },
+    { cod:'C0002', nombre:'VENILAC C.A',                                         doc:'00002957',   emision:'24/04/2026', vence:'24/04/2026', monto:11072.61 },
+    { cod:'C0216', nombre:'VICTOR HUGO RODRIGUEZ ARAMBULO',                      doc:'2381',       emision:'10/04/2026', vence:'17/04/2026', monto:6815.00 },
+    { cod:'C0227', nombre:'VIDRIOS DOMESTICOS MAV C.C.S',                        doc:'00002940',   emision:'22/04/2026', vence:'29/04/2026', monto:1067.99 }
   ],
-  cxc_zuliana: [{ cod: 'C0030', nombre: 'ZULIANA DE EMPAQUE, C.A', doc: 'ANT-001', emision: '15/04/2026', vence: '15/04/2026', monto: 2500.00 }],
-  cxp_yancarlos: [{ cod: 'P0005', nombre: 'YANCARLOS PEREZ CASANOVA', doc: '001073', emision: '17/04/2026', vence: '17/04/2026', monto: 7920.07 }],
-  cxp_pacomela: [{ cod: 'P0515', nombre: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', doc: '2602', emision: '02/01/2026', vence: '02/01/2026', monto: 20173.60 }],
-  cxp_autototal: [{ cod: 'P0999', nombre: 'AUTO TOTAL, C.A', doc: 'CUOTA-04', emision: '10/04/2026', vence: '10/04/2026', monto: 1500.00 }],
-  cxp_surepack: [{ cod: 'P0888', nombre: 'SURE PACK', doc: 'FAC-992', emision: '22/04/2026', vence: '30/04/2026', monto: 3450.12 }]
+  // Anticipos pagados a Zuliana exceden facturas recibidas → saldo deudor = activo 1.1.05.01.008
+  cxc_zuliana: [
+    { cod:'P0424', nombre:'ZULIANA DE EMPAQUE, C.A', doc:'000042', emision:'27/02/2026', vence:'27/02/2026', monto:70949.15 }
+  ],
+  cxp_yancarlos: [
+    { cod:'P0005', nombre:'YANCARLOS PEREZ CASANOVA', doc:'001075', emision:'23/04/2026', vence:'23/04/2026', monto:15506.95 }
+  ],
+  cxp_surepack: [
+    { cod:'P0082', nombre:'SURE PACK', doc:'3353', emision:'18/03/2026', vence:'17/05/2026', monto:131616.68 }
+  ],
+  cxp_pacomela: [
+    { cod:'P0511', nombre:'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', doc:'2602', emision:'02/01/2026', vence:'02/01/2026', monto:20173.60 }
+  ],
+  cxp_autototal: [
+    { cod:'P0338', nombre:'AUTO TOTAL, C.A', doc:'11166', emision:'07/10/2025', vence:'07/10/2025', monto:8438.85 }
+  ],
+  cxp_general: [
+    { cod:'P0040', nombre:'PAPELERIA ESTEVA EL TRANSITO, C.A.',             doc:'0000034154', emision:'24/04/2026', vence:'01/05/2026', monto:342.54 },
+    { cod:'P0074', nombre:'OK PIZZA, COMPAÑIA ANONIMA',                     doc:'003077',     emision:'09/09/2025', vence:'09/09/2025', monto:18.02 },
+    { cod:'P0103', nombre:'SERVICIOS Y MANT. ENRIQUE FLEIRES FP',           doc:'000934',     emision:'23/04/2026', vence:'23/04/2026', monto:455.62 },
+    { cod:'P0117', nombre:'E. P. & O. ASOCIADOS, C. A.',                    doc:'00003147',   emision:'24/04/2026', vence:'24/04/2026', monto:3957.00 },
+    { cod:'P0293', nombre:'RUTA 70 CAR WASH AND SERVICE, C.A',              doc:'PRSPTO 08',  emision:'28/04/2026', vence:'04/05/2026', monto:104.75 },
+    { cod:'P0348', nombre:'ANGEL EDUARDO GARCIA RINCON',                    doc:'000056',     emision:'20/03/2026', vence:'20/03/2026', monto:176.00 },
+    { cod:'P0369', nombre:'CORPORACION VENEZOLANA DE SEGURIDAD I, C.A.',    doc:'PROFORMA 01',emision:'13/04/2026', vence:'19/04/2026', monto:918.72 },
+    { cod:'P0418', nombre:'PINTURAS Y DECORACIONES, C.A',                   doc:'00026073',   emision:'21/04/2026', vence:'28/04/2026', monto:43.93 },
+    { cod:'P0466', nombre:'DISTRIBUIDORA Y SERVICIOS INTEGRALES C A',       doc:'ODC 84',     emision:'30/04/2026', vence:'07/05/2026', monto:131.54 },
+    { cod:'P0467', nombre:'FERRETERIA ELECTRICA INDUSTRIAL, C.A.',          doc:'ODC 0066',   emision:'24/03/2026', vence:'31/03/2026', monto:4302.60 },
+    { cod:'P0492', nombre:'EMPAQUES PLASTICOS CABIMAS C.A (EMPLASCA)',      doc:'ODC 0040',   emision:'30/01/2026', vence:'20/02/2026', monto:15113.70 },
+    { cod:'P0515', nombre:'SUMINISTROS QUIVEN, C.A.',                       doc:'33333',      emision:'30/04/2026', vence:'30/04/2026', monto:-601.64 },
+    { cod:'P0531', nombre:'LOSDEKLUZ 2.0., C.A',                            doc:'000000644',  emision:'27/03/2026', vence:'27/03/2026', monto:89.04 }
+  ]
 };
 
 // ============================================================================
@@ -878,6 +933,8 @@ function ReportesFinancierosApp() {
         cxp_surepack:   [...(prev.cxp_surepack   || []), ...parsed.cxp_surepack],
         cxp_pacomela:   [...(prev.cxp_pacomela   || []), ...parsed.cxp_pacomela],
         cxp_yancarlos:  [...(prev.cxp_yancarlos  || []), ...parsed.cxp_yancarlos],
+        cxp_general:    [...(prev.cxp_general    || []), ...parsed.cxp_general],
+        cxc_zuliana:    [...(prev.cxc_zuliana    || []), ...parsed.cxc_zuliana],
       }));
       const total = parsed.cxp_autototal.length + parsed.cxp_surepack.length + parsed.cxp_pacomela.length + parsed.cxp_yancarlos.length;
       alert(`✅ CxP procesado: ${total} líneas mapeadas.\n• Auto Total (2.1.01.02.008): ${parsed.cxp_autototal.length}\n• Sure Pack (2.1.01.01.004): ${parsed.cxp_surepack.length}\n• Pacomela (2.1.01.02.007): ${parsed.cxp_pacomela.length}\n• Yancarlos Pérez (2.1.01.01.003): ${parsed.cxp_yancarlos.length}`);
@@ -947,7 +1004,7 @@ function ReportesFinancierosApp() {
             </label>
 
             <button onClick={handleSimulatePDFs} className="bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 px-4 py-2 rounded-xl font-black uppercase text-[8px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm">
-              <FileOutput size={12}/> Cargar datos de demo
+              <FileOutput size={12}/> Cargar PDFs Abr 2026
             </button>
           </div>
           
