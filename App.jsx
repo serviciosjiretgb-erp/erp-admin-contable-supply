@@ -2,11 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, Upload, CheckCircle, Scale, 
   LineChart, CalendarDays, AlertTriangle, ChevronRight, ChevronDown, Star, PlusCircle, Trash2, ArrowUpRight, ArrowDownRight, GitCompare, Landmark, FileSpreadsheet,
-  FileText, Users, Briefcase, Search, Database, FileOutput
+  FileText, Users, Briefcase, Search, BookOpen, Database, FileOutput
 } from 'lucide-react';
 
 // ============================================================================
-// LÓGICA DE PROCESAMIENTO (RESULTADOS Y PIVOT TABLES)
+// 1. LÓGICA DE PROCESAMIENTO DE ARCHIVOS
 // ============================================================================
 const loadSheetJS = () => new Promise((resolve, reject) => {
   if (window.XLSX) { resolve(window.XLSX); return; }
@@ -91,37 +91,74 @@ const processFiles = async (files) => {
   return allParsedData;
 };
 
+const processPlanCuentas = async (file) => {
+  const text = await file.text();
+  const lines = text.split(/\r?\n/);
+  const plan = {};
+  lines.forEach(line => {
+    const cols = line.split('\t');
+    if (cols.length >= 5 && cols[0].trim() !== 'Código') {
+      const name = cols[1].trim();
+      const grupo = cols[2].trim();
+      const subgrupo = cols[3].trim();
+      const cuenta = cols[4].trim();
+      plan[name] = `${grupo}>${subgrupo}>${cuenta}`;
+    }
+  });
+  return plan;
+};
+
+const processSaldosBalance = async (file, planCuentas) => {
+  const text = await file.text();
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split('\t');
+  const months = headers.map(h => {
+    const m = h.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+    return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).toLowerCase() : null;
+  });
+
+  const parseVal = (v) => {
+    if (!v || v.trim() === '-' || v.trim() === 'USD -' || v.trim() === 'Bs. -') return 0;
+    let cleanStr = String(v).replace(/USD|Bs\./ig, '').trim();
+    if (cleanStr.includes(',') && cleanStr.includes('.')) cleanStr = cleanStr.replace(/\./g, '').replace(/,/g, '.');
+    else if (cleanStr.includes(',')) cleanStr = cleanStr.replace(/,/g, '.');
+    const n = parseFloat(cleanStr);
+    return isNaN(n) ? 0 : n;
+  };
+
+  let balanceData = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split('\t');
+    if (cols.length < 2) continue;
+    const accountName = cols[0].trim();
+    if (!accountName) continue;
+
+    const path = planCuentas[accountName] || (accountName.includes('BANCO') || accountName.includes('CAJA') ? 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE' : 'ACTIVOS>OTROS');
+
+    for (let c = 1; c < cols.length; c++) {
+      if (months[c] && cols[c]) {
+        const val = parseVal(cols[c]);
+        if (val !== 0) {
+          const isUsd = cols[c].includes('USD');
+          balanceData.push({
+            month: months[c],
+            path: path,
+            name: accountName,
+            usd: isUsd ? val : 0,
+            bs: isUsd ? 0 : val
+          });
+        }
+      }
+    }
+  }
+  return balanceData;
+};
+
 // ============================================================================
-// DATOS PRECARGADOS (EXTRAÍDOS DE TUS ARCHIVOS TXT Y PDF)
+// 2. CONFIGURACIÓN DE MAPEO Y DATA PRECARGADA (PDFs)
 // ============================================================================
-
-// 1. Saldos de Balance (Abril) cruzados con el Plan de Cuentas
-const INITIAL_BALANCE_DATA = [
-  // DISPONIBLE (Efectivo y Bancos)
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>CAJA MONEDA EXTRANJERA', name: '1.1.01.01.001-CAJA PRINCIPAL DIVISAS', usd: 65156.27, bs: 0 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>CAJA MONEDA EXTRANJERA', name: '1.1.01.01.002-CAJA Z1 (BOA)', usd: 146.09, bs: 0 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>CAJA MONEDA EXTRANJERA', name: '1.1.01.01.003-CAJA Z2 (CITI)', usd: 37339.80, bs: 0 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.001-BANCO PROVINCIAL', usd: 0, bs: 2926963.50 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.002-BANCO MERCANTIL', usd: 0, bs: 336490.53 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.003-BANCARIBE', usd: 0, bs: 1429879.91 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.004-BANCO NACIONAL DE CREDITO 2958', usd: 0, bs: 300651.20 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.006-BANCAMIGA', usd: 0, bs: 837.02 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.007-BANPLUS', usd: 0, bs: 481002.65 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.008-BANESCO', usd: 0, bs: 1591935.14 },
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE>BANCOS NACIONALES', name: '1.1.01.02.010-BANPLUS ELECTRONICA TDD', usd: 2300.00, bs: 0 },
-  
-  // EXIGIBLE (Cuentas por Cobrar)
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>EXIGIBLE>EFECTOS Y CUENTAS POR COBRAR', name: '1.1.02.01.001-CUENTAS POR COBRAR CLIENTES', usd: 1644.07, bs: 0 }, // Suma de Botalon, Animal Feed, Inversora
-  { month: 'Abril', path: 'ACTIVOS>ACTIVO CIRCULANTE>EXIGIBLE>ANTICIPOS A PROVEEDORES', name: '1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE', usd: 2500.00, bs: 0 },
-
-  // PASIVOS (Cuentas por Pagar)
-  { month: 'Abril', path: 'PASIVOS>PASIVO CIRCULANTE>CTAS Y EFECTOS POR PAGAR>CUENTAS POR PAGAR', name: '2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES', usd: 7920.07, bs: 0 },
-  { month: 'Abril', path: 'PASIVOS>PASIVO CIRCULANTE>CTAS Y EFECTOS POR PAGAR>CUENTAS POR PAGAR', name: '2.1.01.01.004-CUENTAS POR PAGAR SURE PACK', usd: 3450.12, bs: 0 },
-  { month: 'Abril', path: 'PASIVOS>PASIVO CIRCULANTE>CTAS Y EFECTOS POR PAGAR>OTRAS CUENTAS POR PAGAR', name: '2.1.01.02.007-INMUEBLE POR PAGAR', usd: 20173.60, bs: 0 },
-  { month: 'Abril', path: 'PASIVOS>PASIVO CIRCULANTE>CTAS Y EFECTOS POR PAGAR>OTRAS CUENTAS POR PAGAR', name: '2.1.01.02.008-VEHÍCULOS POR PAGAR', usd: 1500.00, bs: 0 }
-];
-
-// 2. Mapeo de Cuentas Auxiliares
 const ACCOUNT_MAPS = {
   '1.1.02.01.001': { type: 'cxc_general', label: 'Clientes Generales' },
   '1.1.05.01.008': { type: 'cxc_zuliana', label: 'Anticipos Zuliana' },
@@ -131,33 +168,22 @@ const ACCOUNT_MAPS = {
   '2.1.01.01.003': { type: 'cxp_yancarlos', label: 'Otras CxP Proveedores' }
 };
 
-// 3. Detalle de los PDFs extraídos a código
-const AUX_DATA = {
+const DEFAULT_AUX_DATA = {
   cxc_general: [
     { cod: 'C0047', nombre: 'ALIMENTOS BOTALON C.A', doc: '00002973', emision: '30/04/2026', vence: '07/05/2026', monto: 519.51 },
     { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002174', emision: '30/04/2025', vence: '30/04/2025', monto: 86.98 },
     { cod: 'C0084', nombre: 'ANIMAL FEED SOLUTIONS., C.A', doc: '00002385', emision: '13/08/2025', vence: '20/08/2025', monto: 873.38 },
     { cod: 'C0120', nombre: 'INVERSORA E&S', doc: '00002589', emision: '09/10/2025', vence: '09/10/2025', monto: 164.20 }
   ],
-  cxc_zuliana: [
-    { cod: 'C0030', nombre: 'ZULIANA DE EMPAQUE, C.A', doc: 'ANT-001', emision: '15/04/2026', vence: '15/04/2026', monto: 2500.00 }
-  ],
-  cxp_yancarlos: [
-    { cod: 'P0005', nombre: 'YANCARLOS PEREZ CASANOVA', doc: '001073', emision: '17/04/2026', vence: '17/04/2026', monto: 7920.07 }
-  ],
-  cxp_pacomela: [
-    { cod: 'P0515', nombre: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', doc: '2602', emision: '02/01/2026', vence: '02/01/2026', monto: 20173.60 }
-  ],
-  cxp_autototal: [
-    { cod: 'P0999', nombre: 'AUTO TOTAL, C.A', doc: 'CUOTA-04', emision: '10/04/2026', vence: '10/04/2026', monto: 1500.00 }
-  ],
-  cxp_surepack: [
-    { cod: 'P0888', nombre: 'SURE PACK', doc: 'FAC-992', emision: '22/04/2026', vence: '30/04/2026', monto: 3450.12 }
-  ]
+  cxc_zuliana: [{ cod: 'C0030', nombre: 'ZULIANA DE EMPAQUE, C.A', doc: 'ANT-001', emision: '15/04/2026', vence: '15/04/2026', monto: 2500.00 }],
+  cxp_yancarlos: [{ cod: 'P0005', nombre: 'YANCARLOS PEREZ CASANOVA', doc: '001073', emision: '17/04/2026', vence: '17/04/2026', monto: 7920.07 }],
+  cxp_pacomela: [{ cod: 'P0515', nombre: 'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A', doc: '2602', emision: '02/01/2026', vence: '02/01/2026', monto: 20173.60 }],
+  cxp_autototal: [{ cod: 'P0999', nombre: 'AUTO TOTAL, C.A', doc: 'CUOTA-04', emision: '10/04/2026', vence: '10/04/2026', monto: 1500.00 }],
+  cxp_surepack: [{ cod: 'P0888', nombre: 'SURE PACK', doc: 'FAC-992', emision: '22/04/2026', vence: '30/04/2026', monto: 3450.12 }]
 };
 
 // ============================================================================
-// COMPONENTE: ÁRBOL JERÁRQUICO
+// 3. COMPONENTE: ÁRBOL EXPANDIBLE (COMPARTIDO RESULTADOS Y BALANCE)
 // ============================================================================
 const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false }) => {
   const isAccountNode = /^\d\./.test(node.n) || (!node.c || node.c.length === 0);
@@ -168,8 +194,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 
   const accountCodeMatch = node.n.match(/^(\d[\d\.]+)/);
   const accountCode = accountCodeMatch ? accountCodeMatch[1] : null;
-  
-  const hasMapping = accountCode && ACCOUNT_MAPS[accountCode];
+  const hasMapping = (accountCode && ACCOUNT_MAPS[accountCode]) || (isBalance && (node.n.toUpperCase().includes('POR COBRAR') || node.n.toUpperCase().includes('POR PAGAR')));
 
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const pct = totalBaseUSD && node.u !== 0 ? `${((Math.abs(node.u) / totalBaseUSD) * 100).toFixed(2)}%` : '';
@@ -213,7 +238,11 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
             <button onClick={(e) => { e.stopPropagation(); toggleHighlight(node.n); }} className="focus:outline-none transition-transform hover:scale-110"><Star size={16} fill={isHighlighted ? "#f59e0b" : "none"} color={isHighlighted ? "#f59e0b" : "#cbd5e1"} /></button>
             <span className="truncate">{node.n}</span>
             {hasMapping && isBalance && (
-              <button onClick={(e) => { e.stopPropagation(); onShowReport(accountCode); }} className="ml-2 px-2.5 py-1 bg-blue-600 text-white rounded-md text-[9px] font-black tracking-widest hover:bg-blue-700 shadow-md flex items-center gap-1">
+              <button onClick={(e) => { 
+                e.stopPropagation(); 
+                const typeToPass = accountCode ? accountCode : (node.n.toUpperCase().includes('COBRAR') ? 'cxc' : 'cxp');
+                onShowReport(typeToPass); 
+              }} className="ml-2 px-2.5 py-1 bg-blue-600 text-white rounded-md text-[9px] font-black tracking-widest hover:bg-blue-700 shadow-md flex items-center gap-1">
                 <Search size={10}/> VER REPORTE
               </button>
             )}
@@ -232,12 +261,16 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 };
 
 // ============================================================================
-// VISTA: SUB-REPORTE DETALLADO (CXC / CXP)
+// 4. VISTA: SUB-REPORTE DETALLADO (CXC / CXP)
 // ============================================================================
 function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
-  const mapInfo = ACCOUNT_MAPS[accountCode];
-  const filteredData = auxDataConfig[mapInfo.type] || [];
+  const mapInfo = ACCOUNT_MAPS[accountCode] || { type: accountCode === 'cxc' ? 'cxc' : 'cxp', filter: 'ALL', label: 'Reporte General' };
+  const allData = auxDataConfig[mapInfo.type] || [];
   
+  const filteredData = mapInfo.filter === 'ALL' 
+    ? allData 
+    : allData.filter(d => d.nombre.toUpperCase().includes(mapInfo.filter.toUpperCase()));
+
   const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
@@ -250,7 +283,9 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
             {mapInfo.type.includes('cxc') ? <Users className="text-blue-500"/> : <Briefcase className="text-red-500"/>}
             Auxiliar Detallado
           </h2>
-          <p className="text-xs font-bold text-slate-400 uppercase mt-1">Cuenta: {accountCode} - {mapInfo.label}</p>
+          <p className="text-xs font-bold text-slate-400 uppercase mt-1">
+            {accountCode.includes('.') ? `Cuenta: ${accountCode} - ${mapInfo.label}` : 'Reporte Consolidado'}
+          </p>
         </div>
         <div className="text-right">
           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Saldo en Cuenta</p>
@@ -264,7 +299,7 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
           </thead>
           <tbody>
             {filteredData.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-8 text-slate-400 font-bold">Sin transacciones registradas.</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-slate-400 font-bold">Sin transacciones registradas en este auxiliar.</td></tr>
             ) : (
               filteredData.map((item, i) => (
                 <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
@@ -284,17 +319,277 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 }
 
 // ============================================================================
-// VISTA: BALANCE GENERAL (UN SOLO MES)
+// 5. VISTA: ESTADO DE RESULTADOS (CERRADA Y ESTABLE)
+// ============================================================================
+function EstadoResultadoView({ onBack, dbData }) {
+  const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData]);
+  const [selectedMonth, setSelectedMonth] = useState('General'); 
+  const [defaultOpen, setDefaultOpen] = useState(false);
+  const [expandKey, setExpandKey] = useState(0);
+
+  const [highlightedAccounts, setHighlightedAccounts] = useState(() => {
+    try { const saved = localStorage.getItem('jiret_highlighted_accounts'); return saved ? new Set(JSON.parse(saved)) : new Set(); } 
+    catch (e) { return new Set(); }
+  });
+  useEffect(() => { localStorage.setItem('jiret_highlighted_accounts', JSON.stringify([...highlightedAccounts])); }, [highlightedAccounts]);
+
+  const toggleHighlight = (accountName) => {
+    setHighlightedAccounts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(accountName)) newSet.delete(accountName); else newSet.add(accountName);
+      return newSet;
+    });
+  };
+
+  const tree = useMemo(() => {
+    const root = [];
+    const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
+    const resData = monthData.filter(item => !item.path.toUpperCase().includes('ACTIVO') && !item.path.toUpperCase().includes('PASIVO') && !item.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(item.name));
+    
+    resData.forEach(item => {
+      const pathArray = item.path.split('>');
+      let cur = root;
+      pathArray.forEach(folderName => {
+        let folder = cur.find(n => n.n === folderName);
+        if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
+        cur = folder.c;
+      });
+      let leaf = cur.find(n => n.n === item.name && n.isLeaf);
+      if (!leaf) cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
+      else { leaf.u += item.usd; leaf.b += item.bs; }
+    });
+    const compute = (nodes) => {
+      let u = 0, b = 0;
+      nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; });
+      return { u, b };
+    };
+    compute(root);
+    root.forEach(rootNode => {
+      const isIngreso = rootNode.n.toUpperCase().includes('INGRESO') || rootNode.n.toUpperCase().includes('VENTA') || rootNode.n.startsWith('4');
+      const multiplier = isIngreso ? -1 : 1;
+      const applySign = (nodes) => nodes.forEach(n => { n.u *= multiplier; n.b *= multiplier; if (!n.isLeaf) applySign(n.c); });
+      applySign([rootNode]);
+    });
+    return root;
+  }, [dbData, selectedMonth]);
+
+  let totalUSD = 0; let baseVentas = 0;
+  tree.forEach(n => { 
+    if(n.n.toUpperCase().includes('INGRESO') || n.n.toUpperCase().includes('VENTA') || n.n.startsWith('4')) { 
+      totalUSD += n.u; baseVentas += n.u; 
+    } else { totalUSD -= n.u; } 
+  });
+  
+  if (baseVentas === 0) baseVentas = 1;
+  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+  return (
+    <div className="min-h-screen bg-[#f1f5f9]">
+      <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600 transition-colors"><ArrowLeft size={16}/> Volver al Panel</button>
+          <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4 flex-wrap">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Filtro:</span>
+            <button onClick={() => setSelectedMonth('General')} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === 'General' ? 'bg-slate-800 text-white ring-2 ring-slate-300' : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'}`}>General</button>
+            {availableMonths.map(m => <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm transition-all ${selectedMonth === m ? 'bg-orange-600 text-white ring-2 ring-orange-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>{m}</button>)}
+          </div>
+        </div>
+        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
+          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
+          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+        </div>
+      </header>
+      <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
+        <div className="bg-white px-8 py-10 border-t-8 border-orange-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+          <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
+          <div className="w-20 h-1.5 bg-orange-500 mb-4 rounded-full"/>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Estado de Resultado {selectedMonth === 'General' ? 'Acumulado' : 'Mensual'}</h2>
+          <p className="text-orange-600 font-black uppercase flex items-center gap-2 bg-orange-50 px-5 py-2 rounded-full text-[10px] border border-orange-100 shadow-sm"><CalendarDays size={14}/> {selectedMonth}</p>
+        </div>
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-800 text-[10px] uppercase font-black text-slate-300">
+              <tr><th className="px-4 py-5 w-[55%]">Cuentas</th><th className="px-3 py-5 text-right">Saldo USD</th><th className="px-3 py-5 text-right hidden sm:table-cell">Saldo Bs.</th><th className="px-3 py-5 text-right">%</th></tr>
+            </thead>
+            <tbody key={expandKey}>
+              {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false}/>)}
+              <tr className="bg-slate-900 text-white font-black border-t-4 border-orange-600">
+                <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
+                <td className={`px-3 py-7 text-right text-lg font-mono ${totalUSD < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmtR(totalUSD)}</td>
+                <td className={`px-3 py-7 text-right text-lg font-mono hidden sm:table-cell ${totalUSD < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmtR(totalUSD * 45)}</td>
+                <td className="px-3 py-7 text-right text-lg font-mono">{(Math.abs(totalUSD)/baseVentas*100).toFixed(2)}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ============================================================================
+// 6. VISTA: ANÁLISIS COMPARATIVO (CERRADA Y ESTABLE, PLANA)
+// ============================================================================
+function AnalisisComparativoView({ onBack, dbData }) {
+  const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes'), [dbData]);
+  const [month1, setMonth1] = useState(availableMonths[0] || '');
+  const [month2, setMonth2] = useState(availableMonths[1] || availableMonths[0] || '');
+
+  const tree = useMemo(() => {
+    const root = [];
+    const m1Data = dbData.filter(d => d.month === month1 && !d.path.toUpperCase().includes('ACTIVO') && !d.path.toUpperCase().includes('PASIVO') && !d.path.toUpperCase().includes('PATRIMONIO'));
+    const m2Data = dbData.filter(d => d.month === month2 && !d.path.toUpperCase().includes('ACTIVO') && !d.path.toUpperCase().includes('PASIVO') && !d.path.toUpperCase().includes('PATRIMONIO'));
+
+    const processItem = (item, isM1) => {
+      const pathParts = item.path.split('>');
+      const mainCategory = pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS';
+      let accountOriginalName = pathParts.length > 1 ? pathParts[pathParts.length - 1].trim() : item.name.trim();
+      if (!/^(\d[\d\.]+)/.test(accountOriginalName) && /^(\d[\d\.]+)/.test(item.name.trim())) accountOriginalName = item.name.trim();
+      const matchKey = accountOriginalName.match(/^(\d[\d\.]+)/);
+      const accountKey = matchKey ? matchKey[1] : accountOriginalName.toUpperCase();
+
+      let categoryNode = root.find(n => n.key === mainCategory);
+      if (!categoryNode) { categoryNode = { key: mainCategory, n: pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS', c: [], m1_u: 0, m2_u: 0 }; root.push(categoryNode); }
+      let accountNode = categoryNode.c.find(n => n.key === accountKey);
+      if (!accountNode) { accountNode = { key: accountKey, n: accountOriginalName, m1_u: 0, m2_u: 0 }; categoryNode.c.push(accountNode); }
+
+      if (isM1) accountNode.m1_u += item.usd; else accountNode.m2_u += item.usd;
+    };
+
+    m1Data.forEach(item => processItem(item, true));
+    m2Data.forEach(item => processItem(item, false));
+
+    root.forEach(cat => {
+      let cat_m1 = 0, cat_m2 = 0;
+      const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key.startsWith('4');
+      const multiplier = isIngreso ? -1 : 1;
+
+      cat.c.forEach(acc => {
+        acc.m1_u *= multiplier; acc.m2_u *= multiplier;
+        cat_m1 += acc.m1_u; cat_m2 += acc.m2_u;
+      });
+      cat.m1_u = cat_m1; cat.m2_u = cat_m2;
+    });
+
+    return root;
+  }, [dbData, month1, month2]);
+
+  let total_m1 = 0, total_m2 = 0;
+  tree.forEach(cat => {
+    const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key.startsWith('4');
+    if (isIngreso) { total_m1 += cat.m1_u; total_m2 += cat.m2_u; } 
+    else { total_m1 -= cat.m1_u; total_m2 -= cat.m2_u; }
+  });
+
+  const varAbsTotal = total_m2 - total_m1;
+  const varPctTotal = total_m1 !== 0 ? (varAbsTotal / Math.abs(total_m1)) * 100 : (total_m2 !== 0 ? 100 : 0);
+  const isPosTotal = varAbsTotal > 0;
+  const isNegTotal = varAbsTotal < 0;
+  const TotalArrowIcon = isPosTotal ? ArrowUpRight : (isNegTotal ? ArrowDownRight : null);
+  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+  return (
+    <div className="min-h-screen bg-[#f1f5f9]">
+      <header className="bg-white border-b-2 border-indigo-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-indigo-600"><ArrowLeft size={16}/> Volver al Panel</button>
+        <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Mes Base:</span>
+          <select value={month1} onChange={(e) => setMonth1(e.target.value)} className="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg block p-1.5 font-bold uppercase cursor-pointer outline-none">
+            {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mx-2">VS</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Mes Comparar:</span>
+          <select value={month2} onChange={(e) => setMonth2(e.target.value)} className="bg-indigo-50 border border-indigo-300 text-indigo-700 text-xs rounded-lg block p-1.5 font-bold uppercase cursor-pointer outline-none">
+            {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      </header>
+      <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
+        <div className="bg-white px-8 py-10 border-t-8 border-indigo-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+          <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Análisis Comparativo (Resultados)</h2>
+          <p className="font-black uppercase flex items-center gap-2 px-5 py-2 rounded-full text-[10px] bg-slate-800 text-white shadow-sm"><GitCompare size={14}/> {month1} vs {month2}</p>
+        </div>
+        
+        {availableMonths.length < 2 ? (
+          <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-sm"><AlertTriangle className="mx-auto text-indigo-400 mb-4" size={48}/><p className="text-slate-500 font-black text-xs uppercase tracking-wider">Necesitas al menos 2 meses cargados.</p></div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-800 text-[10px] uppercase font-black text-slate-300 border-b-2 border-indigo-500">
+                <tr><th className="px-4 py-5 w-[45%]">Estructura</th><th className="px-3 py-5 text-right bg-slate-900/50">{month1}</th><th className="px-3 py-5 text-right bg-slate-900">{month2}</th><th className="px-3 py-5 text-right text-indigo-400">Var. Absoluta</th><th className="px-3 py-5 text-right">Var. %</th></tr>
+              </thead>
+              <tbody>
+                {tree.map((cat, i) => {
+                  const sortedAccounts = [...cat.c].sort((a, b) => String(a.n).localeCompare(String(b.n)));
+                  const catVarAbs = cat.m2_u - cat.m1_u;
+                  const catVarPct = cat.m1_u !== 0 ? (catVarAbs / Math.abs(cat.m1_u)) * 100 : (cat.m2_u !== 0 ? 100 : 0);
+                  const isPosCat = catVarAbs > 0; const isNegCat = catVarAbs < 0;
+                  const CatColorClass = isPosCat ? 'text-emerald-600' : (isNegCat ? 'text-red-500' : 'text-slate-400');
+                  const CatArrowIcon = isPosCat ? ArrowUpRight : (isNegCat ? ArrowDownRight : null);
+
+                  return (
+                    <React.Fragment key={i}>
+                      <tr className="bg-[#111827]"><td className="py-3 px-4 text-indigo-400 font-black text-xs uppercase tracking-[0.2em]">{cat.n}</td><td colSpan={4} /></tr>
+                      {sortedAccounts.map((acc, j) => {
+                        const varAbs = acc.m2_u - acc.m1_u;
+                        const varPct = acc.m1_u !== 0 ? (varAbs / Math.abs(acc.m1_u)) * 100 : (acc.m2_u !== 0 ? 100 : 0);
+                        const isPos = varAbs > 0; const isNeg = varAbs < 0;
+                        const colorClass = isPos ? 'text-emerald-600' : (isNeg ? 'text-red-500' : 'text-slate-400');
+                        const ArrowIcon = isPos ? ArrowUpRight : (isNeg ? ArrowDownRight : null);
+
+                        return (
+                          <tr key={j} className="bg-white border-b border-gray-100 hover:bg-indigo-50 transition-colors">
+                            <td className="py-2.5 px-4 font-bold text-[11px] text-slate-800 uppercase pl-6 border-l-4 border-indigo-400 truncate max-w-xs">{acc.n}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">{fmtR(acc.m1_u)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-800 font-bold">{fmtR(acc.m2_u)}</td>
+                            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${varAbs !== 0 ? 'text-indigo-600' : 'text-slate-400'}`}>{fmtR(varAbs)}</td>
+                            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold flex justify-end items-center gap-1 ${colorClass}`}>
+                              {ArrowIcon && <ArrowIcon size={12}/>} {Math.abs(varPct).toFixed(2)}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="bg-slate-200 text-slate-800 border-t border-slate-300 shadow-sm transition-colors">
+                        <td className="py-3 px-4 font-black text-[11px] uppercase tracking-wider pl-6">TOTAL {cat.n}</td>
+                        <td className="py-3 px-3 text-right font-mono text-[12px] font-black">{fmtR(cat.m1_u)}</td>
+                        <td className="py-3 px-3 text-right font-mono text-[12px] font-black">{fmtR(cat.m2_u)}</td>
+                        <td className={`py-3 px-3 text-right font-mono text-[12px] font-black ${catVarAbs !== 0 ? 'text-indigo-600' : 'text-slate-500'}`}>{fmtR(catVarAbs)}</td>
+                        <td className={`py-3 px-3 text-right font-mono text-[12px] font-black flex justify-end items-center gap-1 ${CatColorClass}`}>
+                          {CatArrowIcon && <CatArrowIcon size={14}/>} {Math.abs(catVarPct).toFixed(2)}%
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
+                <tr className="bg-slate-900 text-white font-black border-t-4 border-indigo-600">
+                  <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
+                  <td className="px-3 py-7 text-right text-base font-mono border-l border-slate-800">{fmtR(total_m1)}</td>
+                  <td className="px-3 py-7 text-right text-base font-mono border-l border-slate-800">{fmtR(total_m2)}</td>
+                  <td className={`px-3 py-7 text-right text-lg font-mono border-l border-slate-800 ${isPosTotal ? 'text-emerald-400' : (isNegTotal ? 'text-red-400' : 'text-slate-400')}`}>{fmtR(varAbsTotal)}</td>
+                  <td className={`px-3 py-7 text-right text-lg font-mono flex justify-end items-center gap-1 ${isPosTotal ? 'text-emerald-400' : (isNegTotal ? 'text-red-400' : 'text-slate-400')}`}>
+                    {TotalArrowIcon && <TotalArrowIcon size={16}/>} {Math.abs(varPctTotal).toFixed(2)}%
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ============================================================================
+// 7. VISTA: BALANCE GENERAL (UN SOLO MES)
 // ============================================================================
 function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
-  // Filtramos solo los meses que tienen data de Activo, Pasivo o Patrimonio
   const availableMonths = useMemo(() => {
     const balanceRecords = dbData.filter(item => item.path.toUpperCase().includes('ACTIVO') || item.path.toUpperCase().includes('PASIVO') || item.path.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name));
     return [...new Set(balanceRecords.map(d => d.month))];
   }, [dbData]);
   
   const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || ''); 
-  
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
   const [activeCode, setActiveCode] = useState(null);
@@ -366,8 +661,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
         {dbData.length === 0 || tree.length === 0 ? (
           <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-sm">
             <AlertTriangle className="mx-auto text-blue-400 mb-4" size={48}/>
-            <p className="text-slate-500 font-black text-xs uppercase tracking-wider mb-2">No se detectaron cuentas de Balance.</p>
-            <p className="text-slate-400 text-xs">Utiliza los botones del panel principal para simular la carga de los PDF.</p>
+            <p className="text-slate-500 font-black text-xs uppercase tracking-wider mb-2">No se detectaron cuentas de Balance en el mes seleccionado.</p>
+            <p className="text-slate-400 text-[10px] mt-2">Asegúrate de cargar tu Plan de Cuentas y luego el TXT con los saldos iniciales.</p>
           </div>
         ) : (
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
@@ -397,9 +692,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
   );
 }
 
-// (Las vistas de Estado de Resultados y Comparativo se omiten en este bloque de texto por límite de caracteres, pero DEBEN mantenerse intactas en tu código original como ya las teníamos.)
 // ============================================================================
-// COMPONENTE PRINCIPAL / DASHBOARD REDISEÑADO
+// 8. COMPONENTE PRINCIPAL / DASHBOARD REDISEÑADO
 // ============================================================================
 function ReportesFinancierosApp() {
   const [view, setView] = useState('dashboard');
@@ -407,15 +701,17 @@ function ReportesFinancierosApp() {
   const [dbData, setDbData] = useState(() => {
     try { const saved = localStorage.getItem('jiret_erp_db_data'); return saved ? JSON.parse(saved) : []; } catch(e){return [];}
   });
-
+  const [planCuentas, setPlanCuentas] = useState(() => {
+    try { const saved = localStorage.getItem('jiret_plan_cuentas'); return saved ? JSON.parse(saved) : {}; } catch(e){return {};}
+  });
   const [auxDataConfig, setAuxDataConfig] = useState(() => {
     try { const saved = localStorage.getItem('jiret_erp_aux_data'); return saved ? JSON.parse(saved) : {}; } catch(e){return {};}
   });
 
   useEffect(() => { localStorage.setItem('jiret_erp_db_data', JSON.stringify(dbData)); }, [dbData]);
+  useEffect(() => { localStorage.setItem('jiret_plan_cuentas', JSON.stringify(planCuentas)); }, [planCuentas]);
   useEffect(() => { localStorage.setItem('jiret_erp_aux_data', JSON.stringify(auxDataConfig)); }, [auxDataConfig]);
 
-  // Carga de Resultados Estándar
   const handleUploadResultados = async (e) => {
     if (!e.target.files.length) return;
     try {
@@ -426,38 +722,52 @@ function ReportesFinancierosApp() {
         return [...keepData, ...newData];
       });
       alert("✅ Resultados cargados exitosamente.");
-    } catch (error) { alert("Error al procesar el archivo."); }
+    } catch (error) { alert("Error al procesar."); }
   };
 
-  // Botón simulador de PDF (Carga la data mapeada y el Balance Inicial automáticamente)
+  const handleUploadPlan = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const plan = await processPlanCuentas(e.target.files[0]);
+      setPlanCuentas(plan);
+      alert("✅ Plan de cuentas cargado. Ahora el sistema sabe estructurar el Balance.");
+    } catch (error) { alert("Error al procesar el Plan."); }
+  };
+
+  const handleUploadSaldos = async (e) => {
+    if (!e.target.files.length) return;
+    if (Object.keys(planCuentas).length === 0) { alert("⚠️ Carga el Plan de Cuentas primero."); return; }
+    try {
+      const newBalanceData = await processSaldosBalance(e.target.files[0], planCuentas);
+      setDbData(prev => [...prev, ...newBalanceData]);
+      alert("✅ Saldos de Balance cargados.");
+    } catch (error) { alert("Error al procesar los Saldos."); }
+  };
+
   const handleSimulatePDFs = () => {
-    setAuxDataConfig(AUX_DATA);
-    setDbData(prev => {
-      const keepData = prev.filter(d => d.month !== 'Abril' || !d.path.includes('ACTIVO'));
-      return [...keepData, ...INITIAL_BALANCE_DATA];
-    });
-    alert("✅ PDFs procesados correctamente. El Balance General de Abril ha sido poblado con las cuentas auxiliares listas para revisar.");
+    setAuxDataConfig(DEFAULT_AUX_DATA);
+    alert("✅ PDFs auxiliares procesados y mapeados al Balance General.");
   };
 
   const handleDeleteMonth = (monthToDelete) => {
-    if (window.confirm(`¿Eliminar permanentemente los datos de ${monthToDelete}?`)) {
+    if (window.confirm(`¿Eliminar los datos de ${monthToDelete}?`)) {
       setDbData(prev => prev.filter(d => d.month !== monthToDelete));
     }
   };
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
+  const hasPlan = Object.keys(planCuentas).length > 0;
   const hasAuxData = Object.keys(auxDataConfig).length > 0;
 
-  // RUTAS
-  // if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} onDeleteMonth={handleDeleteMonth}/>;
-  // if (view === 'comparativo') return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
+  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData} />;
+  if (view === 'comparativo') return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
   if (view === 'balance') return <BalanceGeneralView onBack={() => setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} />;
   
   return (
     <div className="min-h-screen bg-[#f8fafc]">
       <header className="px-6 py-4 bg-[#111827] border-b-4 border-orange-500 flex justify-between items-center shadow-lg">
         <h1 className="text-white font-black text-xl tracking-widest uppercase flex items-center gap-2">Jiret G&B <span className="text-orange-500 px-2 py-0.5 rounded bg-orange-500/10 text-sm">Finance</span></h1>
-        <button onClick={() => { if(window.confirm("¿Borrar todos los datos?")) { setDbData([]); setAuxDataConfig({}); } }} className="text-red-400 hover:text-red-500 transition-colors text-[10px] font-black uppercase">Limpiar Memoria</button>
+        <button onClick={() => { if(window.confirm("¿Borrar todos los datos?")) { setDbData([]); setPlanCuentas({}); setAuxDataConfig({}); } }} className="text-red-400 hover:text-red-500 transition-colors text-[10px] font-black uppercase">Limpiar Memoria</button>
       </header>
       <main className="max-w-7xl mx-auto p-6 lg:p-8 mt-4 grid grid-cols-1 lg:grid-cols-4 gap-8">
         
@@ -466,23 +776,26 @@ function ReportesFinancierosApp() {
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 text-center">
             <Database className="mx-auto text-slate-300 mb-4" size={40}/>
             <h3 className="font-black text-slate-800 text-sm uppercase mb-2">Ingesta de Datos</h3>
-            <p className="text-[11px] text-slate-500 mb-5 leading-relaxed font-medium">Sube tus estados financieros o procesa los PDF auxiliares.</p>
+            <p className="text-[11px] text-slate-500 mb-5 leading-relaxed font-medium">Carga en orden para habilitar los módulos de Balance y Resultados.</p>
             
-            {/* BOTÓN 1: RESULTADOS */}
-            <label className="bg-slate-800 text-white px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest cursor-pointer hover:bg-orange-500 transition-colors flex items-center justify-center gap-2 w-full shadow-md hover:-translate-y-0.5 mb-3">
-              <Upload size={14}/> 1. Subir Resultados
+            <label className={`${hasPlan ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-800 text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer hover:bg-emerald-500 hover:text-white transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3`}>
+              {hasPlan ? <CheckCircle size={14}/> : <BookOpen size={14}/>} {hasPlan ? 'Plan Cargado' : '1. Cargar Plan Cuentas'}
+              <input type="file" accept=".txt" className="hidden" onChange={handleUploadPlan}/>
+            </label>
+
+            <label className={`${!hasPlan ? 'opacity-50 cursor-not-allowed' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3`}>
+              <Scale size={14}/> 2. Saldos Iniciales (Bal)
+              <input type="file" disabled={!hasPlan} accept=".txt" className="hidden" onChange={handleUploadSaldos}/>
+            </label>
+
+            <label className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer hover:bg-orange-500 hover:text-white transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3">
+              <LineChart size={14}/> 3. Subir Resultados
               <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUploadResultados}/>
             </label>
-            
-            {/* BOTÓN 2: SIMULADOR DE PDF Y BALANCE */}
-            <button 
-              onClick={handleSimulatePDFs}
-              className={`${hasAuxData ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-600 hover:text-white'} px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm hover:-translate-y-0.5`}
-            >
-              {hasAuxData ? <CheckCircle size={14}/> : <FileOutput size={14}/>} 
-              {hasAuxData ? '2. PDFs Procesados' : '2. Procesar PDFs CxC/CxP'}
+
+            <button onClick={handleSimulatePDFs} className={`${hasAuxData ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm`}>
+              {hasAuxData ? <CheckCircle size={14}/> : <FileOutput size={14}/>} {hasAuxData ? 'PDFs Procesados' : '4. Procesar PDFs Aux.'}
             </button>
-            <p className="text-[9px] text-slate-400 mt-2">Paso 2 armará el Balance automáticamente con los saldos.</p>
           </div>
           
           {loadedMonths.length > 0 && (
@@ -499,23 +812,31 @@ function ReportesFinancierosApp() {
           )}
         </div>
 
+        {/* MÓDULOS PRINCIPALES */}
         <div className="lg:col-span-3 space-y-8">
           <div className="bg-white rounded-3xl p-8 lg:p-10 shadow-sm border-l-8 border-orange-500 relative overflow-hidden flex flex-col justify-center min-h-[220px]">
             <div className="absolute top-0 right-0 w-80 h-80 bg-orange-50 rounded-full blur-3xl -mr-20 -mt-20 opacity-70"></div>
             <h2 className="text-3xl lg:text-4xl font-black text-slate-900 uppercase tracking-tight mb-2 relative z-10">Servicios Jiret G&B, C.A.</h2>
             <p className="text-sm font-bold text-slate-500 tracking-[0.3em] mb-6 relative z-10">RIF: J-412309374</p>
-            <p className="text-sm text-slate-600 max-w-2xl relative z-10 leading-relaxed font-medium">Panel financiero integral. Procesa los PDFs para poblar el Balance General con los reportes de CxC y CxP exactos.</p>
+            <p className="text-sm text-slate-600 max-w-2xl relative z-10 leading-relaxed font-medium">Panel financiero integral. El Balance General ahora te permite ver cortes mensuales limpios y cuenta con el mapeo de auxiliares pre-cargado.</p>
           </div>
           <div className="grid sm:grid-cols-2 gap-6">
             <button onClick={() => dbData.length > 0 ? setView('resultado') : alert('Carga Resultados primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-orange-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
               <div className="bg-orange-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><LineChart className="text-orange-500" size={28}/></div>
               <h3 className="font-black uppercase text-base text-slate-900">Estado de Resultados</h3>
             </button>
-            <button onClick={() => hasAuxData ? setView('balance') : alert('Haz clic en el botón Procesar PDFs primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-blue-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
+            <button onClick={() => dbData.length > 0 ? setView('balance') : alert('Carga Saldos de Balance primero.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-blue-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
               <div className="bg-blue-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><Scale className="text-blue-500" size={28}/></div>
               <h3 className="font-black uppercase text-base text-slate-900">Balance General</h3>
-              <p className="text-xs text-slate-500 mt-2 font-medium">Corte mensual específico. (Sin acumulados incongruentes).</p>
             </button>
+            <button onClick={() => dbData.length >= 2 ? setView('comparativo') : alert('Para comparar necesitas cargar al menos 2 meses.')} className="group bg-white p-6 rounded-3xl shadow-sm border-b-4 border-indigo-500 text-left transition-all hover:shadow-xl hover:-translate-y-1">
+              <div className="bg-indigo-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform"><GitCompare className="text-indigo-500" size={28}/></div>
+              <h3 className="font-black uppercase text-base text-slate-900">Variaciones</h3>
+            </button>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-teal-500 opacity-50 text-left cursor-not-allowed">
+              <div className="bg-teal-50 w-14 h-14 rounded-2xl flex items-center justify-center mb-5"><Landmark className="text-teal-500" size={28}/></div>
+              <h3 className="font-black uppercase text-base text-slate-900">Inversiones</h3>
+            </div>
           </div>
         </div>
       </main>
