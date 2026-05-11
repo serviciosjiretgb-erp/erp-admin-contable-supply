@@ -1,73 +1,81 @@
 import React, { useState, useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import { 
   ChevronRight, ChevronDown, FileSpreadsheet, Wallet, Building2,
   LayoutDashboard, ArrowLeft, LogOut, Calendar, Upload, CheckCircle, AlertCircle
 } from 'lucide-react';
 
 // ============================================================================
-// LÓGICA DE PROCESAMIENTO MULTI-FORMATO (TXT, CSV, XLSX)
+// LÓGICA DE PROCESAMIENTO (Solo TXT y CSV, sin librerías externas)
 // ============================================================================
-const processAnyFile = async (files) => {
+const processFiles = async (files) => {
   let allParsedData = [];
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    const fileName = file.name.toLowerCase();
+    const text = await file.text();
     
-    // Detectar Mes
-    let month = "Enero";
-    const monthMatch = fileName.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+    let month = "Enero"; 
+    const monthMatch = file.name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
     if (monthMatch) month = monthMatch[0].charAt(0).toUpperCase() + monthMatch[0].slice(1).toLowerCase();
 
-    let rows = [];
-
-    if (fileName.endsWith('.txt')) {
-      const text = await file.text();
-      // El TXT usa tabulaciones (\t)
-      rows = text.split(/\r?\n/).map(line => line.split('\t').map(c => c.trim()));
-    } else {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-    }
-
+    const lines = text.split(/\r?\n/);
     let pathStack = [];
 
-    rows.forEach(row => {
-      if (!row || row.length === 0) return;
-      const firstCol = String(row[0] || '').trim();
-      
-      if (!firstCol || firstCol.includes("SERVICIOS JIRET") || firstCol.includes("RIF:") || firstCol.includes("Etiquetas de fila")) return;
-      if (firstCol.includes("ESTADO DE RESULTADO") || firstCol.includes("RESULTADO")) return;
+    // Determinar si es CSV (comas/punto y coma) o TXT (tabulaciones)
+    const isCsv = file.name.toLowerCase().endsWith('.csv');
 
-      // Cerrar niveles si la fila empieza por "Total "
-      if (firstCol.startsWith('Total ')) {
-        pathStack.pop();
-        return;
+    lines.forEach(line => {
+      const cleanLine = line.trim();
+      if (!cleanLine || cleanLine.includes("SERVICIOS JIRET") || cleanLine.includes("RIF:") || cleanLine.includes("Etiquetas de fila")) return;
+      if (cleanLine.includes("ESTADO DE RESULTADO") || cleanLine.startsWith("Total") || cleanLine.includes("RESULTADO")) return;
+
+      // Extraer montos buscando USD y Bs. o columnas de CSV
+      let name = "";
+      let usdValStr = null;
+      let bsValStr = null;
+
+      if (isCsv) {
+        // Soporta comas o punto y coma
+        const cols = cleanLine.split(/[,;](?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+        name = cols[0];
+        if (cols[1] !== undefined && cols[1] !== '') usdValStr = cols[1];
+        if (cols[2] !== undefined && cols[2] !== '') bsValStr = cols[2];
+      } else {
+        const usdMatch = line.match(/USD\s*([-\d.,]+|\s*-\s*)/);
+        const bsMatch = line.match(/Bs\.\s*([-\d.,]+|\s*-\s*)/);
+        if (usdMatch && bsMatch) {
+          name = line.split('USD')[0].trim();
+          usdValStr = usdMatch[1];
+          bsValStr = bsMatch[1];
+        } else {
+          name = line.split('\t')[0].trim();
+        }
       }
 
-      // Extraer montos limpiando puntos de miles y comas decimales
-      const findAmount = (val) => {
-        if (val === undefined || val === null) return null;
-        const str = String(val).trim();
-        if (str === '-' || str === '') return 0;
-        // Quitar símbolos y formatear (Ej: -122.143,16 -> -122143.16)
-        const clean = str.replace(/USD|Bs\.|Bs/g, '').trim().replace(/\./g, '').replace(',', '.');
-        const num = parseFloat(clean);
+      if (!name) return;
+
+      if (name.startsWith('Total ')) {
+        pathStack.pop();
+        return; 
+      }
+
+      const cleanVal = (val) => {
+        if (!val || val.trim() === '-' || val.trim() === '') return null;
+        const num = parseFloat(val.trim().replace(/USD|Bs\.|Bs/g, '').replace(/\./g, '').replace(',', '.'));
         return isNaN(num) ? null : num;
       };
 
-      const usdValue = findAmount(row[1]);
-      const bsValue = findAmount(row[2]);
+      const usd = cleanVal(usdValStr);
+      const bs = cleanVal(bsValStr);
 
-      if (usdValue !== null) {
-        const fullPath = pathStack.join('>');
-        allParsedData.push({ month, path: fullPath, name: firstCol, usd: usdValue, bs: bsValue || 0 });
+      if (usd !== null) {
+        let cleanPath = [];
+        pathStack.forEach(p => {
+          if (cleanPath.length === 0 || cleanPath[cleanPath.length - 1] !== p) cleanPath.push(p);
+        });
+        allParsedData.push({ month, path: cleanPath.join('>'), name, usd, bs: bs || 0 });
       } else {
-        // Es una carpeta de jerarquía
-        pathStack.push(firstCol);
+        pathStack.push(name);
       }
     });
   }
@@ -75,21 +83,19 @@ const processAnyFile = async (files) => {
 };
 
 // ============================================================================
-// COMPONENTE: FILA EXPANSIBLE (Con Subtotales)
+// COMPONENTE: FILA EXPANSIBLE
 // ============================================================================
 const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
   const isAccountNode = /^\d\./.test(node.n);
   const isLeaf = !node.c || node.c.length === 0;
   const [isOpen, setIsOpen] = useState(level < 2);
 
-  const formatCurrency = (val) => new Intl.NumberFormat('es-VE', { 
-    style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 
-  }).format(val);
+  const formatCurrency = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 
   let percentStr = '0,00%';
   if (totalVentasUSD && node.u !== 0) {
     const percent = (Math.abs(node.u) / Math.abs(totalVentasUSD)) * 100;
-    percentStr = `${new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(percent)}%`;
+    percentStr = `${formatCurrency(percent)}%`;
   }
 
   let rowClass = "cursor-pointer transition-colors border-b border-gray-200 ";
@@ -100,7 +106,7 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
     textClass = "text-gray-600 font-normal text-xs";
   } else if (isAccountNode) {
     rowClass += "bg-white hover:bg-orange-50";
-    textClass = "text-black font-bold text-sm uppercase";
+    textClass = "text-black font-bold text-sm uppercase"; 
   } else {
     rowClass += level === 0 ? " bg-[#111827] text-white" : " bg-[#F97316] text-white";
     textClass = "font-black text-xs uppercase tracking-widest";
@@ -122,7 +128,6 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
         <ExpandableRow key={idx} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} />
       ))}
 
-      {/* Fila de Subtotal/Total Automático */}
       {isOpen && !isLeaf && (
         <tr className={level === 0 ? "bg-gray-200 border-b-2 border-black" : "bg-orange-100 border-b border-orange-200"}>
           <td className="px-4 py-2 font-black text-[10px] uppercase italic text-gray-800" style={{ paddingLeft: `${level * 1.5 + 2}rem` }}>
@@ -138,7 +143,7 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
 };
 
 // ============================================================================
-// VISTA: ESTADO DE RESULTADO
+// MÓDULO: ESTADO DE RESULTADO
 // ============================================================================
 const EstadoResultado = ({ onBack, dbData }) => {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))], [dbData]);
@@ -179,52 +184,63 @@ const EstadoResultado = ({ onBack, dbData }) => {
   const baseVentas = ingresosNode ? Math.abs(ingresosNode.u) : 1;
   const totalUSD = tree.reduce((acc, n) => acc + n.u, 0);
   const totalBs = tree.reduce((acc, n) => acc + n.b, 0);
+  const formatResult = (val) => new Intl.NumberFormat('es-VE', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-12">
       <header className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase"><ArrowLeft size={16}/> Volver</button>
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 hover:text-black uppercase transition-colors"><ArrowLeft size={16}/> Volver</button>
         <div className="flex gap-2">
           {availableMonths.map(m => (
-            <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${selectedMonth === m ? 'bg-orange-600 text-white shadow-md' : 'bg-slate-100 text-slate-500'}`}>{m}</button>
+            <button key={m} onClick={() => setSelectedMonth(m)} className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase transition-all ${selectedMonth === m ? 'bg-orange-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{m}</button>
           ))}
         </div>
       </header>
       
       <main className="p-4 md:p-8 max-w-6xl mx-auto">
-        {/* HOJA MEMBRETADA INTEGRADA */}
         <div className="bg-white px-8 py-10 border-t-8 border-[#F97316] mb-8 shadow-md flex flex-col items-center text-center">
           <h1 className="text-2xl sm:text-3xl font-black font-serif text-[#111827] uppercase tracking-tight mb-2">Servicios Jiret G&B, C.A.</h1>
           <div className="w-16 h-1.5 bg-[#F97316] mb-4 rounded-full"></div>
-          <p className="font-sans text-sm text-[#111827] font-bold mb-2">RIF: J-412309374</p>
-          <p className="font-sans text-xs text-gray-500 max-w-2xl font-semibold uppercase tracking-widest leading-relaxed mb-8">
+          <p className="font-sans text-sm text-[#111827] font-bold mb-2 tracking-wide">RIF: J-412309374</p>
+          <p className="font-sans text-xs text-gray-600 max-w-2xl font-semibold uppercase tracking-widest leading-relaxed mb-8">
             AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB SECTOR EL TREBOL MARACAIBO-ZULIA
           </p>
-          <h2 className="text-xl font-black font-serif text-gray-800 uppercase tracking-widest border-b-2 border-gray-100 pb-2">Estado de Resultado Integral</h2>
-          <p className="font-sans text-sm text-orange-600 font-black mt-4 uppercase flex items-center gap-2 bg-orange-50 px-4 py-1 rounded-full"><Calendar size={14}/> Periodo: {selectedMonth} 2026</p>
+          <div className="border-b-2 border-gray-200 pb-3 w-full max-w-lg mb-4">
+            <h2 className="text-xl font-black font-serif text-gray-800 uppercase tracking-widest">Estado de Resultado Integral</h2>
+          </div>
+          <p className="font-sans text-sm text-orange-600 font-black uppercase flex items-center gap-2 bg-orange-50 px-4 py-2 rounded-full">
+            <Calendar size={16}/> Periodo: {selectedMonth}
+          </p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b-2 border-slate-300">
-                <th className="px-4 py-4 w-[50%]">Descripción de Cuenta</th>
-                <th className="px-4 py-4 text-right">Saldo USD</th>
-                <th className="px-4 py-4 text-right hidden sm:table-cell">Saldo Bs.</th>
-                <th className="px-4 py-4 text-right">Suma de %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas}/>)}
-              <tr className="bg-[#111827] text-white font-black">
-                <td className="px-4 py-6 text-sm uppercase tracking-widest">RESULTADO DEL EJERCICIO</td>
-                <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(totalUSD)}</td>
-                <td className="px-4 py-6 text-right text-base hidden sm:table-cell font-mono">{new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(totalBs)}</td>
-                <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{(Math.abs(totalUSD)/baseVentas*100).toFixed(2)}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        {dbData.length === 0 ? (
+          <div className="bg-white p-12 text-center rounded-xl shadow-sm border-t-4 border-orange-500">
+            <AlertCircle size={48} className="mx-auto text-orange-400 mb-4"/>
+            <p className="text-gray-500 font-bold">No hay reportes cargados. Por favor, importa los archivos TXT o CSV.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b-2 border-slate-300">
+                  <th className="px-4 py-4 w-[50%]">Etiquetas de Fila</th>
+                  <th className="px-4 py-4 text-right">Saldo USD</th>
+                  <th className="px-4 py-4 text-right hidden sm:table-cell">Saldo Bs.</th>
+                  <th className="px-4 py-4 text-right">Suma de %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas}/>)}
+                <tr className="bg-[#111827] text-white font-black">
+                  <td className="px-4 py-6 text-sm uppercase tracking-widest">RESULTADO DEL EJERCICIO</td>
+                  <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{formatResult(totalUSD)}</td>
+                  <td className="px-4 py-6 text-right text-base hidden sm:table-cell font-mono">{formatResult(totalBs)}</td>
+                  <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{(Math.abs(totalUSD)/baseVentas*100).toFixed(2)}%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </main>
     </div>
   );
@@ -236,9 +252,9 @@ const EstadoResultado = ({ onBack, dbData }) => {
 const ContDash = ({ onSelectModule, dbData, setDbData }) => {
   const handleUpload = async (e) => {
     if (e.target.files.length === 0) return;
-    const newData = await processAnyFile(e.target.files);
+    const newData = await processFiles(e.target.files);
     setDbData(newData);
-    alert(`Éxito: Se procesaron ${e.target.files.length} reportes.`);
+    alert(`Reportes importados: ${e.target.files.length}. Revisa el Estado de Resultados.`);
   };
 
   return (
@@ -254,15 +270,19 @@ const ContDash = ({ onSelectModule, dbData, setDbData }) => {
       <main className="p-8 max-w-5xl mx-auto">
         <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-300 mb-8 text-center shadow-sm">
           <Upload className="mx-auto text-orange-500 mb-4" size={40}/>
-          <h2 className="font-black text-xl text-slate-800 uppercase mb-1">Cargar Reportes Mensuales</h2>
-          <p className="text-slate-500 text-sm mb-6 mx-auto">Sube archivos <strong>.txt</strong> de Getxu o archivos <strong>.xlsx</strong> de Excel.</p>
+          <h2 className="font-black text-xl text-slate-800 uppercase mb-1">Cargar Reportes de Sistema</h2>
+          <p className="text-slate-500 text-sm mb-6 max-w-lg mx-auto">Selecciona archivos <strong>.txt</strong> o <strong>.csv</strong> generados por tu sistema para consolidar la información mensual.</p>
           
           <div className="flex justify-center items-center gap-4">
             <label className="bg-[#111827] text-white px-8 py-3 rounded-xl font-black uppercase text-xs cursor-pointer hover:bg-black transition-all flex items-center gap-2 shadow-lg">
               <Upload size={16}/> Buscar Archivos
-              <input type="file" multiple accept=".txt, .xlsx, .xls, .csv" className="hidden" onChange={handleUpload}/>
+              <input type="file" multiple accept=".txt, .csv" className="hidden" onChange={handleUpload}/>
             </label>
-            {dbData.length > 0 && <span className="text-green-600 font-black text-xs uppercase bg-green-50 px-4 py-3 rounded-xl border border-green-200 flex items-center gap-2"><CheckCircle size={16}/> Data Lista</span>}
+            {dbData.length > 0 && (
+              <span className="flex items-center gap-1 text-green-600 font-bold text-xs uppercase bg-green-50 px-4 py-3 rounded-xl border border-green-200">
+                <CheckCircle size={16} /> Data Lista
+              </span>
+            )}
           </div>
         </div>
 
@@ -272,7 +292,7 @@ const ContDash = ({ onSelectModule, dbData, setDbData }) => {
               <FileSpreadsheet size={32} className="text-[#F97316] group-hover:text-white"/>
             </div>
             <h3 className="font-black text-xl text-slate-800 uppercase">Estado de Resultado</h3>
-            <p className="text-slate-500 text-sm mt-2">Ingresos y Gastos con navegación por meses.</p>
+            <p className="text-slate-500 text-sm mt-2">Flujo de ingresos, costos y gastos operativos.</p>
           </div>
           
           <div className="bg-white p-8 rounded-2xl shadow-sm border-t-8 border-slate-300 opacity-60 grayscale cursor-not-allowed">
