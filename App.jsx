@@ -11,7 +11,8 @@ import {
   Settings, Home, Factory, Lock, User, ArrowRight,
   Mail, CreditCard, CalendarDays, MapPin, Key, PieChart,
   Tag, Layers, ArrowUpCircle, ArrowDownCircle, RefreshCw,
-  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer, Activity, AlignLeft, Filter} from 'lucide-react';
+  BookMarked, Coins, BadgeDollarSign, Inbox, Send, Eye, EyeOff, Printer, Activity, AlignLeft, Filter,
+  ChevronDown} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
