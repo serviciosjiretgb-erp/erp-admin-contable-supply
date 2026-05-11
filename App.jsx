@@ -159,7 +159,15 @@ const processSaldosBalance = async (file, planCuentas) => {
 // ============================================================================
 // 1b. PROCESADOR DE AUXILIARES (CxC / CxP)
 // ============================================================================
-const processAuxFile = async (files, fileType) => {
+// Detecta si una fila de encabezado es el nuevo formato de 10 columnas
+const isNewAuxFormat = (row) => {
+  if (!row || row.length < 8) return false;
+  const cells = row.map(c => c ? String(c).toLowerCase().trim() : '');
+  return cells.some(c => c.includes('operaci') || c.includes('descripci') || c.includes('cuenta contable'));
+};
+
+const processAuxFile = async (files) => {
+  // fileType ya no es necesario: el ruteo se hace por la columna "Cuenta Contable"
   const result = { cxc_general: [], cxc_zuliana: [], cxp_autototal: [], cxp_surepack: [], cxp_pacomela: [], cxp_yancarlos: [], cxp_general: [] };
 
   const parseVal = (v) => {
@@ -183,83 +191,110 @@ const processAuxFile = async (files, fileType) => {
 
   for (const file of Array.from(files)) {
     const ext = file.name.split('.').pop().toLowerCase();
-    let dataRows = [];
+    let sheetsData = []; // array de arrays de filas, una por hoja
 
     if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm') {
       const XL = await loadSheetJS();
       const buffer = await file.arrayBuffer();
       const wb = XL.read(buffer, { type: 'array', cellDates: false });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      dataRows = XL.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const rows = XL.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+        if (rows.length > 1) sheetsData.push(rows);
+      }
     } else if (ext === 'csv' || ext === 'txt') {
       const text = await file.text();
-      dataRows = text.split(/\r?\n/).map(line => {
+      const rows = text.split(/\r?\n/).map(line => {
         if (!line.trim()) return null;
         return line.split(/[,;](?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
       }).filter(Boolean);
+      if (rows.length > 1) sheetsData.push(rows);
     }
-    if (!dataRows.length) continue;
 
-    // --- Detectar fila de encabezado ---
-    let headerRow = -1;
-    let colMap = { cod: -1, nombre: -1, doc: -1, emision: -1, vence: -1, monto: -1 };
+    for (const dataRows of sheetsData) {
+      if (!dataRows.length) continue;
 
-    for (let i = 0; i < Math.min(15, dataRows.length); i++) {
-      const row = dataRows[i];
-      if (!row) continue;
-      const cells = row.map(c => c ? String(c).toLowerCase().trim() : '');
-      const hasName = cells.some(c => c.includes('nombre') || c.includes('cliente') || c.includes('proveedor') || c.includes('razon') || c.includes('razón') || c.includes('sujeto'));
-      if (hasName) {
-        headerRow = i;
-        cells.forEach((c, idx) => {
-          if ((c.includes('cód') || c.includes('cod') || c === 'id') && colMap.cod === -1) colMap.cod = idx;
-          else if ((c.includes('nombre') || c.includes('cliente') || c.includes('proveedor') || c.includes('razon') || c.includes('razón') || c.includes('sujeto')) && colMap.nombre === -1) colMap.nombre = idx;
-          else if ((c.includes('doc') || c.includes('factura') || c.includes('nro') || c.includes('número') || c.includes('numero')) && colMap.doc === -1) colMap.doc = idx;
-          else if ((c.includes('emi') || (c.includes('fecha') && !c.includes('venc'))) && colMap.emision === -1) colMap.emision = idx;
-          else if (c.includes('venc') && colMap.vence === -1) colMap.vence = idx;
-          else if ((c.includes('monto') || c.includes('saldo') || c.includes('importe') || c.includes('total') || c === 'usd' || c === 'bs') && colMap.monto === -1) colMap.monto = idx;
-        });
-        break;
+      // Buscar fila de encabezado
+      let headerIdx = -1;
+      for (let i = 0; i < Math.min(10, dataRows.length); i++) {
+        if (dataRows[i] && isNewAuxFormat(dataRows[i])) { headerIdx = i; break; }
       }
-    }
 
-    // Fallback posicional si no se encontró encabezado
-    if (headerRow === -1 || colMap.nombre === -1) {
-      colMap = { cod: 0, nombre: 1, doc: 2, emision: 3, vence: 4, monto: 5 };
-      headerRow = 0;
-    }
+      // --- NUEVO FORMATO (10 columnas) ---
+      if (headerIdx >= 0) {
+        // Col: 0=Código 1=Descripción 2=Operación 3=Emisión 4=Vencimiento 5=Días 6=No.Documento 7=Desc.Operación 8=Monto 9=CuentaContable
+        for (let i = headerIdx + 1; i < dataRows.length; i++) {
+          const row = dataRows[i];
+          if (!row || row.every(c => !c)) continue;
+          const nombre = row[1] ? String(row[1]).trim().toUpperCase() : '';
+          const monto = parseVal(row[8]);
+          if (!nombre || monto === null) continue;
 
-    // --- Procesar filas de datos ---
-    for (let i = headerRow + 1; i < dataRows.length; i++) {
-      const row = dataRows[i];
-      if (!row || row.every(c => !c)) continue;
+          const cuentaContable = row[9] ? String(row[9]).trim() : '';
+          const codeMatch = cuentaContable.match(/^(\d[\d\.]+)/);
+          const accountCode = codeMatch ? codeMatch[1] : null;
+          const mapInfo = accountCode ? ACCOUNT_MAPS[accountCode] : null;
+          const bucket = (mapInfo && result[mapInfo.type] !== undefined) ? mapInfo.type : null;
+          if (!bucket) continue; // Cuenta no reconocida en el plan
 
-      const nombre = colMap.nombre >= 0 && row[colMap.nombre] ? String(row[colMap.nombre]).trim().toUpperCase() : '';
-      if (!nombre) continue;
+          result[bucket].push({
+            cod:            row[0] ? String(row[0]).trim() : '-',
+            nombre,
+            operacion:      row[2] ? String(row[2]).trim() : '-',
+            emision:        parseDate(row[3]),
+            vence:          parseDate(row[4]),
+            dias:           row[5] !== null && row[5] !== undefined ? String(row[5]).trim() : '-',
+            doc:            row[6] ? String(row[6]).trim() : '-',
+            descripcion:    row[7] ? String(row[7]).trim() : '-',
+            monto,
+            cuentaContable,
+          });
+        }
+        continue;
+      }
 
-      const monto = colMap.monto >= 0 ? parseVal(row[colMap.monto]) : null;
-      if (monto === null || monto === 0) continue;
+      // --- FORMATO LEGACY (6 columnas, fallback) ---
+      let colMap = { cod: -1, nombre: -1, doc: -1, emision: -1, vence: -1, monto: -1 };
+      for (let i = 0; i < Math.min(15, dataRows.length); i++) {
+        const row = dataRows[i]; if (!row) continue;
+        const cells = row.map(c => c ? String(c).toLowerCase().trim() : '');
+        if (cells.some(c => c.includes('nombre') || c.includes('descripci'))) {
+          headerIdx = i;
+          cells.forEach((c, idx) => {
+            if ((c.includes('cód') || c.includes('cod') || c === 'id') && colMap.cod === -1) colMap.cod = idx;
+            else if ((c.includes('nombre') || c.includes('descripci')) && colMap.nombre === -1) colMap.nombre = idx;
+            else if ((c.includes('doc') || c.includes('nro')) && colMap.doc === -1) colMap.doc = idx;
+            else if ((c.includes('emi') || c.includes('fecha')) && colMap.emision === -1) colMap.emision = idx;
+            else if (c.includes('venc') && colMap.vence === -1) colMap.vence = idx;
+            else if ((c.includes('monto') || c.includes('saldo') || c === 'usd') && colMap.monto === -1) colMap.monto = idx;
+          });
+          break;
+        }
+      }
+      if (headerIdx === -1) { colMap = { cod:0, nombre:1, doc:2, emision:3, vence:4, monto:5 }; headerIdx = 0; }
 
-      const record = {
-        cod:     colMap.cod     >= 0 && row[colMap.cod]     ? String(row[colMap.cod]).trim()  : '-',
-        nombre,
-        doc:     colMap.doc     >= 0 && row[colMap.doc]     ? String(row[colMap.doc]).trim()  : '-',
-        emision: colMap.emision >= 0                        ? parseDate(row[colMap.emision])  : '-',
-        vence:   colMap.vence   >= 0                        ? parseDate(row[colMap.vence])    : '-',
-        monto,
-      };
+      for (let i = headerIdx + 1; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        if (!row || row.every(c => !c)) continue;
+        const nombre = colMap.nombre >= 0 && row[colMap.nombre] ? String(row[colMap.nombre]).trim().toUpperCase() : '';
+        const monto = colMap.monto >= 0 ? parseVal(row[colMap.monto]) : null;
+        if (!nombre || monto === null || monto === 0) continue;
 
-      // --- MAPEO POR NOMBRE ---
-      if (fileType === 'cxc') {
-        if (nombre.includes('ZULIANA DE EMPAQUE')) result.cxc_zuliana.push(record);
-        else result.cxc_general.push(record);
-      } else { // cxp
-        if      (nombre.includes('AUTO TOTAL'))                                              result.cxp_autototal.push(record);
-        else if (nombre.includes('SURE PACK'))                                             result.cxp_surepack.push(record);
+        const record = {
+          cod: colMap.cod >= 0 && row[colMap.cod] ? String(row[colMap.cod]).trim() : '-',
+          nombre, operacion: '-', dias: '-', descripcion: '-', cuentaContable: '',
+          doc:     colMap.doc >= 0 && row[colMap.doc] ? String(row[colMap.doc]).trim() : '-',
+          emision: colMap.emision >= 0 ? parseDate(row[colMap.emision]) : '-',
+          vence:   colMap.vence >= 0 ? parseDate(row[colMap.vence]) : '-',
+          monto,
+        };
+        // Ruteo por nombre (legado)
+        if      (nombre.includes('ZULIANA DE EMPAQUE'))                                    result.cxc_zuliana.push({...record, monto: Math.abs(monto)});
+        else if (nombre.includes('AUTO TOTAL'))                                            result.cxp_autototal.push(record);
+        else if (nombre.includes('SURE PACK'))                                            result.cxp_surepack.push(record);
         else if (nombre.includes('PACOMELA') || nombre.includes('AGRO INDUSTRIAS LACTEAS')) result.cxp_pacomela.push(record);
-        else if (nombre.includes('YANCARLOS') || nombre.includes('PEREZ CASANOVA'))        result.cxp_yancarlos.push(record);
-        else if (nombre.includes('ZULIANA DE EMPAQUE'))                                    result.cxc_zuliana.push({...record, monto: Math.abs(record.monto)});
-        else                                                                               result.cxp_general.push(record);
+        else if (nombre.includes('YANCARLOS') || nombre.includes('PEREZ CASANOVA'))       result.cxp_yancarlos.push(record);
+        else result.cxp_general.push(record);
       }
     }
   }
@@ -280,9 +315,186 @@ const ACCOUNT_MAPS = {
 };
 
 // Datos reales extraídos de los PDFs auxiliares al 30/04/2026
+// Estructura nueva: cod, nombre, operacion, emision, vence, dias, doc, descripcion, monto, cuentaContable
+const mkR = (cod,nombre,operacion,emision,vence,dias,doc,descripcion,monto,cc) =>
+  ({ cod, nombre, operacion, emision, vence, dias: String(dias), doc, descripcion, monto, cuentaContable: cc });
+
 const DEFAULT_AUX_DATA = {
   cxc_general: [
-    { cod:'C0047', nombre:'ALIMENTOS BOTALON C.A',                               doc:'00002973',   emision:'30/04/2026', vence:'07/05/2026', monto:519.51 },
+    mkR('C0047','ALIMENTOS BOTALON C.A','Factura','30/04/2026','07/05/2026',-7,'00002973','Doc : 00002973',519.51,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0084','ANIMAL FEED SOLUTIONS., C.A','Factura','17/04/2026','24/04/2026',6,'00002935','Doc : 00002935',12011.22,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0084','ANIMAL FEED SOLUTIONS., C.A','Factura','28/04/2026','05/05/2026',-5,'00002962','Doc : 00002962',1433.20,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0400','C.A RON SANTA TERESA, S.A.C.A','Factura','16/04/2026','28/04/2026',2,'00002933','Doc : 00002933',3524.54,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0119','C.A. CENTRAL LA PASTORA','Factura','19/11/2025','04/12/2025',147,'00002666','Factor:237,7505 Doc:00002666',3178.47,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0119','C.A. CENTRAL LA PASTORA','Adelanto','19/02/2026','19/02/2026',70,'00000410','ANTICIPO CENTRAL LA PASTORA, C.A',-2000,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0119','C.A. CENTRAL LA PASTORA','Factura','24/02/2026','03/03/2026',58,'00002827','Doc : 00002827',5230.62,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0119','C.A. CENTRAL LA PASTORA','Factura','26/02/2026','05/03/2026',56,'00002835','Doc : 00002835',1038.96,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0119','C.A. CENTRAL LA PASTORA','Adelanto','24/04/2026','24/04/2026',6,'00000552','ANTICIPO C.A CENTRAL LA PASTORA',-3448.05,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0012','CONVELAC, C.A.','Factura','16/04/2026','16/04/2026',14,'00002932','Doc : 00002932',201.60,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0051','ENVASES MUNDIAL, C.A','Adelanto','17/09/2025','17/09/2025',225,'00002277','Adelanto - Factor: 161,8880',-15.01,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0051','ENVASES MUNDIAL, C.A','Adelanto','17/09/2025','17/09/2025',225,'00002278','Adelanto - Factor: 161,8880',-5.52,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0051','ENVASES MUNDIAL, C.A','Adelanto','02/12/2025','02/12/2025',149,'00002465','Adelanto - Factor: 247,30',-18.39,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0051','ENVASES MUNDIAL, C.A','Factura','09/03/2026','16/03/2026',45,'2309','Factura NF Factor: 433,1664',4091.55,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0051','ENVASES MUNDIAL, C.A','Factura','30/04/2026','30/04/2026',0,'2437','Factura NF - Factor: 487,1192',234.97,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0004','INDUSTRIA ALIMENTICIA NACIONAL DE CEREALES Y HARINAS','Factura','03/03/2026','10/03/2026',51,'00002841','Doc : 00002841',2059.20,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0004','INDUSTRIA ALIMENTICIA NACIONAL DE CEREALES Y HARINAS','Factura','24/03/2026','31/03/2026',30,'00002894','Doc : 00002894',1613.49,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0004','INDUSTRIA ALIMENTICIA NACIONAL DE CEREALES Y HARINAS','Factura','22/04/2026','29/04/2026',1,'00002938','Doc : 00002938',10370.40,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0094','INDUSTRIAS MAROS, C.A.','Factura','18/02/2026','25/02/2026',64,'18021','Factura Factor: 396,3674',5265.26,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0363','INGENIERIA CREATIVA, C.A','Factura','30/04/2026','07/05/2026',-7,'2434','Factura NF - Factor: 487,1192',286.72,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0043','INVERSIONES AVICOLAS, C.A.','Adelanto','06/04/2026','06/04/2026',24,'00000519','ANTICIPO 30% ODC 45/75884 INVERSIONES AVICOLAS',-1050,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0043','INVERSIONES AVICOLAS, C.A.','Adelanto','09/04/2026','09/04/2026',21,'00000523','ANTICIPO ODC 45/75899 DIV $ INVERSIONES AVICOLAS',-6480,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0043','INVERSIONES AVICOLAS, C.A.','Factura','27/04/2026','04/05/2026',-4,'00002960','Doc : 00002960',7498.01,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0043','INVERSIONES AVICOLAS, C.A.','Factura','27/04/2026','04/05/2026',-4,'00002961','Doc : 00002961',1670.40,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0043','INVERSIONES AVICOLAS, C.A.','Factura','28/04/2026','05/05/2026',-5,'00002964','Doc : 00002964',422.24,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0043','INVERSIONES AVICOLAS, C.A.','Factura','30/04/2026','07/05/2026',-7,'00002972','Doc : 00002972',7512.25,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0011','INVERSIONES LACTEAS SAN SIMON, C.A','Factura','24/04/2026','01/05/2026',-1,'00002952','Doc : 00002952',5881.20,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0037','INVERSIONES LUXÓS, C.A.','N/D','25/07/2023','01/08/2023',1003,'00000537','N.E 341 4.740$ Factor: 29,0872',1754.20,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0037','INVERSIONES LUXÓS, C.A.','Adelanto','20/08/2025','20/08/2025',253,'00002208','Adelanto - 150$ Factor: 192',-150,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0037','INVERSIONES LUXÓS, C.A.','Adelanto','15/09/2025','15/09/2025',227,'00002267','Adelanto - Factor: 158,9289',-170,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0037','INVERSIONES LUXÓS, C.A.','Adelanto','18/02/2026','18/02/2026',71,'00000408','Adelanto Factor: 398,7456',-80,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0037','INVERSIONES LUXÓS, C.A.','Adelanto','23/02/2026','23/02/2026',66,'00000415','Adelanto Factor: 460',-100,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','09/02/2024','01/03/2024',790,'00001455','Factor:36,2919 Doc:00001455 Palmar 1',1184.46,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','09/02/2024','01/03/2024',790,'00001456','Factor:36,2919 - Produvisa',2553.86,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','14/02/2024','06/03/2024',785,'00001457','Factor:36,3185 - Palmar 2',593.92,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','16/02/2024','08/03/2024',783,'00001460','Factor:36,2737 - Palmar 3',74.24,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','16/02/2024','08/03/2024',783,'00001462','Factor:36,2737 Doc:00001462',3758.40,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','15/03/2024','05/04/2024',755,'00001526','Factor:36,276 - Grupo Serex',1559.04,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','04/04/2024','25/04/2024',735,'00001562','Factor:36,2493 - Cartonera',751.68,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0165','INVERSIONES NESMOCA, C.A','Factura','11/04/2024','02/05/2024',728,'00001575','Factor:36,1883 - Purolomo 1',3006.72,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0164','INVERSIONES SELVA, C. A.','Factura','29/04/2026','14/05/2026',-14,'00002967','Doc : 00002967',1577.31,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0202','JOSE LUIS BOHORQUEZ','Factura','14/04/2026','21/04/2026',9,'2393','Factura NF Factor: 477,6259',122.15,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0312','JULIO CESAR OJEDA CASANOVA','Factura','16/10/2025','16/10/2025',196,'00002605','Factor:201,4665 Doc:00002605',58.46,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0312','JULIO CESAR OJEDA CASANOVA','N/D','02/12/2025','09/12/2025',142,'00002563','NE 2116 - 58,46$ Factor 247,4071',58.46,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0312','JULIO CESAR OJEDA CASANOVA','Factura','06/02/2026','13/02/2026',76,'2248.','Factura F - Factor: 381,1074',239.42,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0312','JULIO CESAR OJEDA CASANOVA','Factura','18/03/2026','25/03/2026',36,'2341','Factura NF Factor: 451,5072',30.16,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0312','JULIO CESAR OJEDA CASANOVA','Factura','23/03/2026','30/03/2026',31,'2347','Factura NF Factor: 457,0575',58.46,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0054','LA EXCELENCIA C.A.','Factura','24/04/2026','01/05/2026',-1,'2417','Factura NF - Factor: 483,8695',193.02,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0140','MARCOS ANTONIO RODRIGUEZ FINOL','Factura','20/03/2026','27/03/2026',34,'2343','Factura NF Factor: 455,2547',2227.20,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0140','MARCOS ANTONIO RODRIGUEZ FINOL','Adelanto','20/04/2026','20/04/2026',10,'00000561','ANTICIPO MARCOS ANTONIO RODRIGUEZ FINOL',-1000,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0155','MUEBLES & PRESTIGIOS, C.A','Factura','23/09/2025','30/09/2025',212,'00002564','Factor:168,4157 Doc:00002564',37.31,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0013','PAPELES VENEZOLANOS, C.A.','Factura','20/04/2026','23/04/2026',7,'00002937','Doc : 00002937',21158.40,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0013','PAPELES VENEZOLANOS, C.A.','Factura','22/04/2026','02/05/2026',-2,'00002939','Doc : 00002939',21158.40,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0319','PEGAMENTOS UTILES DE VENEZUELA, C.A','Factura','30/04/2026','07/05/2026',-7,'2436','Factura NF - Factor: 487,1192',1820.00,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0195','PINTURAS DEL CARIBE, S.A.','Factura','24/03/2026','31/03/2026',30,'2353','Factura NF Factor: 459,4525',3377.92,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0188','PRODUCTOS DE VIDRIO S.A (PRODUVISA)','Factura','14/04/2026','21/04/2026',9,'00002927','Doc : 00002927',9552.62,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0188','PRODUCTOS DE VIDRIO S.A (PRODUVISA)','Factura','14/04/2026','21/04/2026',9,'00002928','Doc : 00002928',2349.69,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0188','PRODUCTOS DE VIDRIO S.A (PRODUVISA)','Factura','29/04/2026','06/05/2026',-6,'00002968','Doc : 00002968',13937.40,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0223','PRODUCTOS LACTEOS LA ARGENTINA, C.A.','Adelanto','13/11/2025','13/11/2025',168,'00002421','Adelanto - Factor: 233,56',-6.86,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0005','RIAS, CA','Factura','31/03/2026','07/04/2026',23,'2369','Factura NF - Factor: 473,8702',1948.80,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0139','VE-PACK INVESTMENT, C.A','Adelanto','10/11/2025','10/11/2025',171,'00002398','Adelanto - Factor: 231,0462',-22.08,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0139','VE-PACK INVESTMENT, C.A','Factura','26/03/2026','02/04/2026',28,'2358','Factura NF - Factor: 466,6014',1131.00,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0139','VE-PACK INVESTMENT, C.A','Factura','26/03/2026','02/04/2026',28,'2359','Factura NF - Factor: 466,6014',181.66,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0139','VE-PACK INVESTMENT, C.A','Factura','30/03/2026','06/04/2026',24,'2367','Factura NF Factor: 471,7004',100.90,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0184','VENEZOLANA DEL VIDRIO C.A. (VENVIDRIO)','N/D','19/03/2024','03/04/2024',757,'00001219','N.E 845 341,51$ Factor 36,2653',341.51,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0184','VENEZOLANA DEL VIDRIO C.A. (VENVIDRIO)','N/D','21/11/2025','21/11/2025',160,'00002548','NE 2086 100,05$ Factor: 241,5780',100.05,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0002','VENILAC C.A','Factura','12/03/2026','19/03/2026',42,'2324','Factura NF Factor: 440,9657',233.86,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0002','VENILAC C.A','Factura','20/04/2026','27/04/2026',3,'2402','Factura NF - Factor: 481,2177',9621.50,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0002','VENILAC C.A','Factura','24/04/2026','24/04/2026',6,'00002957','Doc : 00002957',1217.25,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','Factura','31/07/2024','15/08/2024',623,'00001779','Doc:00001779 - Procesadora Antartica',4800.00,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','Factura','28/02/2025','28/02/2025',426,'00002174','Doc:00002174 - EYS',86.98,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','N/D','30/04/2025','30/04/2025',365,'00002272','NE 1699 - Polimar',93.59,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','N/D','05/06/2025','12/06/2025',322,'00002385','NE 1781 - Alimentos Mar Caribe',872.79,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','N/D','13/08/2025','20/08/2025',253,'00002458','NE 1885 - Polimar',93.59,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','Factura','09/10/2025','09/10/2025',203,'00002589','Doc:00002589 - Inversora E&S',165.00,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','Factura','09/10/2025','09/10/2025',203,'00002593','Doc:00002593 - Julio Ojeda',271.98,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','N/D','10/10/2025','10/10/2025',202,'00002503','NE 1993 - Polimar',93.59,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','N/D','25/11/2025','25/11/2025',156,'00002550','NE 2094 - Polimar',93.59,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','Factura','30/01/2026','06/02/2026',83,'2234','NE 2234 - Polimar',93.54,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0216','VICTOR HUGO RODRIGUEZ ARAMBULO','Factura','10/04/2026','17/04/2026',13,'2381','Factura NF Factor: 476,4342 - Polimar',150.34,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+    mkR('C0227','VIDRIOS DOMESTICOS MAV C.C.S','Factura','22/04/2026','29/04/2026',1,'00002940','Doc : 00002940',1067.99,'1.1.02.01.001-CUENTAS POR COBRAR CLIENTES'),
+  ],
+  cxc_zuliana: [
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','01/09/2025','01/09/2025',241,'1','Adelanto',11950.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','03/09/2025','03/09/2025',239,'2','Adelanto',3022.56,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','05/09/2025','05/09/2025',237,'3','Adelanto',200.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','09/09/2025','09/09/2025',233,'4','Adelanto',40.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','10/09/2025','10/09/2025',232,'5','Adelanto',30.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','13/11/2025','13/11/2025',168,'5','Adelanto',40000.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','13/11/2025','13/11/2025',168,'3','Adelanto',13269.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Adelanto','17/11/2025','17/11/2025',164,'1','Adelanto',15000.00,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Factura','30/01/2026','30/01/2026',90,'000040','Doc : 000040',-2219.49,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Factura','30/01/2026','30/01/2026',90,'000039','Factor:367,3069 Doc:000039',-5192.87,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+    mkR('P0424','ZULIANA DE EMPAQUE, C.A','Factura','27/02/2026','27/02/2026',62,'000042','Doc : 000042',-5150.05,'1.1.05.01.008-ANTICIPOS A PROVEEDORES ZULIANA DE EMPAQUE'),
+  ],
+  cxp_yancarlos: [
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Factura','17/04/2026','17/04/2026',13,'001073','Doc : 001073',7920.07,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','17/04/2026','17/04/2026',13,'170426','PAGO MATERIA PRIMA 158,42 / FAC: 1073',-158.42,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','17/04/2026','17/04/2026',13,'17042026','PAGO MATERIA PRIMA 175$ / FAC: 1073',-175.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','22/04/2026','22/04/2026',8,'2204','EGRESO X Z2 / FAC: 1073',-1090.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','22/04/2026','22/04/2026',8,'220426.','PAGO DE MALLA 100$ / FAC: 1073',-100.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Factura','23/04/2026','23/04/2026',7,'001075','Doc : 001075',10395.07,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','24/04/2026','24/04/2026',6,'1368','PAGO LEINYS CASTRO PERS. EVENTUAL / FAC: 1073',-80.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','24/04/2026','24/04/2026',6,'0358','PAGO JULIO ALBARRAN PERS. EVENTUAL 125$ / FAC: 1073',-125.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','24/04/2026','24/04/2026',6,'2701','PAGO RICARDO VIELMA PERS. EVENTUAL 90$ / FAC: 1073',-90.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','24/04/2026','24/04/2026',6,'3688','PAGO JOEL JIMENEZ CHOFER 100$ / FAC: 1073',-100.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','28/04/2026','28/04/2026',2,'7593','PAGO LUIS COMISIONES 304,31$ / FAC:1073',-304.31,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'5429','PAGO BOLETOS AEREOS JCB-JDB / FAC: 1073',-152.45,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'1464','PAGO 2 BOLETOS AEREOS JCB-JDB / FAC: 1073',-49.05,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'3343','PAGO COMBUSTIBLE VIATICOS JDB / FAC: 1073',-13.96,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'1822','PAGO ABIEL BONILLA FLETE / FAC: 1073',-100.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'32900','PAGO JULIO ALBARRAN / FAC: 1073',-110.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'1099','PAGO LEINYS CASTRO PERS. EVENTUAL / FAC: 1073',-80.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0005','YANCARLOS PEREZ CASANOVA','Adelanto','30/04/2026','30/04/2026',0,'1173','PAGO RICARDO VIELMA PERS. EVENTUAL / FAC: 1073',-80.00,'2.1.01.01.003-OTRAS CUENTAS POR PAGAR PROVEEDORES'),
+  ],
+  cxp_surepack: [
+    mkR('P0082','SURE PACK','Factura','12/08/2025','11/09/2025',231,'3284.','Doc: 3284 Factor: 195.2490',686.39,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','12/08/2025','11/09/2025',231,'3285.','Doc: 3285 Factor: 195.2490',661.44,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','12/08/2025','11/09/2025',231,'3286.','Doc: 3286 Factor: 223.6450',24112.85,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','N/C','16/10/2025','24/10/2025',188,'00000459','Doc : 00003308',-540.80,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','N/C','16/10/2025','24/10/2025',188,'00000460','Doc : 00003309',-86.25,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','N/C','27/11/2025','27/11/2025',154,'00000488','Doc : 00000488',-1895.67,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','07/01/2026','07/01/2026',113,'3332','FACTURA SURE PACK 3332 EMB 58',30971.20,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','20/01/2026','21/03/2026',40,'3336','FACTURA 3336 SURE PACK EMB 59',10699.42,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','04/02/2026','04/02/2026',85,'3323','FACTURA 3323 SURE PACK EMB 57',24000.00,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','16/02/2026','17/04/2026',13,'3340','FACTURA 3340 FACTOR: 477.6250',12508.80,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','09/03/2026','08/04/2026',22,'3349','FACTURA 3349 FACTOR 477,625',11855.50,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','09/03/2026','08/04/2026',22,'3350','FACTURA 3350 FACTOR: 477,625',11222.00,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+    mkR('P0082','SURE PACK','Factura','18/03/2026','17/05/2026',-17,'3353','FACTURA 3353 FACTOR: 478.581',7421.80,'2.1.01.01.004-CUENTAS POR PAGAR SURE PACK'),
+  ],
+  cxp_pacomela: [
+    mkR('P0511','AGRO INDUSTRIAS LACTEAS PACOMELA, C.A','Factura','02/01/2026','02/01/2026',118,'2602','CONTRATO',169547.91,'2.1.01.02.007-INMUEBLE POR PAGAR'),
+    mkR('P0511','AGRO INDUSTRIAS LACTEAS PACOMELA, C.A','Adelanto','04/03/2026','04/03/2026',57,'0403','ABONO PROVEEDOR PACOMELA',-147546.91,'2.1.01.02.007-INMUEBLE POR PAGAR'),
+    mkR('P0511','AGRO INDUSTRIAS LACTEAS PACOMELA, C.A','Adelanto','06/04/2026','06/04/2026',24,'0604','ABONO AGRO INDUSTRIAS LACTEAS PACOMELA, C.A',-1827.40,'2.1.01.02.007-INMUEBLE POR PAGAR'),
+  ],
+  cxp_autototal: [
+    mkR('P0338','AUTO TOTAL, C.A','Factura','07/10/2025','07/10/2025',205,'11166','Factor:187,2893 Doc:11166',2797.98,'2.1.01.02.008-VEHÍCULOS POR PAGAR'),
+    mkR('P0338','AUTO TOTAL, C.A','Factura','07/10/2025','07/10/2025',205,'11164','Factor:187,2893 Doc:11164',17532.25,'2.1.01.02.008-VEHÍCULOS POR PAGAR'),
+    mkR('P0338','AUTO TOTAL, C.A','Factura','07/10/2025','07/10/2025',205,'11165','Factor:187,2893 Doc:11165',780.00,'2.1.01.02.008-VEHÍCULOS POR PAGAR'),
+    mkR('P0338','AUTO TOTAL, C.A','Adelanto','08/10/2025','08/10/2025',204,'1','Adelanto',-7766.00,'2.1.01.02.008-VEHÍCULOS POR PAGAR'),
+    mkR('P0338','AUTO TOTAL, C.A','Adelanto','08/10/2025','08/10/2025',204,'2','Adelanto',-4905.38,'2.1.01.02.008-VEHÍCULOS POR PAGAR'),
+  ],
+  cxp_general: [
+    mkR('P0040','PAPELERIA ESTEVA EL TRANSITO,C.A.','Factura','15/04/2026','22/04/2026',8,'0000033995','Doc : 0000033995',202.43,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0040','PAPELERIA ESTEVA EL TRANSITO,C.A.','Factura','22/04/2026','29/04/2026',1,'0000034111','Doc : 0000034111',79.57,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0040','PAPELERIA ESTEVA EL TRANSITO,C.A.','Factura','24/04/2026','01/05/2026',-1,'0000034154','Doc : 0000034154',60.54,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0074','OK PIZZA, COMPAÑIA ANONIMA','Factura','09/09/2025','09/09/2025',233,'003077','Factor:154,9825 Doc:003077',18.02,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0103','SERVICIOS Y MANT. ENRIQUE FLEIRES FP','Factura','13/04/2026','13/04/2026',17,'000927','Doc : 000927',29.78,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0103','SERVICIOS Y MANT. ENRIQUE FLEIRES FP','Factura','21/04/2026','21/04/2026',9,'000933','Doc : 000933',396.07,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0103','SERVICIOS Y MANT. ENRIQUE FLEIRES FP','Factura','23/04/2026','23/04/2026',7,'000934','Doc : 000934',29.77,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0117','E. P. & O. ASOCIADOS, C. A.','Factura','20/04/2026','20/04/2026',10,'00003138','Doc : 00003138',357.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0117','E. P. & O. ASOCIADOS, C. A.','Factura','20/04/2026','20/04/2026',10,'00003142','Doc : 00003142',900.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0117','E. P. & O. ASOCIADOS, C. A.','Factura','23/04/2026','23/04/2026',7,'00003146','Doc : 00003146',900.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0117','E. P. & O. ASOCIADOS, C. A.','Factura','23/04/2026','23/04/2026',7,'00003145','Doc : 00003145',900.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0117','E. P. & O. ASOCIADOS, C. A.','Factura','24/04/2026','24/04/2026',6,'00003147','Doc : 00003147',900.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0293','RUTA 70 CAR WASH AND SERVICE, C.A','Factura','28/04/2026','04/05/2026',-4,'PRSPTO 08','PRESUPUESTO 08',104.75,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0348','ANGEL EDUARDO GARCIA RINCON','Factura','20/03/2026','20/03/2026',41,'000056','Doc : 000056',176.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0369','CORPORACION VENEZOLANA DE SEGURIDAD I, C.A.','Factura','13/04/2026','19/04/2026',11,'PROFORMA 01','PROFORMA 01',918.72,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0418','PINTURAS Y DECORACIONES, C.A','Factura','21/04/2026','28/04/2026',2,'00026073','Doc : 00026073',43.93,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0466','DISTRIBUIDORA Y SERVICIOS INTEGRALES C A','Factura','17/04/2026','24/04/2026',6,'ODC 0079','ODC 0079',41.76,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0466','DISTRIBUIDORA Y SERVICIOS INTEGRALES C A','Factura','23/04/2026','30/04/2026',0,'ODC 0082','ODC 0082',50.34,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0466','DISTRIBUIDORA Y SERVICIOS INTEGRALES C A','Factura','30/04/2026','07/05/2026',-7,'ODC 84','ODC 84',39.44,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0467','FERRETERIA ELECTRICA INDUSTRIAL, C.A.','Factura','16/03/2026','23/03/2026',38,'ODC 0061','ODC 0061',4187.76,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0467','FERRETERIA ELECTRICA INDUSTRIAL, C.A.','Factura','24/03/2026','31/03/2026',30,'ODC 0066','ODC 0066',114.84,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0492','EMPAQUES PLASTICOS CABIMAS C.A (EMPLASCA)','Factura','30/01/2026','20/02/2026',69,'ODC 0040','ODC 0040',29444.20,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0492','EMPAQUES PLASTICOS CABIMAS C.A (EMPLASCA)','Adelanto','30/01/2026','30/01/2026',90,'3001','ABONO INSUMOS Y SUMINISTROS BYB C.A.',-7000.00,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0492','EMPAQUES PLASTICOS CABIMAS C.A (EMPLASCA)','Adelanto','04/02/2026','04/02/2026',85,'9566','ABONO INSUMOS Y SUMINITROS BYB, C.A 50% ODC 0040',-7222.10,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0492','EMPAQUES PLASTICOS CABIMAS C.A (EMPLASCA)','Adelanto','21/04/2026','21/04/2026',9,'2004.','ABONO EMPAQUES PLASTICOS CABIMAS, C.A ODC 0040',-108.40,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0515','SUMINISTROS QUIVEN, C.A.','Adelanto','28/04/2026','28/04/2026',2,'2804','PAGO BASE SUMINISTROS QUIVEN, C.A',-578.50,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0515','SUMINISTROS QUIVEN, C.A.','Adelanto','30/04/2026','30/04/2026',0,'33333','PAGO IVA SUMINISTROS QUIVEN, C.A',-23.14,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0531','LOSDEKLUZ 2.0., C.A','Factura','27/03/2026','27/03/2026',34,'000000644','Doc : 000000644',311.63,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+    mkR('P0531','LOSDEKLUZ 2.0., C.A','Adelanto','27/03/2026','27/03/2026',34,'6184','ABONO 70% LOSDKLUZ 2.0, C.A FAC: 000000644',-222.59,'2.1.01.01.001-CUENTAS POR PAGAR PROVEEDORES'),
+  ]
+};                               doc:'00002973',   emision:'30/04/2026', vence:'07/05/2026', monto:519.51 },
     { cod:'C0084', nombre:'ANIMAL FEED SOLUTIONS., C.A',                         doc:'00002962',   emision:'28/04/2026', vence:'05/05/2026', monto:13444.42 },
     { cod:'C0400', nombre:'C.A RON SANTA TERESA, S.A.C.A',                       doc:'00002933',   emision:'16/04/2026', vence:'28/04/2026', monto:3524.54 },
     { cod:'C0119', nombre:'C.A. CENTRAL LA PASTORA',                             doc:'00000552',   emision:'24/04/2026', vence:'24/04/2026', monto:4000.00 },
@@ -457,26 +669,44 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
         </div>
       </div>
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-slate-800 text-[10px] uppercase font-black text-slate-300">
-            <tr><th className="px-4 py-4">Código</th><th className="px-4 py-4">Sujeto Comercial</th><th className="px-4 py-4">Documento</th><th className="px-4 py-4">Vence</th><th className="px-4 py-4 text-right">Monto USD</th></tr>
+        <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse" style={{minWidth:'900px'}}>
+          <thead className="bg-slate-800 text-[9px] uppercase font-black text-slate-300">
+            <tr>
+              <th className="px-3 py-4">Código</th>
+              <th className="px-3 py-4">Descripción</th>
+              <th className="px-3 py-4">Operación</th>
+              <th className="px-3 py-4">Emisión</th>
+              <th className="px-3 py-4">Vencimiento</th>
+              <th className="px-3 py-4 text-right">Días</th>
+              <th className="px-3 py-4">No. Documento</th>
+              <th className="px-3 py-4">Descripción de Operación</th>
+              <th className="px-3 py-4 text-right">Monto USD</th>
+              <th className="px-3 py-4">Cuenta Contable</th>
+            </tr>
           </thead>
           <tbody>
             {filteredData.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-8 text-slate-400 font-bold">Sin transacciones registradas en este auxiliar.</td></tr>
+              <tr><td colSpan={10} className="text-center py-8 text-slate-400 font-bold">Sin transacciones registradas en este auxiliar.</td></tr>
             ) : (
               filteredData.map((item, i) => (
                 <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 text-xs font-bold text-slate-500">{item.cod}</td>
-                  <td className="px-4 py-3 text-xs font-black text-slate-800">{item.nombre}</td>
-                  <td className="px-4 py-3 text-xs text-slate-600 font-mono">{item.doc}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{item.vence}</td>
-                  <td className={`px-4 py-3 text-right text-sm font-mono font-bold ${item.monto < 0 ? 'text-red-500' : 'text-slate-900'}`}>{fmtCur(item.monto)}</td>
+                  <td className="px-3 py-2.5 text-[11px] font-bold text-slate-500 whitespace-nowrap">{item.cod}</td>
+                  <td className="px-3 py-2.5 text-[11px] font-black text-slate-800 max-w-[140px] truncate">{item.nombre}</td>
+                  <td className="px-3 py-2.5 text-[11px] text-slate-600 whitespace-nowrap">{item.operacion || '-'}</td>
+                  <td className="px-3 py-2.5 text-[11px] text-slate-500 whitespace-nowrap font-mono">{item.emision}</td>
+                  <td className="px-3 py-2.5 text-[11px] text-slate-500 whitespace-nowrap font-mono">{item.vence}</td>
+                  <td className={`px-3 py-2.5 text-right text-[11px] font-mono whitespace-nowrap ${Number(item.dias) < 0 ? 'text-red-500 font-bold' : 'text-slate-500'}`}>{item.dias ?? '-'}</td>
+                  <td className="px-3 py-2.5 text-[11px] text-slate-600 font-mono whitespace-nowrap">{item.doc}</td>
+                  <td className="px-3 py-2.5 text-[11px] text-slate-500 max-w-[180px] truncate" title={item.descripcion}>{item.descripcion || '-'}</td>
+                  <td className={`px-3 py-2.5 text-right text-[12px] font-mono font-bold whitespace-nowrap ${item.monto < 0 ? 'text-red-500' : 'text-slate-900'}`}>{fmtCur(item.monto)}</td>
+                  <td className="px-3 py-2.5 text-[10px] text-slate-400 font-mono max-w-[140px] truncate" title={item.cuentaContable}>{item.cuentaContable || '-'}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -510,16 +740,19 @@ function EstadoResultadoView({ onBack, dbData }) {
     const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
     const resData = monthData.filter(item => !item.path.toUpperCase().includes('ACTIVO') && !item.path.toUpperCase().includes('PASIVO') && !item.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(item.name));
     
+    const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
     resData.forEach(item => {
       const pathArray = item.path.split('>');
       let cur = root;
       pathArray.forEach(folderName => {
-        let folder = cur.find(n => n.n === folderName);
-        if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
+        const key = normKey(folderName);
+        let folder = cur.find(n => normKey(n.n) === key);
+        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
         cur = folder.c;
       });
-      let leaf = cur.find(n => n.n === item.name && n.isLeaf);
-      if (!leaf) cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
+      const leafKey = normKey(item.name);
+      let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
+      if (!leaf) cur.push({ n: item.name.trim(), u: item.usd, b: item.bs, isLeaf: true });
       else { leaf.u += item.usd; leaf.b += item.bs; }
     });
     const compute = (nodes) => {
@@ -757,6 +990,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
   const [activeCode, setActiveCode] = useState(null);
+  const [tasa, setTasa] = useState(90); // Tasa Bs/USD configurable
 
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => {
     try { const saved = localStorage.getItem('jiret_highlighted_accounts'); return saved ? new Set(JSON.parse(saved)) : new Set(); } catch(e){return new Set();}
@@ -767,18 +1001,24 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
     const root = [];
     const monthData = dbData.filter(d => d.month === selectedMonth);
     const balanceData = monthData.filter(item => item.path.toUpperCase().includes('ACTIVO') || item.path.toUpperCase().includes('PASIVO') || item.path.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name));
-    
+    const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
+
     balanceData.forEach(item => {
       const pathArray = item.path.split('>');
       let cur = root;
       pathArray.forEach(folderName => {
-        let folder = cur.find(n => n.n === folderName);
-        if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
+        const key = normKey(folderName);
+        let folder = cur.find(n => normKey(n.n) === key);
+        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
         cur = folder.c;
       });
-      let leaf = cur.find(n => n.n === item.name && n.isLeaf);
-      if (!leaf) cur.push({ n: item.name, u: item.usd, b: item.bs, isLeaf: true });
-      else { leaf.u += item.usd; leaf.b += item.bs; }
+      // Conversión multimoneda: si sólo hay bs, derivar usd; si sólo usd, derivar bs
+      const usdVal = item.usd || (item.bs ? item.bs / tasa : 0);
+      const bsVal  = item.bs  || (item.usd ? item.usd * tasa : 0);
+      const leafKey = normKey(item.name);
+      let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
+      if (!leaf) cur.push({ n: item.name.trim(), u: usdVal, b: bsVal, isLeaf: true });
+      else { leaf.u += usdVal; leaf.b += bsVal; }
     });
     const compute = (nodes) => {
       let u = 0, b = 0;
@@ -787,7 +1027,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
     };
     compute(root);
     return root;
-  }, [dbData, selectedMonth]);
+  }, [dbData, selectedMonth, tasa]);
 
   let totalActivos = 0; let totalPasPat = 0;
   tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIVO') || n.n.startsWith('1')) totalActivos += n.u; else totalPasPat += n.u; });
@@ -798,17 +1038,25 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
 
   return (
     <div className="min-h-screen bg-[#f1f5f9]">
-      <header className="bg-white border-b-2 border-blue-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md">
-        <div className="flex items-center gap-4">
+      <header className="bg-white border-b-2 border-blue-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-2">
+        <div className="flex items-center gap-4 flex-wrap">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-blue-600 transition-colors"><ArrowLeft size={16}/> Salir al Panel</button>
           {availableMonths.length > 0 && (
             <div className="border-l-2 border-slate-200 pl-4 flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Corte al Mes:</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Corte:</span>
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-blue-50 border border-blue-300 text-blue-700 text-xs rounded-lg block p-1.5 font-bold uppercase cursor-pointer outline-none">
                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           )}
+          <div className="border-l-2 border-slate-200 pl-4 flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tasa Bs/USD:</span>
+            <input
+              type="number" min="1" step="0.01" value={tasa}
+              onChange={e => setTasa(parseFloat(e.target.value) || 1)}
+              className="bg-amber-50 border border-amber-300 text-amber-800 text-xs rounded-lg p-1.5 w-24 font-black outline-none focus:ring-2 focus:ring-amber-400"
+            />
+          </div>
         </div>
         <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
           <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
@@ -832,7 +1080,12 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
             <table className="w-full text-left border-collapse">
               <thead className="bg-slate-800 text-[10px] uppercase font-black text-slate-300">
-                <tr><th className="px-4 py-5 w-[55%]">Estructura</th><th className="px-3 py-5 text-right">Saldo USD</th><th className="px-3 py-5 text-right hidden sm:table-cell">Bs.</th><th className="px-3 py-5 text-right">%</th></tr>
+                <tr>
+                  <th className="px-4 py-5 w-[55%]">Estructura</th>
+                  <th className="px-3 py-5 text-right text-blue-300">Saldo USD</th>
+                  <th className="px-3 py-5 text-right text-amber-300 hidden sm:table-cell">Equiv. Bs. <span className="text-slate-500 font-normal normal-case">(× {tasa})</span></th>
+                  <th className="px-3 py-5 text-right">%</th>
+                </tr>
               </thead>
               <tbody key={expandKey}>
                 {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={a => setHighlightedAccounts(p => {const s=new Set(p); if(s.has(a))s.delete(a); else s.add(a); return s;})} onShowReport={setActiveCode} isBalance={true}/>)}
@@ -908,39 +1161,31 @@ function ReportesFinancierosApp() {
     } catch (error) { alert("Error al procesar los Saldos."); }
   };
 
-  const handleUploadAuxCxC = async (e) => {
+  // Un solo manejador: el Excel tiene ambas hojas (CxC + CxP) y el ruteo es por Cuenta Contable
+  const handleUploadAuxiliar = async (e) => {
     if (!e.target.files.length) return;
     try {
-      const parsed = await processAuxFile(e.target.files, 'cxc');
+      const parsed = await processAuxFile(e.target.files);
       setAuxDataConfig(prev => ({
         ...prev,
-        cxc_general: [...(prev.cxc_general || []), ...parsed.cxc_general],
-        cxc_zuliana: [...(prev.cxc_zuliana || []), ...parsed.cxc_zuliana],
+        cxc_general:   [...(prev.cxc_general   || []), ...parsed.cxc_general],
+        cxc_zuliana:   [...(prev.cxc_zuliana   || []), ...parsed.cxc_zuliana],
+        cxp_autototal: [...(prev.cxp_autototal || []), ...parsed.cxp_autototal],
+        cxp_surepack:  [...(prev.cxp_surepack  || []), ...parsed.cxp_surepack],
+        cxp_pacomela:  [...(prev.cxp_pacomela  || []), ...parsed.cxp_pacomela],
+        cxp_yancarlos: [...(prev.cxp_yancarlos || []), ...parsed.cxp_yancarlos],
+        cxp_general:   [...(prev.cxp_general   || []), ...parsed.cxp_general],
       }));
-      const total = parsed.cxc_general.length + parsed.cxc_zuliana.length;
-      alert(`✅ CxC procesado: ${total} líneas mapeadas.\n• Clientes generales (1.1.02.01.001): ${parsed.cxc_general.length}\n• Zuliana de Empaque (1.1.05.01.008): ${parsed.cxc_zuliana.length}`);
-    } catch (err) { alert("❌ Error al procesar CxC: " + err.message); }
+      const totCxC = parsed.cxc_general.length + parsed.cxc_zuliana.length;
+      const totCxP = parsed.cxp_autototal.length + parsed.cxp_surepack.length + parsed.cxp_pacomela.length + parsed.cxp_yancarlos.length + parsed.cxp_general.length;
+      alert(`✅ Auxiliares procesados.\n— CxC: ${totCxC} líneas (General: ${parsed.cxc_general.length} | Zuliana: ${parsed.cxc_zuliana.length})\n— CxP: ${totCxP} líneas (Sure Pack: ${parsed.cxp_surepack.length} | Pacomela: ${parsed.cxp_pacomela.length} | Yancarlos: ${parsed.cxp_yancarlos.length} | Auto Total: ${parsed.cxp_autototal.length} | General: ${parsed.cxp_general.length})`);
+    } catch (err) { alert("❌ Error al procesar auxiliares: " + err.message); }
     e.target.value = '';
   };
 
-  const handleUploadAuxCxP = async (e) => {
-    if (!e.target.files.length) return;
-    try {
-      const parsed = await processAuxFile(e.target.files, 'cxp');
-      setAuxDataConfig(prev => ({
-        ...prev,
-        cxp_autototal:  [...(prev.cxp_autototal  || []), ...parsed.cxp_autototal],
-        cxp_surepack:   [...(prev.cxp_surepack   || []), ...parsed.cxp_surepack],
-        cxp_pacomela:   [...(prev.cxp_pacomela   || []), ...parsed.cxp_pacomela],
-        cxp_yancarlos:  [...(prev.cxp_yancarlos  || []), ...parsed.cxp_yancarlos],
-        cxp_general:    [...(prev.cxp_general    || []), ...parsed.cxp_general],
-        cxc_zuliana:    [...(prev.cxc_zuliana    || []), ...parsed.cxc_zuliana],
-      }));
-      const total = parsed.cxp_autototal.length + parsed.cxp_surepack.length + parsed.cxp_pacomela.length + parsed.cxp_yancarlos.length;
-      alert(`✅ CxP procesado: ${total} líneas mapeadas.\n• Auto Total (2.1.01.02.008): ${parsed.cxp_autototal.length}\n• Sure Pack (2.1.01.01.004): ${parsed.cxp_surepack.length}\n• Pacomela (2.1.01.02.007): ${parsed.cxp_pacomela.length}\n• Yancarlos Pérez (2.1.01.01.003): ${parsed.cxp_yancarlos.length}`);
-    } catch (err) { alert("❌ Error al procesar CxP: " + err.message); }
-    e.target.value = '';
-  };
+  // Handlers legacy (por si acaso)
+  const handleUploadAuxCxC = handleUploadAuxiliar;
+  const handleUploadAuxCxP = handleUploadAuxiliar;
 
   const handleSimulatePDFs = () => {
     setAuxDataConfig(DEFAULT_AUX_DATA);
@@ -991,16 +1236,12 @@ function ReportesFinancierosApp() {
               <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUploadResultados}/>
             </label>
 
-            <label className={`${auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxc_zuliana?.length > 0 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-2`}>
-              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxc_zuliana?.length > 0) ? <CheckCircle size={14}/> : <Users size={14}/>}
-              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxc_zuliana?.length > 0) ? `CxC (${(auxDataConfig.cxc_general?.length||0)+(auxDataConfig.cxc_zuliana?.length||0)} reg.)` : '4a. Auxiliar CxC'}
-              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.txt" className="hidden" onChange={handleUploadAuxCxC}/>
-            </label>
-
-            <label className={`${auxDataConfig?.cxp_surepack?.length > 0 || auxDataConfig?.cxp_autototal?.length > 0 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3`}>
-              {(auxDataConfig?.cxp_surepack?.length > 0 || auxDataConfig?.cxp_autototal?.length > 0) ? <CheckCircle size={14}/> : <Briefcase size={14}/>}
-              {(auxDataConfig?.cxp_surepack?.length > 0 || auxDataConfig?.cxp_autototal?.length > 0) ? `CxP (${(auxDataConfig.cxp_surepack?.length||0)+(auxDataConfig.cxp_autototal?.length||0)+(auxDataConfig.cxp_pacomela?.length||0)+(auxDataConfig.cxp_yancarlos?.length||0)} reg.)` : '4b. Auxiliar CxP'}
-              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.txt" className="hidden" onChange={handleUploadAuxCxP}/>
+            <label className={`${(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxp_surepack?.length > 0) ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-2`}>
+              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxp_surepack?.length > 0) ? <CheckCircle size={14}/> : <FileText size={14}/>}
+              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxp_surepack?.length > 0)
+                ? `Aux. cargados (${(auxDataConfig.cxc_general?.length||0)+(auxDataConfig.cxp_general?.length||0)+(auxDataConfig.cxp_surepack?.length||0)} reg.)`
+                : '4. Auxiliares CxC / CxP'}
+              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.txt" className="hidden" onChange={handleUploadAuxiliar}/>
             </label>
 
             <button onClick={handleSimulatePDFs} className="bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 px-4 py-2 rounded-xl font-black uppercase text-[8px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm">
