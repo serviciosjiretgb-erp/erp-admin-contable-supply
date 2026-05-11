@@ -5,16 +5,16 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// LÓGICA DE PROCESAMIENTO AVANZADA (Parser Inteligente)
+// LÓGICA DE PROCESAMIENTO AVANZADA (Parser de CSV de Excel)
 // ============================================================================
-const processTxtFiles = async (files) => {
+const processCsvFiles = async (files) => {
   let allParsedData = [];
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     const text = await file.text();
     
-    // Identificar el mes
+    // Identificar el mes según el nombre del archivo
     let month = "Enero"; 
     const monthMatch = file.name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
     if (monthMatch) month = monthMatch[0].charAt(0).toUpperCase() + monthMatch[0].slice(1).toLowerCase();
@@ -24,40 +24,44 @@ const processTxtFiles = async (files) => {
 
     lines.forEach(line => {
       const cleanLine = line.trim();
-      if (!cleanLine || cleanLine.includes("SERVICIOS JIRET") || cleanLine.includes("RIF:") || cleanLine.includes("Etiquetas de fila")) return;
-      if (cleanLine.includes("ESTADO DE RESULTADO") || cleanLine.startsWith("Total") || cleanLine.includes("RESULTADO")) return;
+      if (!cleanLine) return;
 
-      const usdMatch = line.match(/USD\s*([-\d.,]+|\s*-\s*)/);
-      const bsMatch = line.match(/Bs\.\s*([-\d.,]+|\s*-\s*)/);
+      // Expresión regular para separar por comas (ignorando comas dentro de comillas)
+      const cols = cleanLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim());
+      
+      const name = cols[0];
+      const usdStr = cols[1];
+      const bsStr = cols[2];
 
-      if (usdMatch && bsMatch) {
-        // Es una línea de detalle (factura)
-        const name = line.split('USD')[0].trim();
-        const cleanVal = (val) => {
-          if (!val || val.trim() === '-' || val.trim() === '') return 0;
-          return parseFloat(val.trim().replace(/\./g, '').replace(',', '.'));
-        };
+      // Ignorar líneas vacías, encabezados o totales generales de Excel
+      if (!name || name === 'Etiquetas de fila' || name === 'Total general' || name.replace(/,/g, '') === '') return;
 
-        const usd = cleanVal(usdMatch[1]);
-        const bs = cleanVal(bsMatch[1]);
+      // LÓGICA DE CARPETAS DE EXCEL:
+      // Cuando Excel dice "Total [Categoría]", significa que se cierra esa carpeta.
+      if (name.startsWith('Total ')) {
+        pathStack.pop();
+        return; 
+      }
+
+      // Si no hay valores USD ni Bs, es el Título de una Categoría (Carpeta Nueva)
+      if (!usdStr && !bsStr) {
+        pathStack.push(name);
+      } 
+      // Si hay montos, es una cuenta final con saldos (Ej. 4.1.01.01.001)
+      else if (usdStr || bsStr) {
+        const usd = parseFloat(usdStr) || 0;
+        const bs = parseFloat(bsStr) || 0;
         
-        const fullPath = pathStack.join('>');
-        allParsedData.push({ month, path: fullPath, name, usd, bs });
-      } else {
-        // Es una categoría o cuenta
-        const parts = line.split('\t').map(p => p.trim()).filter(p => p !== "");
-        const categoryName = parts[0];
-
-        if (["INGRESOS", "COSTOS", "GASTOS"].includes(categoryName)) {
-          pathStack = [categoryName];
-        } else if (categoryName) {
-          if (pathStack[pathStack.length - 1] !== categoryName) {
-            if (/^\d\./.test(categoryName)) {
-              pathStack = pathStack.filter(p => !/^\d\./.test(p));
-            }
-            pathStack.push(categoryName);
+        // Limpiamos la ruta para no mostrar duplicados (Ej: INGRESOS OP > INGRESOS OP)
+        let cleanPath = [];
+        pathStack.forEach(p => {
+          if (cleanPath.length === 0 || cleanPath[cleanPath.length - 1] !== p) {
+            cleanPath.push(p);
           }
-        }
+        });
+        
+        const fullPath = cleanPath.join('>');
+        allParsedData.push({ month, path: fullPath, name, usd, bs });
       }
     });
   }
@@ -65,7 +69,7 @@ const processTxtFiles = async (files) => {
 };
 
 // ============================================================================
-// COMPONENTE: FILA EXPANSIBLE (Con Subtotales)
+// COMPONENTE: FILA EXPANSIBLE (Maneja Subtotales Automáticos)
 // ============================================================================
 const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
   const isAccountNode = /^\d\./.test(node.n);
@@ -116,7 +120,7 @@ const ExpandableRow = ({ node, level = 0, totalVentasUSD }) => {
         <ExpandableRow key={idx} node={child} level={level + 1} totalVentasUSD={totalVentasUSD} />
       ))}
 
-      {/* Fila de Subtotal/Total de la categoría (Se muestra al final de los hijos si está abierto) */}
+      {/* Fila de Subtotal al final de la categoría */}
       {isOpen && !isLeaf && (
         <tr className={level === 0 ? "bg-gray-300 border-b-4 border-black" : "bg-orange-100 border-b-2 border-orange-300"}>
           <td className={`px-4 py-3 font-black text-xs uppercase tracking-widest ${level === 0 ? 'text-black' : 'text-orange-900'}`} style={{ paddingLeft: `${level * 1.5 + 2}rem` }}>
@@ -190,7 +194,6 @@ const EstadoResultado = ({ onBack, dbData }) => {
       </header>
       
       <main className="p-4 md:p-8 max-w-6xl mx-auto">
-        {/* HOJA MEMBRETADA */}
         <div className="bg-white px-8 py-10 border-t-8 border-[#F97316] mb-8 shadow-md flex flex-col items-center text-center">
           <h1 className="text-2xl sm:text-3xl font-black font-serif text-[#111827] uppercase tracking-tight mb-2">Servicios Jiret G&B, C.A.</h1>
           <div className="w-16 h-1.5 bg-[#F97316] mb-4 rounded-full"></div>
@@ -211,7 +214,7 @@ const EstadoResultado = ({ onBack, dbData }) => {
         {dbData.length === 0 ? (
           <div className="bg-white p-12 text-center rounded-xl shadow-sm border-t-4 border-orange-500">
             <AlertCircle size={48} className="mx-auto text-orange-400 mb-4"/>
-            <p className="text-gray-500 font-bold">No hay reportes cargados. Por favor, importa los archivos TXT en el Dashboard.</p>
+            <p className="text-gray-500 font-bold">No hay reportes cargados. Por favor, importa los archivos CSV en el Dashboard.</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
@@ -227,7 +230,6 @@ const EstadoResultado = ({ onBack, dbData }) => {
               <tbody>
                 {tree.map((node, i) => <ExpandableRow key={i} node={node} totalVentasUSD={baseVentas}/>)}
                 
-                {/* FILA FINAL DE RESULTADO */}
                 <tr className="bg-[#111827] text-white font-black">
                   <td className="px-4 py-6 text-sm uppercase tracking-widest">RESULTADO DEL EJERCICIO</td>
                   <td className="px-4 py-6 text-right text-base text-orange-400 font-mono">{formatResult(totalUSD)}</td>
@@ -249,9 +251,9 @@ const EstadoResultado = ({ onBack, dbData }) => {
 const ContDash = ({ onSelectModule, dbData, setDbData }) => {
   const handleUpload = async (e) => {
     if (e.target.files.length === 0) return;
-    const newData = await processTxtFiles(e.target.files);
+    const newData = await processCsvFiles(e.target.files);
     setDbData(newData);
-    alert(`Reportes importados: ${e.target.files.length}. Revisa el Estado de Resultados.`);
+    alert(`Se procesaron ${e.target.files.length} reportes CSV exitosamente. Revisa el Estado de Resultados.`);
   };
 
   return (
@@ -267,13 +269,13 @@ const ContDash = ({ onSelectModule, dbData, setDbData }) => {
       <main className="p-8 max-w-5xl mx-auto">
         <div className="bg-white p-8 rounded-2xl border-2 border-dashed border-slate-300 mb-8 text-center shadow-sm">
           <Upload className="mx-auto text-orange-500 mb-4" size={40}/>
-          <h2 className="font-black text-xl text-slate-800 uppercase mb-1">Cargar Reportes de Sistema (.txt)</h2>
-          <p className="text-slate-500 text-sm mb-6 max-w-lg mx-auto">Selecciona uno o varios archivos TXT generados por el sistema matriz para consolidar la información financiera mensual.</p>
+          <h2 className="font-black text-xl text-slate-800 uppercase mb-1">Cargar Reportes de Sistema (.csv)</h2>
+          <p className="text-slate-500 text-sm mb-6 max-w-lg mx-auto">Exporta tu reporte desde Excel como <strong>CSV delimitado por comas</strong> y súbelo aquí para estructurarlo.</p>
           
           <div className="flex justify-center items-center gap-4">
             <label className="bg-[#111827] text-white px-8 py-3 rounded-xl font-black uppercase text-xs cursor-pointer hover:bg-black transition-all flex items-center gap-2 shadow-lg">
-              <Upload size={16}/> Buscar Archivos
-              <input type="file" multiple accept=".txt" className="hidden" onChange={handleUpload}/>
+              <Upload size={16}/> Buscar Archivos CSV
+              <input type="file" multiple accept=".csv" className="hidden" onChange={handleUpload}/>
             </label>
             {dbData.length > 0 && (
               <span className="flex items-center gap-1 text-green-600 font-bold text-xs uppercase bg-green-50 px-4 py-3 rounded-xl border border-green-200">
