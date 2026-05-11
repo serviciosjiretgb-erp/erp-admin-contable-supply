@@ -157,6 +157,115 @@ const processSaldosBalance = async (file, planCuentas) => {
 };
 
 // ============================================================================
+// 1b. PROCESADOR DE AUXILIARES (CxC / CxP)
+// ============================================================================
+const processAuxFile = async (files, fileType) => {
+  const result = { cxc_general: [], cxc_zuliana: [], cxp_autototal: [], cxp_surepack: [], cxp_pacomela: [], cxp_yancarlos: [] };
+
+  const parseVal = (v) => {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return v;
+    let s = String(v).replace(/\$|Bs\.|USD/ig, '').trim();
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(/,/g, '.');
+    else if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g, '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  };
+
+  const parseDate = (v) => {
+    if (!v) return '-';
+    if (typeof v === 'number') {
+      const d = new Date((v - 25569) * 86400 * 1000);
+      return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    }
+    return String(v).trim();
+  };
+
+  for (const file of Array.from(files)) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    let dataRows = [];
+
+    if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm') {
+      const XL = await loadSheetJS();
+      const buffer = await file.arrayBuffer();
+      const wb = XL.read(buffer, { type: 'array', cellDates: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      dataRows = XL.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+    } else if (ext === 'csv' || ext === 'txt') {
+      const text = await file.text();
+      dataRows = text.split(/\r?\n/).map(line => {
+        if (!line.trim()) return null;
+        return line.split(/[,;](?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+      }).filter(Boolean);
+    }
+    if (!dataRows.length) continue;
+
+    // --- Detectar fila de encabezado ---
+    let headerRow = -1;
+    let colMap = { cod: -1, nombre: -1, doc: -1, emision: -1, vence: -1, monto: -1 };
+
+    for (let i = 0; i < Math.min(15, dataRows.length); i++) {
+      const row = dataRows[i];
+      if (!row) continue;
+      const cells = row.map(c => c ? String(c).toLowerCase().trim() : '');
+      const hasName = cells.some(c => c.includes('nombre') || c.includes('cliente') || c.includes('proveedor') || c.includes('razon') || c.includes('razón') || c.includes('sujeto'));
+      if (hasName) {
+        headerRow = i;
+        cells.forEach((c, idx) => {
+          if ((c.includes('cód') || c.includes('cod') || c === 'id') && colMap.cod === -1) colMap.cod = idx;
+          else if ((c.includes('nombre') || c.includes('cliente') || c.includes('proveedor') || c.includes('razon') || c.includes('razón') || c.includes('sujeto')) && colMap.nombre === -1) colMap.nombre = idx;
+          else if ((c.includes('doc') || c.includes('factura') || c.includes('nro') || c.includes('número') || c.includes('numero')) && colMap.doc === -1) colMap.doc = idx;
+          else if ((c.includes('emi') || (c.includes('fecha') && !c.includes('venc'))) && colMap.emision === -1) colMap.emision = idx;
+          else if (c.includes('venc') && colMap.vence === -1) colMap.vence = idx;
+          else if ((c.includes('monto') || c.includes('saldo') || c.includes('importe') || c.includes('total') || c === 'usd' || c === 'bs') && colMap.monto === -1) colMap.monto = idx;
+        });
+        break;
+      }
+    }
+
+    // Fallback posicional si no se encontró encabezado
+    if (headerRow === -1 || colMap.nombre === -1) {
+      colMap = { cod: 0, nombre: 1, doc: 2, emision: 3, vence: 4, monto: 5 };
+      headerRow = 0;
+    }
+
+    // --- Procesar filas de datos ---
+    for (let i = headerRow + 1; i < dataRows.length; i++) {
+      const row = dataRows[i];
+      if (!row || row.every(c => !c)) continue;
+
+      const nombre = colMap.nombre >= 0 && row[colMap.nombre] ? String(row[colMap.nombre]).trim().toUpperCase() : '';
+      if (!nombre) continue;
+
+      const monto = colMap.monto >= 0 ? parseVal(row[colMap.monto]) : null;
+      if (monto === null || monto === 0) continue;
+
+      const record = {
+        cod:     colMap.cod     >= 0 && row[colMap.cod]     ? String(row[colMap.cod]).trim()  : '-',
+        nombre,
+        doc:     colMap.doc     >= 0 && row[colMap.doc]     ? String(row[colMap.doc]).trim()  : '-',
+        emision: colMap.emision >= 0                        ? parseDate(row[colMap.emision])  : '-',
+        vence:   colMap.vence   >= 0                        ? parseDate(row[colMap.vence])    : '-',
+        monto,
+      };
+
+      // --- MAPEO POR NOMBRE ---
+      if (fileType === 'cxc') {
+        if (nombre.includes('ZULIANA DE EMPAQUE')) result.cxc_zuliana.push(record);
+        else result.cxc_general.push(record);
+      } else { // cxp
+        if      (nombre.includes('AUTO TOTAL'))                                   result.cxp_autototal.push(record);
+        else if (nombre.includes('SURE PACK'))                                    result.cxp_surepack.push(record);
+        else if (nombre.includes('PACOMELA') || nombre.includes('AGRO INDUSTRIAS LACTEAS')) result.cxp_pacomela.push(record);
+        else if (nombre.includes('YANCARLOS') || nombre.includes('PEREZ CASANOVA'))         result.cxp_yancarlos.push(record);
+        // Proveedor no reconocido: se ignora silenciosamente (se puede ampliar)
+      }
+    }
+  }
+  return result;
+};
+
+// ============================================================================
 // 2. CONFIGURACIÓN DE MAPEO Y DATA PRECARGADA (PDFs)
 // ============================================================================
 const ACCOUNT_MAPS = {
@@ -267,8 +376,8 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
   const mapInfo = ACCOUNT_MAPS[accountCode] || { type: accountCode === 'cxc' ? 'cxc' : 'cxp', filter: 'ALL', label: 'Reporte General' };
   const allData = auxDataConfig[mapInfo.type] || [];
   
-  const filteredData = mapInfo.filter === 'ALL' 
-    ? allData 
+  const filteredData = (!mapInfo.filter || mapInfo.filter === 'ALL')
+    ? allData
     : allData.filter(d => d.nombre.toUpperCase().includes(mapInfo.filter.toUpperCase()));
 
   const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
@@ -744,6 +853,38 @@ function ReportesFinancierosApp() {
     } catch (error) { alert("Error al procesar los Saldos."); }
   };
 
+  const handleUploadAuxCxC = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const parsed = await processAuxFile(e.target.files, 'cxc');
+      setAuxDataConfig(prev => ({
+        ...prev,
+        cxc_general: [...(prev.cxc_general || []), ...parsed.cxc_general],
+        cxc_zuliana: [...(prev.cxc_zuliana || []), ...parsed.cxc_zuliana],
+      }));
+      const total = parsed.cxc_general.length + parsed.cxc_zuliana.length;
+      alert(`✅ CxC procesado: ${total} líneas mapeadas.\n• Clientes generales (1.1.02.01.001): ${parsed.cxc_general.length}\n• Zuliana de Empaque (1.1.05.01.008): ${parsed.cxc_zuliana.length}`);
+    } catch (err) { alert("❌ Error al procesar CxC: " + err.message); }
+    e.target.value = '';
+  };
+
+  const handleUploadAuxCxP = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const parsed = await processAuxFile(e.target.files, 'cxp');
+      setAuxDataConfig(prev => ({
+        ...prev,
+        cxp_autototal:  [...(prev.cxp_autototal  || []), ...parsed.cxp_autototal],
+        cxp_surepack:   [...(prev.cxp_surepack   || []), ...parsed.cxp_surepack],
+        cxp_pacomela:   [...(prev.cxp_pacomela   || []), ...parsed.cxp_pacomela],
+        cxp_yancarlos:  [...(prev.cxp_yancarlos  || []), ...parsed.cxp_yancarlos],
+      }));
+      const total = parsed.cxp_autototal.length + parsed.cxp_surepack.length + parsed.cxp_pacomela.length + parsed.cxp_yancarlos.length;
+      alert(`✅ CxP procesado: ${total} líneas mapeadas.\n• Auto Total (2.1.01.02.008): ${parsed.cxp_autototal.length}\n• Sure Pack (2.1.01.01.004): ${parsed.cxp_surepack.length}\n• Pacomela (2.1.01.02.007): ${parsed.cxp_pacomela.length}\n• Yancarlos Pérez (2.1.01.01.003): ${parsed.cxp_yancarlos.length}`);
+    } catch (err) { alert("❌ Error al procesar CxP: " + err.message); }
+    e.target.value = '';
+  };
+
   const handleSimulatePDFs = () => {
     setAuxDataConfig(DEFAULT_AUX_DATA);
     alert("✅ PDFs auxiliares procesados y mapeados al Balance General.");
@@ -793,8 +934,20 @@ function ReportesFinancierosApp() {
               <input type="file" multiple accept=".xlsx,.xls,.xlsm,.txt,.csv" className="hidden" onChange={handleUploadResultados}/>
             </label>
 
-            <button onClick={handleSimulatePDFs} className={`${hasAuxData ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm`}>
-              {hasAuxData ? <CheckCircle size={14}/> : <FileOutput size={14}/>} {hasAuxData ? 'PDFs Procesados' : '4. Procesar PDFs Aux.'}
+            <label className={`${auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxc_zuliana?.length > 0 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-teal-50 text-teal-600 border border-teal-200 hover:bg-teal-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-2`}>
+              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxc_zuliana?.length > 0) ? <CheckCircle size={14}/> : <Users size={14}/>}
+              {(auxDataConfig?.cxc_general?.length > 0 || auxDataConfig?.cxc_zuliana?.length > 0) ? `CxC (${(auxDataConfig.cxc_general?.length||0)+(auxDataConfig.cxc_zuliana?.length||0)} reg.)` : '4a. Auxiliar CxC'}
+              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.txt" className="hidden" onChange={handleUploadAuxCxC}/>
+            </label>
+
+            <label className={`${auxDataConfig?.cxp_surepack?.length > 0 || auxDataConfig?.cxp_autototal?.length > 0 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white'} px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-widest cursor-pointer transition-colors flex items-center justify-center gap-2 w-full shadow-sm mb-3`}>
+              {(auxDataConfig?.cxp_surepack?.length > 0 || auxDataConfig?.cxp_autototal?.length > 0) ? <CheckCircle size={14}/> : <Briefcase size={14}/>}
+              {(auxDataConfig?.cxp_surepack?.length > 0 || auxDataConfig?.cxp_autototal?.length > 0) ? `CxP (${(auxDataConfig.cxp_surepack?.length||0)+(auxDataConfig.cxp_autototal?.length||0)+(auxDataConfig.cxp_pacomela?.length||0)+(auxDataConfig.cxp_yancarlos?.length||0)} reg.)` : '4b. Auxiliar CxP'}
+              <input type="file" multiple accept=".xlsx,.xls,.xlsm,.csv,.txt" className="hidden" onChange={handleUploadAuxCxP}/>
+            </label>
+
+            <button onClick={handleSimulatePDFs} className="bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200 px-4 py-2 rounded-xl font-black uppercase text-[8px] tracking-widest transition-colors flex items-center justify-center gap-2 w-full shadow-sm">
+              <FileOutput size={12}/> Cargar datos de demo
             </button>
           </div>
           
