@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// 0. ESTILOS DE IMPRESIÓN (PDF CENTRADO Y ESCALADO)
+// 0. ESTILOS DE IMPRESIÓN Y DISEÑO PROFESIONAL
 // ============================================================================
 const PrintStyles = () => (
   <style>{`
@@ -19,7 +19,6 @@ const PrintStyles = () => (
       tr { page-break-inside: avoid; page-break-after: auto; }
       thead { display: table-header-group; }
       th, td { word-wrap: break-word; overflow: hidden; padding: 8px 4px !important; }
-      .print-only { display: block !important; }
     }
   `}</style>
 );
@@ -27,44 +26,38 @@ const PrintStyles = () => (
 const HeaderMembretado = ({ isExport = false }) => (
   <div className={`${isExport ? 'flex' : 'hidden print:flex'} w-full justify-between items-end border-b-[3px] border-orange-500 pb-3 mb-6 pt-4 px-2 bg-white`}>
     <div>
-      <p className="text-slate-400 text-lg mb-1 leading-none">Supply</p>
+      <p className="text-slate-400 text-lg mb-1 leading-none font-bold">Supply</p>
       <h1 className="text-5xl font-black leading-none tracking-tight text-black">G<span className="text-orange-500">&</span>B</h1>
     </div>
     <div className="text-right">
       <h2 className="text-lg font-black uppercase text-black tracking-widest">SERVICIOS JIRET G&B, C.A.</h2>
       <p className="text-xs font-bold text-slate-700">RIF: J-412309374</p>
-      <p className="text-[10px] text-slate-500 mt-1">AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB</p>
-      <p className="text-[10px] text-slate-500">SECTOR EL TREBOL MARACAIBO-ZULIA</p>
-      <p className="text-[10px] text-slate-500">Tel: 0414-693.03.42</p>
+      <p className="text-[10px] text-slate-500 mt-1 uppercase">AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 PB</p>
+      <p className="text-[10px] text-slate-500 uppercase">MARACAIBO - EDO. ZULIA</p>
     </div>
   </div>
 );
 
 // ============================================================================
-// 1. LÓGICA DE EXPORTACIÓN EXCEL PROFESIONAL (FIX: NO PISA DATOS)
+// 1. MOTOR DE EXPORTACIÓN EXCEL (FIX: NO PISA DATOS)
 // ============================================================================
 const handleExportExcel = (tableId, fileName, reportTitle) => {
-  if (!window.XLSX) { alert("Cargando librería de Excel..."); return; }
-  
+  if (!window.XLSX) { alert("Cargando librería..."); return; }
   const table = document.getElementById(tableId);
   const wsTable = window.XLSX.utils.table_to_sheet(table);
   const tableData = window.XLSX.utils.sheet_to_json(wsTable, { header: 1 });
 
-  // Membrete en filas separadas
   const headerData = [
     ["SERVICIOS JIRET G&B, C.A."],
     ["RIF: J-412309374"],
     [reportTitle ? reportTitle.toUpperCase() : fileName.toUpperCase()],
     [`Fecha de reporte: ${new Date().toLocaleDateString()}`],
-    [] // Fila de separación
+    [] 
   ];
 
-  // Unir membrete y datos de la tabla (empuja la tabla hacia abajo)
   const finalData = [...headerData, ...tableData];
   const ws = window.XLSX.utils.aoa_to_sheet(finalData);
-
-  const colWidths = [{ wch: 55 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
-  ws['!cols'] = colWidths;
+  ws['!cols'] = [{ wch: 55 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 12 }];
 
   const wb = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(wb, ws, "Reporte");
@@ -72,80 +65,64 @@ const handleExportExcel = (tableId, fileName, reportTitle) => {
 };
 
 // ============================================================================
-// 2. LÓGICA DE PROCESAMIENTO DE ARCHIVOS
+// 2. PROCESADORES DE DATOS (ANTI-PANTALLA BLANCA)
 // ============================================================================
-const loadSheetJS = () => new Promise((resolve) => {
-  if (window.XLSX) { resolve(window.XLSX); return; }
+const loadSheetJS = () => new Promise((r) => {
+  if (window.XLSX) return r(window.XLSX);
   const s = document.createElement('script');
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  s.onload = () => resolve(window.XLSX);
+  s.onload = () => r(window.XLSX);
   document.head.appendChild(s);
 });
 
-const monthOrder = { "Enero": 1, "Febrero": 2, "Marzo": 3, "Abril": 4, "Mayo": 5, "Junio": 6, "Julio": 7, "Agosto": 8, "Septiembre": 9, "Octubre": 10, "Noviembre": 11, "Diciembre": 12 };
+const monthOrder = { "Saldos Iniciales": 0, "Enero": 1, "Febrero": 2, "Marzo": 3, "Abril": 4, "Mayo": 5, "Junio": 6, "Julio": 7, "Agosto": 8, "Septiembre": 9, "Octubre": 10, "Noviembre": 11, "Diciembre": 12 };
 
 const processFiles = async (files) => {
   let allParsedData = [];
-  const detectMonth = (name) => {
-    const m = name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
-    return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).toLowerCase() : 'Sin Mes';
+  const detectMonth = (n) => {
+    const m = (n||'').match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+    return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).toLowerCase() : 'Enero';
   };
-  const detectYear = (name) => {
-    const y = name.match(/20\d{2}/);
-    return y ? y[0] : new Date().getFullYear().toString();
-  };
+  const detectYear = (n) => { const y = (n||'').match(/20\d{2}/); return y ? y[0] : '2026'; };
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+  const XL = await loadSheetJS();
+  for (const file of Array.from(files)) {
     const month = detectMonth(file.name);
     const year = detectYear(file.name);
-    
-    const XL = await loadSheetJS();
     const buffer = await file.arrayBuffer();
     const wb = XL.read(buffer, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const dataRows = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
+    const rows = XL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null });
 
-    if (dataRows.length === 0) continue;
     let pathStack = [];
-
-    const smartPop = (stack, totalName) => {
-      const what = totalName.replace(/^Total\s+/i, '').trim().toUpperCase();
-      let idx = stack.length - 1;
-      while (idx >= 0) {
-        if (stack[idx].trim().toUpperCase() === what) { stack.splice(idx); break; }
-        idx--;
-      }
-    };
-
     const parseVal = (v) => {
       if (v === null || v === undefined || v === '') return null;
       if (typeof v === 'number') return v;
       let s = String(v).replace(/\$|Bs\./ig, '').trim();
       if (s.includes(',') && s.includes('.')) s = s.replace(/,/g, '');
       else if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g, '.');
-      const n = parseFloat(s);
-      return isNaN(n) ? null : n;
+      return isNaN(parseFloat(s)) ? null : parseFloat(s);
     };
 
-    for (let r = 0; r < dataRows.length; r++) {
-      const row = dataRows[r];
-      if (!row || row.length === 0) continue;
+    rows.forEach(row => {
+      if (!row || row.length === 0) return;
       const name = row[0] != null ? String(row[0]).trim() : '';
-      if (!name || name === 'Etiquetas de fila' || name === 'RESULTADO DEL EJERCICIO') continue;
-      if (name.startsWith('Total ')) { smartPop(pathStack, name); continue; }
-      
+      if (!name || name.includes('Etiquetas') || name.includes('RESULTADO')) return;
+      if (name.startsWith('Total ')) {
+        const what = name.replace(/^Total\s+/i, '').trim().toUpperCase();
+        let idx = pathStack.length - 1;
+        while (idx >= 0) { if (pathStack[idx].toUpperCase() === what) { pathStack.splice(idx); break; } idx--; }
+        return;
+      }
       const usd = parseVal(row[1]);
       const bs = parseVal(row[2]);
-      
       if (usd !== null) {
-        allParsedData.push({ month, year, path: pathStack.map(p => p.trim()).join('>'), name: name.trim(), usd: usd, bs: bs || 0 });
+        allParsedData.push({ month, year, path: pathStack.join('>'), name: name, usd, bs: bs || 0 });
       } else {
-        pathStack.push(name.trim());
+        pathStack.push(name);
       }
-    }
+    });
   }
-  return allParsedData.sort((a, b) => (a.year !== b.year ? parseInt(a.year) - parseInt(b.year) : monthOrder[a.month] - monthOrder[b.month]));
+  return allParsedData;
 };
 
 const processPlanCuentas = async (file) => {
@@ -160,64 +137,46 @@ const processPlanCuentas = async (file) => {
   return plan;
 };
 
-// ============================================================================
-// LÓGICA DE SALDOS INICIALES DESBLOQUEADA
-// ============================================================================
 const processSaldosBalance = async (file, planCuentas) => {
   const XL = await loadSheetJS();
   const buffer = await file.arrayBuffer();
   const wb = XL.read(buffer, { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
-
-  const detectYear = (name) => {
-    const y = name.match(/20\d{2}/);
-    return y ? y[0] : new Date().getFullYear().toString();
-  };
-  const fileYear = detectYear(file.name);
+  const rows = XL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null });
+  const year = file.name.match(/20\d{2}/) ? file.name.match(/20\d{2}/)[0] : '2026';
 
   const parseVal = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
+    if (!v) return 0;
     if (typeof v === 'number') return v;
     let s = String(v).replace(/USD|Bs\./ig, '').trim();
     if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(/,/g, '.');
     else if (s.includes(',')) s = s.replace(/,/g, '.');
-    const n = parseFloat(s);
-    return isNaN(n) ? 0 : n;
+    return isNaN(parseFloat(s)) ? 0 : parseFloat(s);
   };
 
-  let balanceData = [];
-  rows.forEach((row, i) => {
-    if (i === 0 || !row[0]) return; // Salta encabezado
-    const accountName = String(row[1] || row[0]).trim();
-    const path = planCuentas[accountName] || (accountName.includes('BANCO') ? 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE' : 'ACTIVOS>OTROS');
-    
-    balanceData.push({
-      month: 'Enero', // Por defecto si es saldo inicial
-      year: fileYear,
-      path: path,
-      name: accountName,
-      usd: parseVal(row[2] || row[1]), 
+  return rows.filter((r, i) => i > 0 && r[0]).map(row => {
+    const name = String(row[0]).trim();
+    // REGLA: Ignorar montos de CxC y CxP del archivo de saldos para que no se dupliquen
+    const isAuxAccount = name.startsWith('1.1.02') || name.startsWith('2.1.01');
+    return {
+      month: 'Saldos Iniciales',
+      year,
+      path: planCuentas[name] || 'ACTIVOS>OTROS',
+      name,
+      usd: isAuxAccount ? 0 : parseVal(row[1]),
       bs: 0
-    });
+    };
   });
-  return balanceData;
 };
-
-// ============================================================================
-// PROCESADOR DE AUXILIARES (DINÁMICO DESDE PESTAÑAS)
-// ============================================================================
 const processAuxFile = async (files) => {
   const result = {}; 
   const XL = await loadSheetJS();
   const parseVal = (v) => {
-    if (v === null || v === undefined || v === '') return 0;
+    if (!v) return 0;
     if (typeof v === 'number') return v;
     let s = String(v).replace(/\$|Bs\.|USD/ig, '').trim();
     if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(/,/g, '.');
-    else if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g, '.');
-    const n = parseFloat(s);
-    return isNaN(n) ? 0 : n;
+    else if (s.includes(',')) s = s.replace(/,/g, '.');
+    return isNaN(parseFloat(s)) ? 0 : parseFloat(s);
   };
 
   for (const file of Array.from(files)) {
@@ -225,265 +184,244 @@ const processAuxFile = async (files) => {
     const wb = XL.read(buffer, { type: 'array' });
     for (const sheetName of wb.SheetNames) {
       const rows = XL.utils.sheet_to_json(wb.Sheets[sheetName], { defval: null });
-      for (const rawRow of rows) {
+      rows.forEach(rawRow => {
         const row = {};
-        for (const key in rawRow) { row[key.trim().toLowerCase()] = rawRow[key]; }
+        for (const k in rawRow) { row[k.trim().toLowerCase()] = rawRow[k]; }
         const cc = row['cuenta contable'];
-        if (!cc) continue;
-        const match = cc.match(/^(\d[\d\.]+)/);
-        if (!match) continue;
-        const code = match[1];
+        if (!cc) return;
+        const code = cc.split('-')[0].trim();
         if (!result[code]) result[code] = { label: cc.replace(code, '').replace(/^[- ]+/, '').trim(), records: [] };
         result[code].records.push({
           cod: row['código'] || row['codigo'] || '-',
           nombre: row['descripción'] || row['descripcion'] || '-',
           operacion: row['operación'] || row['operacion'] || '-',
-          emision: row['emisión'] || row['emision'] || '-',
           vence: row['vencimiento'] || '-',
-          dias: row['días'] || row['dias'] || '-',
-          doc: row['no. documento'] || row['documento'] || '-',
           monto: parseVal(row['monto']),
           cuentaContable: cc
         });
-      }
+      });
     }
   }
   return result;
 };
+
 // ============================================================================
-// 3. COMPONENTE: ÁRBOL EXPANDIBLE (RESPETA APERTURA Y NO UNIFICA)
+// 3. COMPONENTE: FILAS CON RELIEVE 3D
 // ============================================================================
-const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, rootColorOverride = null }) => {
-  const isAccountNode = /^\d\./.test(node?.n || '') || (!node?.c || node.c.length === 0);
-  const isLeaf = !node?.c || node.c.length === 0;
-  
+const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
-  useEffect(() => { setIsOpen(defaultOpen); }, [defaultOpen]);
-
-  const accountCodeMatch = (node?.n || '').match(/^(\d[\d\.]+)/);
-  const accountCode = accountCodeMatch ? accountCodeMatch[1] : null;
-  const hasMapping = isBalance && accountCode;
-
-  const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
-  const pct = totalBaseUSD && (node?.u) ? `${((Math.abs(node.u) / Math.abs(totalBaseUSD)) * 100).toFixed(2)}%` : '';
+  useEffect(() => setIsOpen(defaultOpen), [defaultOpen]);
+  
+  if (!node) return null;
+  const isLeaf = !node.c || node.c.length === 0;
+  const accountCode = (node.n || '').split('-')[0].trim();
+  const hasMapping = isBalance && /^\d[\d\.]+$/.test(accountCode);
+  const fmt = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(v || 0);
   const indent = { paddingLeft: `${level * 18 + 10}px` };
 
-  if (!node) return null;
-
-  if (!isLeaf && !isAccountNode) {
+  if (!isLeaf && !/^\d\./.test(node.n)) {
     const isRoot = level === 0;
-    let rootColor = rootColorOverride || 'text-slate-800'; 
-    let borderColor = rootColorOverride ? rootColorOverride.replace('text-', 'border-') : 'border-slate-800';
-    
-    if (isBalance && !rootColorOverride) {
-      if ((node.n || '').includes('ACTIVO')) { rootColor = 'text-blue-600'; borderColor = 'border-blue-600'; }
-      else if ((node.n || '').includes('PASIVO')) { rootColor = 'text-red-600'; borderColor = 'border-red-600'; }
-      else if ((node.n || '').includes('PATRIMONIO')) { rootColor = 'text-purple-600'; borderColor = 'border-purple-600'; }
-    }
-
     return (
       <>
-        <tr className={isRoot ? 'bg-slate-50 print:bg-white print:border-b print:border-slate-200' : 'bg-white border-b border-slate-100 print:bg-white'}>
-          <td style={indent} className={isRoot ? `py-3 px-3 ${rootColor} font-black text-xs uppercase tracking-[0.1em] print:text-black` : 'py-2 px-3 font-black text-[11px] text-slate-700 uppercase print:text-black'}>{node.n}</td>
+        <tr className={isRoot ? 'bg-slate-50 border-b border-slate-200' : 'bg-white border-b border-slate-100'}>
+          <td style={indent} className={`py-3 px-3 font-black text-xs uppercase tracking-widest ${isRoot ? 'text-slate-800' : 'text-slate-500'}`}>{node.n}</td>
           <td colSpan={3} />
         </tr>
-        
-        {isOpen && node.c && node.c.map((child, i) => (
-          <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} rootColorOverride={rootColorOverride}/>
-        ))}
-
+        {isOpen && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level+1} totalBaseUSD={totalBaseUSD} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance}/>)}
         {isOpen && (
-          <tr className={`${isRoot ? `bg-slate-100 print:bg-slate-50 text-slate-800 print:text-black border-t-2 ${borderColor} print:border-slate-300` : 'bg-slate-50 text-slate-800 border-t border-slate-200 print:bg-slate-50 print:text-black'} shadow-sm print:shadow-none`}>
-            <td style={{ paddingLeft: level * 18 + 28 }} className="py-2.5 px-3 font-black text-[10px] uppercase tracking-wider print:text-black">TOTAL {node.n}</td>
-            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${isRoot ? rootColor : 'text-slate-900'} print:text-black`}>{fmtCur(Math.abs(node.u))}</td>
-            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black hidden sm:table-cell ${isRoot ? rootColor : 'text-slate-900'} print:text-black`}>{fmtCur(Math.abs(node.b))}</td>
-            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${isRoot ? rootColor : 'text-slate-900'} print:text-black`}>{pct}</td>
+          <tr className="bg-slate-100/50 font-black text-[10px] border-t border-slate-200 shadow-inner">
+            <td style={{ paddingLeft: level * 18 + 28 }} className="py-2 px-3 uppercase text-slate-500">TOTAL {node.n}</td>
+            <td className="py-2 px-3 text-right font-mono text-slate-900">{fmt(Math.abs(node.u))}</td>
+            <td className="py-2 px-3 text-right font-mono hidden sm:table-cell text-slate-900">{fmt(Math.abs(node.b))}</td>
+            <td className="py-2 px-3 text-right font-mono text-slate-400">{(Math.abs(node.u)/Math.abs(totalBaseUSD||1)*100).toFixed(2)}%</td>
           </tr>
         )}
-        
         {!isOpen && isRoot && (
-           <tr className={`bg-slate-100 print:bg-slate-50 text-slate-800 print:text-black border-t-2 ${borderColor} print:border-slate-300 shadow-sm print:shadow-none cursor-pointer hover:bg-slate-200`} onClick={() => setIsOpen(true)}>
-             <td style={{ paddingLeft: level * 18 + 10 }} className="py-2.5 px-3 font-black text-xs uppercase tracking-widest print:text-black flex items-center gap-2">
-               <span className="no-print inline-flex items-center justify-center w-4 h-4 border rounded-sm text-[11px] leading-none bg-white text-slate-600 border-slate-300">+</span>
-               {node.n}
+           <tr className="bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => setIsOpen(true)}>
+             <td style={indent} className="py-2.5 px-3 font-black text-xs uppercase flex items-center gap-2">
+               <span className="w-4 h-4 border border-slate-300 rounded bg-white text-center leading-none text-[10px] text-slate-500">+</span> {node.n}
              </td>
-             <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${rootColor} print:text-black`}>{fmtCur(Math.abs(node.u))}</td>
-             <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black hidden sm:table-cell ${rootColor} print:text-black`}>{fmtCur(Math.abs(node.b))}</td>
-             <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${rootColor} print:text-black`}>{pct}</td>
+             <td className="py-2.5 px-3 text-right font-mono font-black text-slate-800">{fmt(Math.abs(node.u))}</td><td colSpan={2}/>
            </tr>
         )}
       </>
     );
   }
 
-  if (isLeaf || isAccountNode) {
-    const isHighlighted = highlightedAccounts?.has(node.n);
-    return (
-      <tr onClick={() => !isLeaf && setIsOpen(!isOpen)} className={`border-b border-slate-100 cursor-pointer transition-colors ${isHighlighted ? 'bg-amber-50 border-l-4 border-amber-500 print:bg-transparent print:border-none' : 'bg-white hover:bg-slate-50 border-l-4 border-white hover:border-slate-300 print:bg-transparent print:border-none'}`}>
-        <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-slate-700 uppercase flex items-center flex-wrap gap-2 print:text-black">
-          {!isLeaf && <span className="no-print inline-flex items-center justify-center w-4 h-4 border rounded-sm text-[11px] leading-none bg-white text-slate-600 border-slate-300">{isOpen ? '−' : '+'}</span>}
-          <button onClick={(e) => { e.stopPropagation(); toggleHighlight(node.n); }} className="no-print focus:outline-none transition-transform hover:scale-110"><Star size={16} fill={isHighlighted ? "#f59e0b" : "none"} color={isHighlighted ? "#f59e0b" : "#cbd5e1"} /></button>
-          <span className="truncate max-w-[280px]">{node.n}</span>
-          {hasMapping && (
-            <button onClick={(e) => { e.stopPropagation(); onShowReport(accountCode); }} className="no-print ml-2 px-2 py-0.5 bg-slate-800 text-white rounded text-[9px] font-black tracking-widest hover:bg-orange-500 transition-colors flex items-center gap-1 shadow-sm">
-              <Search size={10}/> AUX
-            </button>
-          )}
-        </td>
-        <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${isHighlighted ? 'text-amber-900' : 'text-slate-700'} print:text-black`}>{fmtCur(Math.abs(node.u))}</td>
-        <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell ${isHighlighted ? 'text-amber-900' : 'text-slate-700'} print:text-black`}>{fmtCur(Math.abs(node.b))}</td>
-        <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${isHighlighted ? 'text-amber-700' : 'text-slate-400'} print:text-black`}>{pct}</td>
-      </tr>
-    );
-  }
-  return null;
+  const isHigh = highlightedAccounts?.has(node.n);
+  return (
+    <tr onClick={() => !isLeaf && setIsOpen(!isOpen)} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${isHigh ? 'bg-amber-50 border-l-4 border-amber-500' : 'bg-white border-l-4 border-transparent'}`}>
+      <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-slate-700 uppercase flex items-center gap-2">
+        <button onClick={(e) => {e.stopPropagation(); toggleHighlight(node.n)}} className="no-print"><Star size={14} fill={isHigh?"#f59e0b":"none"} color={isHigh?"#f59e0b":"#cbd5e1"}/></button>
+        <span className="truncate max-w-[280px]">{node.n}</span>
+        {hasMapping && <button onClick={(e)=>{e.stopPropagation(); onShowReport(accountCode)}} className="no-print ml-2 px-2 py-0.5 bg-slate-800 text-white text-[9px] rounded font-black hover:bg-orange-500 shadow-sm">AUX</button>}
+      </td>
+      <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">{fmt(Math.abs(node.u))}</td>
+      <td className="py-2.5 px-3 text-right font-mono text-[11px] hidden sm:table-cell text-slate-600">{fmt(Math.abs(node.b))}</td>
+      <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">{(Math.abs(node.u)/Math.abs(totalBaseUSD||1)*100).toFixed(2)}%</td>
+    </tr>
+  );
 };
-
 // ============================================================================
-// 4. VISTA: ESTADO DE RESULTADOS (DISEÑO LIMPIO)
+// 4. VISTA: ESTADO DE RESULTADOS
 // ============================================================================
 function EstadoResultadoView({ onBack, dbData }) {
   const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
-  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || new Date().getFullYear().toString());
-  const availableMonths = useMemo(() => [...new Set(dbData.filter(d => d.year === selectedYear).map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData, selectedYear]);
-  const [selectedMonth, setSelectedMonth] = useState('General'); 
-  const [defaultOpen, setDefaultOpen] = useState(false);
-  const [expandKey, setExpandKey] = useState(0);
+  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || '2026');
+  const availableMonths = useMemo(() => [...new Set(dbData.filter(d => d.year === selectedYear).map(d => d.month))].filter(m=>m!=='Sin Mes' && m!=='Saldos Iniciales'), [dbData, selectedYear]);
+  const [selectedMonth, setSelectedMonth] = useState('General');
 
-  const [highlightedAccounts, setHighlightedAccounts] = useState(() => {
-    try { const saved = localStorage.getItem('jiret_highlighted_accounts'); return saved ? new Set(JSON.parse(saved)) : new Set(); } 
-    catch (e) { return new Set(); }
-  });
-  useEffect(() => { localStorage.setItem('jiret_highlighted_accounts', JSON.stringify([...highlightedAccounts])); }, [highlightedAccounts]);
-
-  const toggleHighlight = (accountName) => {
-    setHighlightedAccounts(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(accountName)) newSet.delete(accountName); else newSet.add(accountName);
-      return newSet;
-    });
-  };
-
-  const { treeIngresos, treeCostos, treeGastos, totIng, totCos, totGas, utBruta, utNeta } = useMemo(() => {
-    const yearData = dbData.filter(d => d.year === selectedYear);
-    const monthData = selectedMonth === 'General' ? yearData : yearData.filter(d => d.month === selectedMonth);
+  const { trees, totals } = useMemo(() => {
+    const data = selectedMonth === 'General' ? dbData.filter(d=>d.year===selectedYear) : dbData.filter(d=>d.year===selectedYear && d.month===selectedMonth);
+    const resData = data.filter(i => !i.path?.toUpperCase().includes('ACTIVO') && !i.path?.toUpperCase().includes('PASIVO') && !/^[123]/.test(i.name||''));
     
-    let resData = monthData.filter(item =>
-      !item.path?.toUpperCase().includes('ACTIVO') &&
-      !item.path?.toUpperCase().includes('PASIVO') &&
-      !item.path?.toUpperCase().includes('PATRIMONIO') &&
-      !/^[123]/.test(item.name || '')
-    );
-
-    const normKey = s => String(s || '').trim().replace(/\s+/g,' ').toUpperCase();
-    const byCode = {};
-    resData.forEach(item => {
-      const pathParts = (item.path || '').split('>');
-      let accountOriginalName = pathParts.length > 1 ? pathParts[pathParts.length - 1].trim() : String(item.name || '').trim();
-      if (!/^(\d[\d\.]+)/.test(accountOriginalName) && /^(\d[\d\.]+)/.test(String(item.name || '').trim())) accountOriginalName = item.name.trim();
-      const codeMatch = accountOriginalName.match(/^(\d[\d\.]+)/);
-      const key = codeMatch ? codeMatch[1] : normKey(accountOriginalName);
-
-      if (!byCode[key]) byCode[key] = { ...item, name: accountOriginalName, path: pathParts.slice(0, -1).join('>') || 'OTROS' };
-      else { byCode[key].usd += item.usd; byCode[key].bs += item.bs; }
-    });
-
-    const isIng = item => (item.path || '').toUpperCase().includes('INGRESO') || (item.path || '').toUpperCase().includes('VENTA') || (item.name || '').match(/^4/);
-    const isCos = item => (item.path || '').toUpperCase().includes('COSTO DE VENTA') || (item.path || '').toUpperCase().includes('COSTO VENTA') || (item.name || '').match(/^5\.1/);
-
-    const buildTree = (dataArr) => {
+    const build = (arr, mult = 1) => {
       const root = [];
-      dataArr.forEach(item => {
-        const pathArray = (item.path || '').split('>');
+      arr.forEach(i => {
         let cur = root;
-        pathArray.forEach(folderName => {
-          if(!folderName) return;
-          const key = normKey(folderName);
-          let folder = cur.find(n => normKey(n.n) === key);
-          if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        const path = (i.path || 'OTROS').split('>');
+        path.forEach(f => {
+          let folder = cur.find(n => n.n === f);
+          if (!folder) { folder = { n: f, c: [], u: 0, b: 0 }; cur.push(folder); }
           cur = folder.c;
         });
-        const leafKey = normKey(item.name);
-        let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
-        if (!leaf) cur.push({ n: (item.name || '').trim(), u: item.usd, b: item.bs, isLeaf: true });
-        else { leaf.u += item.usd; leaf.b += item.bs; }
+        let leaf = cur.find(n => n.n === i.name);
+        if (!leaf) cur.push({ n: i.name, u: i.usd*mult, b: i.bs*mult, isLeaf: true });
+        else { leaf.u += i.usd*mult; leaf.b += i.bs*mult; }
       });
-      const compute = (nodes) => {
-        let u = 0, b = 0;
-        nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; });
-        return { u, b };
+      const comp = (nodes) => {
+        let u=0, b=0; nodes.forEach(n => { if(!n.isLeaf){ const t=comp(n.c); n.u=t.u; n.b=t.b; } u+=n.u; b+=n.b; });
+        return {u, b};
       };
-      compute(root);
-      return root;
+      comp(root); return root;
     };
 
-    const deduplicated = Object.values(byCode);
-    const tIng = buildTree(deduplicated.filter(isIng)); 
-    tIng.forEach(n => { n.u *= -1; n.b *= -1; }); 
-    const tCos = buildTree(deduplicated.filter(isCos)); 
-    const tGas = buildTree(deduplicated.filter(i => !isIng(i) && !isCos(i))); 
+    const isIng = i => (i.path||'').includes('INGRESO') || (i.name||'').startsWith('4');
+    const isCos = i => (i.path||'').includes('COSTO') || (i.name||'').startsWith('5');
+    const tIng = build(resData.filter(isIng), -1);
+    const tCos = build(resData.filter(isCos));
+    const tGas = build(resData.filter(i => !isIng(i) && !isCos(i)));
 
-    const sumT = (nodes) => nodes.reduce((acc, n) => acc + n.u, 0);
-    const tI = sumT(tIng); const tC = sumT(tCos); const tG = sumT(tGas);
-
-    return { treeIngresos: tIng, treeCostos: tCos, treeGastos: tGas, totIng: tI, totCos: tC, totGas: tG, utBruta: tI - tC, utNeta: (tI - tC) - tG };
+    const s = (n) => n.reduce((a,c)=>a+c.u, 0);
+    const ti=s(tIng), tc=s(tCos), tg=s(tGas);
+    return { trees: { tIng, tCos, tGas }, totals: { ti, tc, tg, ub: ti-tc, un: (ti-tc)-tg } };
   }, [dbData, selectedMonth, selectedYear]);
-
-  const baseVentas = totIng === 0 ? 1 : totIng;
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
       <PrintStyles />
-      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Volver</button>
-          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Año:</span>
-            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 font-bold outline-none focus:border-slate-400">{availableYears.map(y => <option key={y} value={y}>{y}</option>)}</select>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-2">Mes:</span>
-            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 font-bold outline-none focus:border-slate-400 min-w-[120px]"><option value="General">Acumulado</option>{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
-          </div>
-        </div>
+      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Panel</button>
         <div className="flex gap-2">
-          <div className="flex gap-2 bg-slate-50 p-1 rounded-md border border-slate-200">
-            <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1 text-slate-600 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
-            <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1 text-slate-600 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
-          </div>
-          <div className="flex gap-2 bg-slate-800 p-1 rounded-md">
-            <button onClick={() => window.print()} className="px-3 py-1 rounded text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Printer size={14}/> PDF</button>
-            <button onClick={() => handleExportExcel('table-resultados', `Estado_Resultados_${selectedMonth}_${selectedYear}`, `Estado de Resultados - ${selectedMonth} ${selectedYear}`)} className="px-3 py-1 rounded text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Download size={14}/> Excel</button>
-          </div>
+          <select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold"><option value="General">Acumulado</option>{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
+          <button onClick={()=>window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
+          <button onClick={()=>handleExportExcel('table-res', 'Estado_Resultados', 'Estado de Resultados')} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
         </div>
       </header>
-      <main className="print-area p-4 md:p-8 max-w-5xl mx-auto">
+      <main className="p-4 md:p-8 max-w-5xl mx-auto">
         <HeaderMembretado isExport={true}/>
-        <div className="bg-white px-8 py-8 border border-slate-200 print:border-none shadow-sm print:shadow-none flex flex-col items-center text-center mb-6 rounded-xl">
-          <h2 className="text-xl font-black text-slate-900 uppercase tracking-widest border-b border-slate-100 pb-2 mb-3 w-full max-w-md">Estado de Resultado {selectedMonth === 'General' ? 'Acumulado' : 'Mensual'}</h2>
-          <p className="text-slate-600 font-bold uppercase text-[10px] tracking-widest">{selectedMonth} {selectedYear}</p>
-        </div>
-        
-        <div className="bg-white rounded-xl shadow-sm print:shadow-none border border-slate-200 print:border-none overflow-hidden">
-          <table id="table-resultados" className="w-full text-left border-collapse">
-            <thead className="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b border-slate-300">
-              <tr><th className="px-4 py-4 w-[55%]">Cuentas Contables</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Saldo Bs.</th><th className="px-3 py-4 text-right">%</th></tr>
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+          <table id="table-res" className="w-full text-left border-collapse">
+            <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase border-b border-slate-300">
+              <tr><th className="px-4 py-4 w-[55%]">Cuentas</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Saldo Bs.</th><th className="px-3 py-4 text-right">%</th></tr>
             </thead>
-            <tbody key={expandKey}>
-              <tr className="bg-white border-b border-slate-200"><td colSpan={4} className="py-3 px-4 font-black text-xs text-slate-800 uppercase tracking-widest">I. INGRESOS</td></tr>
-              {treeIngresos.map((node, i) => <ExpandableRow key={`ing-${i}`} node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>)}
-              <tr className="bg-slate-50 font-black border-t-2 border-slate-300"><td className="px-5 py-3 text-[11px] uppercase tracking-wider" style={{paddingLeft:28}}>TOTAL INGRESOS</td><td className="px-3 py-3 text-right text-xs font-mono">{fmtR(totIng)}</td><td className="px-3 py-3 text-right text-xs font-mono hidden sm:table-cell">{fmtR(totIng*45)}</td><td className="px-3 py-3 text-right text-xs font-mono">100%</td></tr>
+            <tbody>
+              <tr className="bg-white border-b border-slate-200 font-black text-xs uppercase"><td colSpan={4} className="p-4">I. INGRESOS</td></tr>
+              {trees.tIng.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti}/>)}
+              <tr className="bg-slate-900 text-white font-black border-y-4 border-orange-500"><td className="p-5 uppercase text-sm">V. RESULTADO NETO</td><td className="p-5 text-right text-lg font-mono text-orange-400">{new Intl.NumberFormat('es-VE').format(totals.un)}</td><td className="hidden sm:table-cell"/><td className="p-5 text-right font-mono">{(Math.abs(totals.un)/(totals.ti||1)*100).toFixed(2)}%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  );
+}
 
-              <tr className="bg-white border-b border-slate-200 mt-4"><td colSpan={4} className="py-3 px-4 font-black text-xs text-slate-800 uppercase tracking-widest">II. COSTOS DE PRODUCCIÓN Y VENTA</td></tr>
-              {treeCostos.map((node, i) => <ExpandableRow key={`cos-${i}`} node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>)}
-              <tr className="bg-slate-50 font-black border-t-2 border-slate-300"><td className="px-5 py-3 text-[11px] uppercase tracking-wider" style={{paddingLeft:28}}>TOTAL COSTOS DE VENTA</td><td className="px-3 py-3 text-right text-xs font-mono">{fmtR(totCos)}</td><td className="px-3 py-3 text-right text-xs font-mono hidden sm:table-cell">{fmtR(totCos*45)}</td><td className="px-3 py-3 text-right text-xs font-mono">{(totCos/baseVentas*100).toFixed(2)}%</td></tr>
+// ============================================================================
+// 6. VISTA: BALANCE GENERAL (ACUMULATIVO REAL)
+// ============================================================================
+function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
+  const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
+  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || '2026');
+  const availableMonths = useMemo(() => [...new Set(dbData.filter(d => d.year === selectedYear).map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData, selectedYear]);
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || 'Enero');
+  const [activeCode, setActiveCode] = useState(null);
 
-              <tr className="bg-slate-900 text-white font-black border-y-4 border-slate-400 print:bg-slate-300 print:text-black"><td className="px-5 py-5 text-sm uppercase tracking-wider" style={{paddingLeft:20}}>III. UTILIDAD BRUTA EN VENTAS</td><td className={`px-3 py-5 text-right text-base font-mono ${utBruta < 0 ? 'text-red-400 print:text-red-700' : 'text-emerald-400 print:text-black'}`}>{fmtR(utBruta)}</td><td className={`px-3 py-5 text-right text-base font-mono hidden sm:table-cell ${utBruta < 0 ? 'text-red-400 print:text-red-700' : 'text-emerald-400 print:text-black'}`}>{fmtR(utBruta*45)}</td><td className="px-3 py-5 text-right text-base font-mono text-slate-300 print:text-black">{(Math.abs(utBruta)/baseVentas*100).toFixed(2)}%</td></tr>
+  const tree = useMemo(() => {
+    const limitOrder = monthOrder[selectedMonth];
+    // Lógica Acumulativa: Todo lo anterior + el mes seleccionado
+    const historical = dbData.filter(d => d.year === selectedYear && monthOrder[d.month] <= limitOrder);
+    
+    // Inyección de Auxiliares
+    const auxs = [];
+    for (const code in auxDataConfig) {
+      const sum = auxDataConfig[code].records.reduce((a,r)=>a+r.monto, 0);
+      if (sum !== 0) auxs.push({
+        name: `${code} - ${auxDataConfig[code].label}`,
+        path: code.startsWith('1') ? 'ACTIVOS>CIRCULANTE>CXC' : 'PASIVOS>CIRCULANTE>CXP',
+        usd: sum, bs: 0
+      });
+    }
 
-              <tr className="bg-white border-b border-slate-200 mt-4"><td colSpan={4} className="py-3 px-4 font-black text-xs text-slate-800 uppercase tracking-widest">IV. GASTOS OPERATIVOS Y OTROS EGRESOS</td></tr>
-              {treeGastos.map((node, i) => <ExpandableRow key={`gas-${i}`} node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>)}
-              <tr className="bg-slate-50 font-black border-t-2 border-slate-300"><td className="px-5 py-3 text-[11px] uppercase tracking-wider" style={{paddingLeft:28}}>TOTAL GASTOS OPERATIVOS</td><td className="px-3 py-3 text-right text-xs font-mono">{fmtR(totGas)}</td><td className="px-3 py-3 text-right text-xs font-mono hidden sm:table-cell">{fmtR(totGas*45)}</td><td className="px-3 py-3 text-right text-xs font-mono">{(totGas/baseVentas*100).toFixed(2)}%</td></tr>
+    const all = [...historical, ...auxs];
+    const root = [];
+    all.forEach(i => {
+      if (!i.path?.toUpperCase().includes('ACTIVO') && !i.path?.toUpperCase().includes('PASIVO') && !/^[123]/.test(i.name)) return;
+      let cur = root;
+      const path = (i.path || 'OTROS').split('>');
+      path.forEach(f => {
+        let folder = cur.find(n => n.n === f);
+        if (!folder) { folder = { n: f, c: [], u: 0, b: 0 }; cur.push(folder); }
+        cur = folder.c;
+      });
+      let leaf = cur.find(n => n.n === i.name);
+      if (!leaf) cur.push({ n: i.name, u: i.usd, b: i.bs, isLeaf: true });
+      else { leaf.u += i.usd; leaf.b += i.bs; }
+    });
+    const comp = (nodes) => {
+      let u=0, b=0; nodes.forEach(n => { if(!n.isLeaf){ const t=comp(n.c); n.u=t.u; n.b=t.b; } u+=n.u; b+=n.b; });
+      return {u, b};
+    };
+    comp(root); 
+    return root.sort((a,b) => (a.n.includes('ACTIVO') ? -1 : 1));
+  }, [dbData, selectedMonth, selectedYear, auxDataConfig]);
 
-              <tr className="bg-black text-white font-black border-t-4 border-orange-500 print:bg-slate-400 print:text-black"><td className="px-5 py-6 text-sm uppercase tracking-wider" style={{paddingLeft:20}}>V. RESULTADO DEL EJERCICIO (NETO)</td><td className={`px-3 py-6 text-right text-lg font-mono ${utNeta < 0 ? 'text-red-500 print:text-red-800' : 'text-orange-500 print:text-black'}`}>{fmtR(utNeta)}</td><td className={`px-3 py-6 text-right text-lg font-mono hidden sm:table-cell ${utNeta < 0 ? 'text-red-500 print:text-red-800' : 'text-orange-500 print:text-black'}`}>{fmtR(utNeta*45)}</td><td className="px-3 py-6 text-right text-lg font-mono text-slate-400 print:text-black">{(Math.abs(utNeta)/baseVentas*100).toFixed(2)}%</td></tr>
+  let ta=0, tp=0; tree.forEach(n => { if(n.n.includes('ACTIVO')) ta+=n.u; else tp+=n.u; });
+  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={()=>setActiveCode(null)} auxDataConfig={auxDataConfig} />;
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
+      <PrintStyles />
+      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Panel</button>
+        <div className="flex gap-2">
+          <select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold">{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
+          <button onClick={()=>window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
+          <button onClick={()=>handleExportExcel('table-bg', 'Balance_General', 'Balance General')} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
+        </div>
+      </header>
+      <main className="p-4 md:p-8 max-w-5xl mx-auto">
+        <HeaderMembretado isExport={true} />
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+          <table id="table-bg" className="w-full text-left border-collapse">
+            <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase border-b border-slate-300">
+              <tr><th className="px-4 py-4 w-[55%]">Estructura</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Saldo Bs.</th><th className="px-3 py-4 text-right">%</th></tr>
+            </thead>
+            <tbody>
+              {tree.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={ta} onShowReport={setActiveCode} isBalance={true}/>)}
+              <tr className="bg-black text-white font-black border-t-4 border-orange-500">
+                <td colSpan={4} className="p-6">
+                  <div className="flex justify-between items-center px-4">
+                    <div className="flex items-center gap-4"><Scale size={32} className="text-slate-400"/><div><p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Ecuación Patrimonial</p><p className="text-xs font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
+                    <div className="flex gap-10 text-right">
+                      <div><p className="text-[10px] text-slate-400 uppercase font-bold">Total Activos</p><p className="text-xl font-mono text-white">USD {ta.toLocaleString('es-VE')}</p></div>
+                      <div><p className="text-[10px] text-slate-400 uppercase font-bold">Pasivo + Pat.</p><p className="text-xl font-mono text-white">USD {tp.toLocaleString('es-VE')}</p></div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -492,600 +430,114 @@ function EstadoResultadoView({ onBack, dbData }) {
   );
 }
 // ============================================================================
-// 5. VISTA: ANÁLISIS COMPARATIVO
-// ============================================================================
-function AnalisisComparativoView({ onBack, dbData }) {
-  const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
-  const [year1, setYear1] = useState(availableYears[availableYears.length - 1] || '2026');
-  const [year2, setYear2] = useState(availableYears[availableYears.length - 1] || '2026');
-  
-  const getMonths = (y) => [...new Set(dbData.filter(d=>d.year===y).map(d => d.month))].filter(m => m !== 'Sin Mes');
-  const months1 = getMonths(year1); const months2 = getMonths(year2);
-  
-  const [month1, setMonth1] = useState(months1[0] || '');
-  const [month2, setMonth2] = useState(months2[1] || months2[0] || '');
-
-  useEffect(() => { setMonth1(getMonths(year1)[0] || ''); }, [year1]);
-  useEffect(() => { setMonth2(getMonths(year2)[1] || getMonths(year2)[0] || ''); }, [year2]);
-
-  const tree = useMemo(() => {
-    const root = [];
-    const m1Data = dbData.filter(d => d.year === year1 && d.month === month1 && !d.path?.toUpperCase().includes('ACTIVO') && !d.path?.toUpperCase().includes('PASIVO') && !d.path?.toUpperCase().includes('PATRIMONIO'));
-    const m2Data = dbData.filter(d => d.year === year2 && d.month === month2 && !d.path?.toUpperCase().includes('ACTIVO') && !d.path?.toUpperCase().includes('PASIVO') && !d.path?.toUpperCase().includes('PATRIMONIO'));
-
-    const processItem = (item, isM1) => {
-      const pathParts = (item.path || '').split('>');
-      const mainCategory = pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS';
-      let accountOriginalName = pathParts.length > 1 ? pathParts[pathParts.length - 1].trim() : String(item.name || '').trim();
-      if (!/^(\d[\d\.]+)/.test(accountOriginalName) && /^(\d[\d\.]+)/.test(String(item.name||'').trim())) accountOriginalName = item.name.trim();
-      const matchKey = accountOriginalName.match(/^(\d[\d\.]+)/);
-      const accountKey = matchKey ? matchKey[1] : accountOriginalName.toUpperCase();
-
-      let categoryNode = root.find(n => n.key === mainCategory);
-      if (!categoryNode) { categoryNode = { key: mainCategory, n: pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS', c: [], m1_u: 0, m2_u: 0 }; root.push(categoryNode); }
-      let accountNode = categoryNode.c.find(n => n.key === accountKey);
-      if (!accountNode) { accountNode = { key: accountKey, n: accountOriginalName, m1_u: 0, m2_u: 0 }; categoryNode.c.push(accountNode); }
-
-      if (isM1) accountNode.m1_u += item.usd; else accountNode.m2_u += item.usd;
-    };
-
-    m1Data.forEach(item => processItem(item, true));
-    m2Data.forEach(item => processItem(item, false));
-
-    root.forEach(cat => {
-      let cat_m1 = 0, cat_m2 = 0;
-      const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key?.startsWith('4');
-      const multiplier = isIngreso ? -1 : 1;
-
-      cat.c.forEach(acc => {
-        acc.m1_u *= multiplier; acc.m2_u *= multiplier;
-        cat_m1 += acc.m1_u; cat_m2 += acc.m2_u;
-      });
-      cat.m1_u = cat_m1; cat.m2_u = cat_m2;
-    });
-
-    return root;
-  }, [dbData, month1, year1, month2, year2]);
-
-  let total_m1 = 0, total_m2 = 0;
-  tree.forEach(cat => {
-    const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || (cat.key && cat.key.startsWith('4'));
-    if (isIngreso) { total_m1 += cat.m1_u; total_m2 += cat.m2_u; } 
-    else { total_m1 -= cat.m1_u; total_m2 -= cat.m2_u; }
-  });
-
-  const varAbsTotal = total_m1 - total_m2;
-  const varPctTotal = total_m2 !== 0 ? (varAbsTotal / Math.abs(total_m2)) * 100 : (total_m1 !== 0 ? 100 : 0);
-  const isPosTotal = varAbsTotal > 0;
-  const isNegTotal = varAbsTotal < 0;
-  const TotalArrowIcon = isPosTotal ? ArrowUpRight : (isNegTotal ? ArrowDownRight : null);
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-
-  return (
-    <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
-      <PrintStyles />
-      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-2">
-        <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Volver al Panel</button>
-          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Base:</span>
-            <select value={year1} onChange={(e) => setYear1(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 font-bold outline-none">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
-            <select value={month1} onChange={(e) => setMonth1(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 font-bold outline-none">{months1.map(m => <option key={m}>{m}</option>)}</select>
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-widest mx-2">VS</span>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-1">Comparar:</span>
-            <select value={year2} onChange={(e) => setYear2(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 font-bold outline-none">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
-            <select value={month2} onChange={(e) => setMonth2(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 font-bold outline-none">{months2.map(m => <option key={m}>{m}</option>)}</select>
-          </div>
-        </div>
-        <div className="flex gap-2 bg-slate-800 p-1 rounded-md">
-          <button onClick={() => window.print()} className="px-3 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1 text-white hover:bg-slate-700"><Printer size={14}/> PDF</button>
-          <button onClick={() => handleExportExcel('table-comparativo', `Comparativo_${month1}${year1}_vs_${month2}${year2}`, `Análisis Comparativo - ${month1} ${year1} vs ${month2} ${year2}`)} className="px-3 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1 text-white hover:bg-slate-700"><Download size={14}/> Excel</button>
-        </div>
-      </header>
-      <main className="print-area p-4 md:p-8 max-w-5xl mx-auto pb-16">
-        <HeaderMembretado isExport={true} />
-        <div className="bg-white px-8 py-8 border border-slate-200 print:border-none shadow-sm print:shadow-none flex flex-col items-center text-center mb-6 rounded-xl">
-          <h2 className="text-xl font-black text-slate-900 uppercase tracking-widest border-b border-slate-100 pb-2 mb-3 w-full max-w-md">Análisis Comparativo</h2>
-          <p className="text-slate-600 font-bold uppercase text-[10px] tracking-widest">{month1} {year1} vs {month2} {year2}</p>
-        </div>
-        
-        {!month1 || !month2 ? (
-          <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-sm"><AlertTriangle className="mx-auto text-slate-300 mb-4" size={48}/><p className="text-slate-500 font-black text-xs uppercase tracking-wider">Faltan datos para comparar.</p></div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-sm print:shadow-none overflow-hidden border border-slate-200 print:border-none">
-            <table id="table-comparativo" className="w-full text-left border-collapse">
-              <thead className="bg-slate-100 print:bg-slate-200 text-[10px] uppercase font-black text-slate-500 print:text-black border-b border-slate-300">
-                <tr>
-                  <th className="px-4 py-4 w-[40%]">Estructura de Cuentas</th>
-                  <th className="px-3 py-4 text-right">📅 {month1} {year1} <span className="text-slate-400 font-normal">(Base)</span></th>
-                  <th className="px-3 py-4 text-right bg-slate-50 print:bg-transparent">📅 {month2} {year2} <span className="text-slate-400 font-normal">(Comparar)</span></th>
-                  <th className="px-3 py-4 text-right">Var. Absoluta</th>
-                  <th className="px-3 py-4 text-right">Var. %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tree.map((cat, i) => {
-                  const sortedAccounts = [...cat.c].sort((a, b) => String(a.n).localeCompare(String(b.n)));
-                  const catVarAbs = cat.m1_u - cat.m2_u;
-                  const catVarPct = cat.m2_u !== 0 ? (catVarAbs / Math.abs(cat.m2_u)) * 100 : (cat.m1_u !== 0 ? 100 : 0);
-                  const isCatIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || (cat.key && cat.key.startsWith('4'));
-                  const catGood = isCatIngreso ? catVarAbs > 0 : catVarAbs < 0;
-                  const catBad  = isCatIngreso ? catVarAbs < 0 : catVarAbs > 0;
-                  const CatColorClass = catGood ? 'text-emerald-600 print:text-black' : (catBad ? 'text-red-500 print:text-black' : 'text-slate-400 print:text-black');
-                  const CatArrowIcon  = catGood ? ArrowUpRight : (catBad ? ArrowDownRight : null);
-
-                  return (
-                    <React.Fragment key={i}>
-                      <tr className="bg-slate-50 print:bg-slate-100 border-b border-slate-200"><td className="py-3 px-4 text-slate-800 print:text-black font-black text-[11px] uppercase tracking-widest">{cat.n}</td><td colSpan={4} /></tr>
-                      {sortedAccounts.map((acc, j) => {
-                        const varAbs = acc.m1_u - acc.m2_u; 
-                        const varPct = acc.m2_u !== 0 ? (varAbs / Math.abs(acc.m2_u)) * 100 : (acc.m1_u !== 0 ? 100 : 0);
-                        const good = isCatIngreso ? varAbs > 0 : varAbs < 0;
-                        const bad  = isCatIngreso ? varAbs < 0 : varAbs > 0;
-                        const colorClass = good ? 'text-emerald-600 print:text-black' : (bad ? 'text-red-500 print:text-black' : 'text-slate-400 print:text-black');
-                        const ArrowIcon  = good ? ArrowUpRight : (bad ? ArrowDownRight : null);
-
-                        return (
-                          <tr key={j} className="bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                            <td className="py-2.5 px-4 font-bold text-[11px] text-slate-700 uppercase pl-6 print:border-none truncate max-w-xs">{acc.n}</td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-500 print:text-black">{fmtR(acc.m1_u)}</td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-800 print:text-black font-bold bg-slate-50/50 print:bg-transparent">{fmtR(acc.m2_u)}</td>
-                            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-600 print:text-black' : (bad ? 'text-red-500 print:text-black' : 'text-slate-400 print:text-black')}`}>
-                              {varAbs >= 0 ? '+' : ''}{fmtR(varAbs)}
-                            </td>
-                            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold flex justify-end items-center gap-1 ${colorClass}`}>
-                              {ArrowIcon && <ArrowIcon size={12}/>} {Math.abs(varPct).toFixed(2)}%
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      <tr className="bg-slate-100 print:bg-slate-50 text-slate-800 border-t-2 border-slate-200">
-                        <td className="py-3 px-4 font-black text-[11px] uppercase tracking-wider pl-6">TOTAL {cat.n}</td>
-                        <td className="py-3 px-3 text-right font-mono text-[11px] font-black print:text-black">{fmtR(cat.m1_u)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-[11px] font-black print:text-black bg-slate-200/50 print:bg-transparent">{fmtR(cat.m2_u)}</td>
-                        <td className={`py-3 px-3 text-right font-mono text-[11px] font-black ${catGood ? 'text-emerald-600 print:text-black' : (catBad ? 'text-red-500 print:text-black' : 'text-slate-500 print:text-black')}`}>
-                          {catVarAbs >= 0 ? '+' : ''}{fmtR(catVarAbs)}
-                        </td>
-                        <td className={`py-3 px-3 text-right font-mono text-[11px] font-black flex justify-end items-center gap-1 ${CatColorClass}`}>
-                          {CatArrowIcon && <CatArrowIcon size={12}/>} {Math.abs(catVarPct).toFixed(2)}%
-                        </td>
-                      </tr>
-                    </React.Fragment>
-                  );
-                })}
-                <tr className="bg-black print:bg-slate-400 text-white print:text-black font-black border-t-4 border-orange-500 print:border-black">
-                  <td className="px-5 py-6 text-sm uppercase tracking-[0.1em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
-                  <td className="px-3 py-6 text-right text-base font-mono border-l border-slate-800 print:border-slate-500">{fmtR(total_m1)}</td>
-                  <td className="px-3 py-6 text-right text-base font-mono border-l border-slate-800 print:border-slate-500">{fmtR(total_m2)}</td>
-                  <td className={`px-3 py-6 text-right text-lg font-mono border-l border-slate-800 print:border-slate-500 ${isPosTotal ? 'text-emerald-400 print:text-black' : (isNegTotal ? 'text-red-400 print:text-black' : 'text-slate-400 print:text-black')}`}>
-                    {varAbsTotal >= 0 ? '+' : ''}{fmtR(varAbsTotal)}
-                  </td>
-                  <td className={`px-3 py-6 text-right text-lg font-mono flex justify-end items-center gap-1 ${isPosTotal ? 'text-emerald-400 print:text-black' : (isNegTotal ? 'text-red-400 print:text-black' : 'text-slate-400 print:text-black')}`}>
-                    {TotalArrowIcon && <TotalArrowIcon size={16}/>} {Math.abs(varPctTotal).toFixed(2)}%
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// ============================================================================
-// 6. VISTA: BALANCE GENERAL (ACUMULATIVO + AUXILIARES INTEGRADOS)
-// ============================================================================
-function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
-  const balanceRecords = useMemo(() => dbData.filter(item => item.path?.toUpperCase().includes('ACTIVO') || item.path?.toUpperCase().includes('PASIVO') || item.path?.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name || '')), [dbData]);
-  const availableYears = useMemo(() => [...new Set(balanceRecords.map(d => d.year))].filter(Boolean).sort(), [balanceRecords]);
-  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || '2026');
-  const availableMonths = useMemo(() => [...new Set(balanceRecords.filter(d => d.year === selectedYear).map(d => d.month))], [balanceRecords, selectedYear]);
-  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || 'Enero'); 
-  const [tasa, setTasa] = useState(90);
-  const [activeCode, setActiveCode] = useState(null);
-
-  // Lógica Acumulativa
-  const tree = useMemo(() => {
-    const root = [];
-    const selectedMonthIndex = monthOrder[selectedMonth] || 1;
-    
-    // Sumamos todo lo que sea igual o menor al mes seleccionado en el año actual
-    const cumulativeData = balanceRecords.filter(d => {
-      if (d.year !== selectedYear) return false;
-      const mIndex = monthOrder[d.month] || 0; 
-      return mIndex <= selectedMonthIndex;
-    });
-    
-    // Inyectar Totales de Auxiliares dinámicamente al Balance
-    const auxEntries = [];
-    for (const code in auxDataConfig) {
-      const group = auxDataConfig[code];
-      const totalMonto = group.records.reduce((acc, r) => acc + r.monto, 0);
-      if (totalMonto !== 0) {
-        auxEntries.push({
-          name: `${code}-${group.label}`,
-          path: code.startsWith('1') ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR',
-          usd: totalMonto, bs: totalMonto * tasa
-        });
-      }
-    }
-
-    const fullData = [...cumulativeData, ...auxEntries];
-    const normKey = s => String(s || '').trim().replace(/\s+/g,' ').toUpperCase();
-
-    fullData.forEach(item => {
-      const pathArray = (item.path || 'OTROS').split('>');
-      let cur = root;
-      pathArray.forEach(folderName => {
-        if(!folderName) return;
-        const key = normKey(folderName);
-        let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
-        cur = folder.c;
-      });
-      const leafKey = normKey(item.name);
-      let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
-      if (!leaf) cur.push({ n: String(item.name || '').trim(), u: item.usd, b: item.bs, isLeaf: true });
-      else { leaf.u += item.usd; leaf.b += item.bs; }
-    });
-
-    const compute = (nodes) => {
-      let u = 0, b = 0;
-      nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; });
-      return { u, b };
-    };
-    compute(root);
-
-    // Ordenar jerarquía de Balance
-    const sectionOrder = (name) => {
-      const n = name.toUpperCase();
-      if (n.includes('ACTIVO') || n.startsWith('1')) return 1;
-      if (n.includes('PASIVO') || n.startsWith('2')) return 2;
-      if (n.includes('PATRIMONIO') || n.startsWith('3')) return 3;
-      return 9;
-    };
-    root.sort((a, b) => sectionOrder(a.n) - sectionOrder(b.n));
-
-    return root;
-  }, [balanceRecords, selectedMonth, selectedYear, tasa, auxDataConfig]);
-
-  let totalActivos = 0; let totalPasPat = 0;
-  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIVO') || n.n.startsWith('1')) totalActivos += n.u; else totalPasPat += n.u; });
-
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
-
-  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={auxDataConfig} />;
-
-  return (
-    <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
-      <PrintStyles />
-      {/* Fuera botones de expandir en la cabecera, solo Mes y Año como pediste */}
-      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-2">
-        <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Salir al Panel</button>
-          {availableMonths.length > 0 && (
-            <div className="border-l border-slate-200 pl-4 flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Año:</span>
-              <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md block p-1.5 font-bold outline-none">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Mes Corte:</span>
-              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md block p-1.5 font-bold outline-none">
-                {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="border-l border-slate-200 pl-4 flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tasa Bs/USD:</span>
-            <input
-              type="number" min="1" step="0.01" value={tasa}
-              onChange={e => setTasa(parseFloat(e.target.value) || 1)}
-              className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-md p-1.5 w-24 font-black outline-none focus:border-slate-400"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2 bg-slate-800 p-1 rounded-md">
-          <button onClick={() => window.print()} className="px-3 py-1 rounded text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Printer size={14}/> PDF</button>
-          <button onClick={() => handleExportExcel('table-balance', `Balance_${selectedMonth}`, `Balance General - Corte ${selectedMonth}`)} className="px-3 py-1 rounded text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Download size={14}/> Excel</button>
-        </div>
-      </header>
-      <main className="print-area p-4 md:p-8 max-w-5xl mx-auto">
-        <HeaderMembretado isExport={true} />
-        <div className="bg-white px-8 py-8 border border-slate-200 print:border-none shadow-sm print:shadow-none flex flex-col items-center text-center mb-6 rounded-xl">
-          <h2 className="text-xl font-black text-slate-900 uppercase tracking-widest border-b border-slate-100 pb-2 mb-3 w-full max-w-md">Balance de Situación Financiera</h2>
-          <p className="text-slate-600 font-bold uppercase text-[10px] tracking-widest">{selectedMonth ? `Corte Acumulado a: ${selectedMonth} ${selectedYear}` : 'Sin datos'}</p>
-        </div>
-        
-        {dbData.length === 0 || tree.length === 0 ? (
-          <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-sm">
-            <AlertTriangle className="mx-auto text-slate-300 mb-4" size={48}/>
-            <p className="text-slate-500 font-black text-xs uppercase tracking-wider mb-2">No se detectaron cuentas de Balance en el mes seleccionado.</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 print:border-none overflow-hidden">
-            <table id="table-balance" className="w-full text-left border-collapse">
-              <thead className="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b border-slate-300 print:text-black">
-                <tr><th className="px-4 py-4 w-[55%]">Estructura</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Equiv. Bs. <span className="font-normal normal-case">(× {tasa})</span></th><th className="px-3 py-4 text-right">%</th></tr>
-              </thead>
-              <tbody>
-                {/* Expansión deshabilitada por defecto en Balance para mostrar agrupado */}
-                {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={false} highlightedAccounts={highlightedAccounts} toggleHighlight={a => setHighlightedAccounts(p => {const s=new Set(p); if(s.has(a))s.delete(a); else s.add(a); return s;})} onShowReport={setActiveCode} isBalance={true}/>)}
-                <tr className="bg-black text-white font-black border-t-4 border-slate-400 print:bg-slate-200 print:text-black print:border-black">
-                  <td colSpan={4} className="p-6">
-                    <div className="flex flex-wrap justify-between items-center px-4">
-                      <div className="flex items-center gap-4"><Scale size={32} className="text-slate-400 print:text-black"/><div><p className="text-[10px] text-slate-400 print:text-slate-700 uppercase tracking-widest font-bold">Ecuación Patrimonial</p><p className="text-sm font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
-                      <div className="flex gap-8 text-right mt-4 sm:mt-0">
-                        <div><p className="text-[10px] text-slate-400 print:text-slate-700 uppercase tracking-widest font-bold">Total Activos</p><p className="text-xl font-mono text-white print:text-black">USD {fmtR(totalActivos)}</p></div>
-                        <div><p className="text-[10px] text-slate-400 print:text-slate-700 uppercase tracking-widest font-bold">Pasivo + Pat.</p><p className="text-xl font-mono text-white print:text-black">USD {fmtR(totalPasPat)}</p></div>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// ============================================================================
-// 7. VISTA: SUB-REPORTE DETALLADO AUXILIARES (DINÁMICO)
+// 7. VISTA: SUB-REPORTE AUXILIAR DINÁMICO
 // ============================================================================
 function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
-  const dataGroup = auxDataConfig[accountCode] || { label: 'Sin registros', type: accountCode.startsWith('1') ? 'cxc' : 'cxp', records: [] };
-  const filteredData = dataGroup.records;
-  const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
+  const group = auxDataConfig[accountCode] || { label: 'Sin registros', records: [] };
+  const total = group.records.reduce((a,c)=>a+c.monto, 0);
 
   return (
-    <div className="animate-in fade-in bg-[#f8fafc] print:bg-white min-h-screen pb-20">
-      <PrintStyles />
-      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Volver al Balance</button>
-        <div className="flex gap-2 bg-slate-800 p-1 rounded-md">
-          <button onClick={() => window.print()} className="px-3 py-1 rounded text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Printer size={14}/> PDF</button>
-          <button onClick={() => handleExportExcel(`table-aux-${accountCode}`, `Auxiliar_${accountCode}`, `Auxiliar - ${dataGroup.label}`)} className="px-3 py-1 rounded text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Download size={14}/> Excel</button>
-        </div>
+    <div className="animate-in fade-in bg-[#f8fafc] min-h-screen p-4 pb-20">
+      <header className="bg-white border-b border-slate-200 p-4 mb-6 flex justify-between items-center shadow-sm">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase"><ArrowLeft size={16}/> Volver</button>
+        <button onClick={()=>window.print()} className="px-4 py-2 bg-slate-800 text-white rounded text-[10px] font-black uppercase flex items-center gap-2"><Printer size={14}/> PDF</button>
       </header>
-      <main className="p-4 md:p-8 max-w-5xl mx-auto">
+      <main className="max-w-5xl mx-auto">
         <HeaderMembretado isExport={true} />
-        <div className="flex items-center justify-between mb-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm print:shadow-none print:border-none print:p-0">
-          <div><h2 className="text-2xl font-black text-slate-900 uppercase flex items-center gap-3">{dataGroup.type === 'cxc' ? <Users className="text-blue-500 no-print"/> : <Briefcase className="text-red-500 no-print"/>}Auxiliar Detallado</h2><p className="text-xs font-bold text-slate-400 print:text-black uppercase mt-1">Cuenta: {accountCode} - {dataGroup.label}</p></div>
-          <div className="text-right"><p className="text-[10px] font-black uppercase text-slate-400 print:text-black tracking-widest">Saldo USD</p><p className={`text-2xl font-mono font-black ${dataGroup.type === 'cxc' ? 'text-blue-600 print:text-black' : 'text-red-600 print:text-black'}`}>{total.toLocaleString('es-VE')}</p></div>
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-xl mb-6 flex justify-between items-center">
+          <div><h2 className="text-2xl font-black text-slate-900 uppercase">Detalle Auxiliar</h2><p className="text-slate-400 font-bold uppercase text-xs">Cuenta: {accountCode} - {group.label}</p></div>
+          <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase">Saldo Neto USD</p><p className="text-3xl font-mono font-black text-slate-900">{total.toLocaleString('es-VE')}</p></div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:border-none">
-          <div className="overflow-x-auto">
-            <table id={`table-aux-${accountCode}`} className="w-full text-left border-collapse" style={{minWidth:'900px'}}>
-              <thead className="bg-slate-100 text-[9px] uppercase font-black text-slate-500 border-b border-slate-300 print:bg-slate-200 print:text-black">
-                <tr><th className="px-3 py-4">Código</th><th className="px-3 py-4">Descripción</th><th className="px-3 py-4">Operación</th><th className="px-3 py-4">Emisión</th><th className="px-3 py-4">Vencimiento</th><th className="px-3 py-4 text-right">Días</th><th className="px-3 py-4">Documento</th><th className="px-3 py-4 text-right">Monto USD</th></tr>
-              </thead>
-              <tbody>
-                {filteredData.map((item, i) => (
-                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors print:border-slate-300">
-                    <td className="px-3 py-2 text-[11px] font-bold text-slate-500 print:text-slate-800">{item.cod}</td>
-                    <td className="px-3 py-2 text-[11px] font-black text-slate-800 print:text-black max-w-[180px] truncate">{item.nombre}</td>
-                    <td className="px-3 py-2 text-[11px] text-slate-600 print:text-slate-900">{item.operacion}</td>
-                    <td className="px-3 py-2 text-[11px] font-mono text-slate-500 print:text-slate-900">{item.emision}</td>
-                    <td className="px-3 py-2 text-[11px] font-mono text-slate-500 print:text-slate-900">{item.vence}</td>
-                    <td className={`px-3 py-2 text-right text-[11px] font-mono ${Number(item.dias) < 0 ? 'text-red-500 font-bold print:text-black' : 'text-slate-500 print:text-black'}`}>{item.dias ?? '-'}</td>
-                    <td className="px-3 py-2 text-[11px] font-mono text-slate-600 print:text-slate-900">{item.doc}</td>
-                    <td className={`px-3 py-2 text-right text-[12px] font-mono font-bold ${item.monto < 0 ? 'text-red-500 print:text-black' : 'text-slate-900 print:text-black'}`}>{item.monto.toLocaleString('es-VE')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-// ============================================================================
-// 8. VISTA: ACTIVOS FIJOS (INVERSIONES)
-// ============================================================================
-const ACTIVOS_FIJOS = [
-  { grupo:'Vehículos',                   cod:'AF-V001', descripcion:'Camión Reparto — Chevrolet N300',          fechaAdq:'07/10/2025', costoOriginal:21110.23, depAcum:2637.53, vidaUtil:60,  proveedor:'AUTO TOTAL, C.A' },
-  { grupo:'Inmuebles',                   cod:'AF-I001', descripcion:'Local Comercial — Contrato Pacomela',      fechaAdq:'02/01/2026', costoOriginal:169547.91,depAcum:4238.70, vidaUtil:240, proveedor:'AGRO INDUSTRIAS LACTEAS PACOMELA, C.A' },
-  { grupo:'Maquinaria y Equipos',        cod:'AF-M001', descripcion:'Equipos de Producción y Empaque',         fechaAdq:'01/06/2024', costoOriginal:15000.00, depAcum:3750.00, vidaUtil:60,  proveedor:'—' },
-];
-
-function InversionesView({ onBack }) {
-  const grupos = [...new Set(ACTIVOS_FIJOS.map(a => a.grupo))];
-  const fmt = v => new Intl.NumberFormat('es-VE', { minimumFractionDigits:2, maximumFractionDigits:2 }).format(v);
-  const totalCosto = ACTIVOS_FIJOS.reduce((s,a) => s + a.costoOriginal, 0);
-  const totalDep   = ACTIVOS_FIJOS.reduce((s,a) => s + a.depAcum, 0);
-  const totalNeto  = totalCosto - totalDep;
-
-  return (
-    <div className="min-h-screen bg-[#f8fafc] print:bg-white">
-      <PrintStyles />
-      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Volver</button>
-        <div className="flex gap-2 bg-slate-800 p-1 rounded-md">
-          <button onClick={() => window.print()} className="px-3 py-1 text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Printer size={14}/> PDF</button>
-          <button onClick={() => handleExportExcel('table-activos', 'Activos_Fijos', 'Registro de Activos Fijos')} className="px-3 py-1 text-[10px] font-bold uppercase text-white hover:bg-slate-700 flex items-center gap-1"><Download size={14}/> Excel</button>
-        </div>
-      </header>
-      <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <HeaderMembretado isExport={true} />
-        <div className="bg-white px-8 py-8 border border-slate-200 print:border-none shadow-sm print:shadow-none flex flex-col items-center text-center mb-6 rounded-xl">
-          <h2 className="text-xl font-black text-slate-900 uppercase tracking-widest mb-5">Registro de Activos Fijos</h2>
-          <div className="no-print grid grid-cols-3 gap-6 w-full max-w-2xl mb-4">
-            {[
-              { label:'Costo Original', val:fmt(totalCosto), color:'text-slate-800' },
-              { label:'Dep. Acumulada', val:fmt(totalDep),   color:'text-red-500' },
-              { label:'Valor Neto USD', val:fmt(totalNeto),  color:'text-slate-900' },
-            ].map(k => (
-              <div key={k.label} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p>
-                <p className={`text-lg font-black font-mono ${k.color}`}>{k.val}</p>
-              </div>
+        <table id="table-aux" className="w-full text-left bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <thead className="bg-slate-800 text-white text-[9px] font-black uppercase">
+            <tr><th className="p-4">Código</th><th className="p-4">Descripción</th><th className="p-4">Operación</th><th className="p-4 text-right">Monto USD</th></tr>
+          </thead>
+          <tbody>
+            {group.records.map((r,i)=>(
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                <td className="p-3 text-[11px] font-bold text-slate-500">{r.cod}</td><td className="p-3 text-[11px] font-black text-slate-800">{r.nombre}</td><td className="p-3 text-[11px] text-slate-600">{r.operacion}</td><td className="p-3 text-right font-mono text-[11px] font-black">{r.monto.toLocaleString('es-VE')}</td>
+              </tr>
             ))}
-          </div>
-        </div>
-        
-        <div id="table-activos">
-        {grupos.map(grupo => {
-          const items = ACTIVOS_FIJOS.filter(a => a.grupo === grupo);
-          const gCosto = items.reduce((s,a) => s + a.costoOriginal, 0);
-          const gDep   = items.reduce((s,a) => s + a.depAcum, 0);
-          return (
-            <div key={grupo} className="bg-white rounded-xl shadow-sm print:shadow-none overflow-hidden border border-slate-200 mb-5">
-              <div className="bg-slate-100 print:bg-slate-200 px-6 py-3 flex justify-between items-center border-b border-slate-200">
-                <span className="text-slate-800 print:text-black font-black text-xs uppercase tracking-widest">{grupo}</span>
-                <span className="text-slate-500 print:text-black text-[10px] font-bold">Neto: <span className="text-slate-900 print:text-black font-black">USD {fmt(gCosto-gDep)}</span></span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" style={{minWidth:'780px'}}>
-                  <thead className="bg-white text-[9px] uppercase font-black text-slate-400 border-b border-slate-200">
-                    <tr><th className="px-4 py-3">Código</th><th className="px-4 py-3">Descripción</th><th className="px-4 py-3">Fecha Adq.</th><th className="px-4 py-3 text-right">Costo USD</th><th className="px-4 py-3 text-right">Dep. Acum.</th><th className="px-4 py-3 text-right text-slate-800 print:text-black">Valor Neto</th></tr>
-                  </thead>
-                  <tbody>
-                    {items.map((a,i) => (
-                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 text-[11px] font-black text-slate-500 font-mono">{a.cod}</td><td className="px-4 py-3 text-[11px] font-bold text-slate-800">{a.descripcion}</td><td className="px-4 py-3 text-[11px] text-slate-500 font-mono">{a.fechaAdq}</td><td className="px-4 py-3 text-right text-[11px] font-mono text-slate-700">{fmt(a.costoOriginal)}</td><td className="px-4 py-3 text-right text-[11px] font-mono text-red-400">({fmt(a.depAcum)})</td><td className="px-4 py-3 text-right text-[12px] font-mono font-black text-slate-800 print:text-black">{fmt(a.costoOriginal-a.depAcum)}</td>
-                      </tr>
-                    ))}
-                    <tr className="bg-slate-50 font-black text-[11px] border-t border-slate-200">
-                      <td colSpan={3} className="px-4 py-3 text-slate-700 uppercase tracking-wider">Total {grupo}</td><td className="px-4 py-3 text-right font-mono text-slate-800">{fmt(gCosto)}</td><td className="px-4 py-3 text-right font-mono text-red-500">({fmt(gDep)})</td><td className="px-4 py-3 text-right font-mono text-slate-900 print:text-black">{fmt(gCosto-gDep)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
-        </div>
+          </tbody>
+        </table>
       </main>
     </div>
   );
 }
 
 // ============================================================================
-// 9. DASHBOARD PRINCIPAL (TEMA CLARO PROFESIONAL CON RELIEVE 3D)
+// 8. DASHBOARD PRINCIPAL (TEMA CLARO CON RELIEVE 3D)
 // ============================================================================
 function ReportesFinancierosApp() {
   const [view, setView] = useState('dashboard');
-  const [dbData, setDbData] = useState(() => JSON.parse(localStorage.getItem('j_db_data') || '[]'));
-  const [planCuentas, setPlanCuentas] = useState(() => JSON.parse(localStorage.getItem('j_plan') || '{}'));
-  const [auxDataConfig, setAuxDataConfig] = useState(() => JSON.parse(localStorage.getItem('j_aux') || '{}'));
+  const [dbData, setDbData] = useState(() => JSON.parse(localStorage.getItem('j_db') || '[]'));
+  const [planCuentas, setPlanCuentas] = useState(() => JSON.parse(localStorage.getItem('j_pc') || '{}'));
+  const [auxDataConfig, setAuxDataConfig] = useState(() => JSON.parse(localStorage.getItem('j_ax') || '{}'));
 
-  useEffect(() => { localStorage.setItem('j_db_data', JSON.stringify(dbData)); localStorage.setItem('j_plan', JSON.stringify(planCuentas)); localStorage.setItem('j_aux', JSON.stringify(auxDataConfig)); }, [dbData, planCuentas, auxDataConfig]);
-
-  const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
-  const hasPlan = Object.keys(planCuentas).length > 0;
-
-  const handleUploadResultados = async (e) => {
-    if (!e.target.files.length) return;
-    try {
-      const newData = await processFiles(e.target.files);
-      setDbData(prev => {
-        const newKeys = [...new Set(newData.map(d => `${d.month}-${d.year}`))];
-        const keepData = prev.filter(d => !newKeys.includes(`${d.month}-${d.year}`));
-        return [...keepData, ...newData];
-      });
-      alert("✅ Resultados cargados exitosamente.");
-    } catch (error) { alert("Error al procesar."); }
-    e.target.value = '';
-  };
-
-  const handleUploadPlan = async (e) => {
-    if (!e.target.files.length) return;
-    try { const plan = await processPlanCuentas(e.target.files[0]); setPlanCuentas(plan); alert("✅ Plan de cuentas cargado."); } catch (error) { alert("Error."); }
-    e.target.value = '';
-  };
-
-  const handleUploadSaldos = async (e) => {
-    if (!e.target.files.length) return;
-    if (Object.keys(planCuentas).length === 0) { alert("⚠️ Carga el Plan de Cuentas primero."); return; }
-    try { const newBalanceData = await processSaldosBalance(e.target.files[0], planCuentas); setDbData(prev => [...prev, ...newBalanceData]); alert("✅ Saldos Iniciales cargados al Balance."); } catch (error) { alert("Error al procesar saldos."); }
-    e.target.value = '';
-  };
-
-  const handleUploadAuxiliar = async (e) => {
-    if (!e.target.files.length) return;
-    try {
-      const parsedGroups = await processAuxFile(e.target.files);
-      setAuxDataConfig(prev => {
-        const newConfig = { ...prev };
-        for (const code in parsedGroups) {
-          if (!newConfig[code]) newConfig[code] = parsedGroups[code];
-          else newConfig[code].records = [...newConfig[code].records, ...parsedGroups[code].records];
-        }
-        return newConfig;
-      });
-      alert(`✅ Auxiliares procesados e integrados dinámicamente al Balance.`);
-    } catch (err) { alert("❌ Error al procesar auxiliares: " + err.message); }
-    e.target.value = '';
-  };
+  useEffect(() => {
+    localStorage.setItem('j_db', JSON.stringify(dbData));
+    localStorage.setItem('j_pc', JSON.stringify(planCuentas));
+    localStorage.setItem('j_ax', JSON.stringify(auxDataConfig));
+  }, [dbData, planCuentas, auxDataConfig]);
 
   if (view === 'configuracion') return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-700 font-sans">
-      <header className="px-6 py-4 bg-white border-b border-slate-200 flex items-center gap-4 shadow-sm">
-        <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-slate-400 hover:text-slate-900 font-bold text-xs uppercase transition-colors"><ArrowLeft size={16}/> Panel</button>
-        <h1 className="text-slate-900 font-black text-lg tracking-widest uppercase flex items-center gap-2">Configuración</h1>
-      </header>
-      <main className="max-w-3xl mx-auto p-8 space-y-6">
-        <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-xl shadow-slate-200/50 space-y-4">
-          <h2 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Ingesta de Datos</h2>
+    <div className="min-h-screen bg-[#f1f5f9] p-8">
+      <div className="max-w-3xl mx-auto bg-white rounded-3xl p-10 border border-slate-200 shadow-2xl">
+        <button onClick={()=>setView('dashboard')} className="flex items-center gap-2 font-black text-[10px] uppercase text-slate-400 mb-8"><ArrowLeft size={16}/> Volver al Panel</button>
+        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-3"><Database className="text-orange-500"/> Ingesta de Información</h2>
+        <div className="space-y-4">
           {[
-            { num:'01', label: hasPlan ? '✓ Plan de Cuentas Cargado' : 'Plan de Cuentas (.txt)', active: true, handler: handleUploadPlan },
-            { num:'02', label:'Saldos Iniciales — Balance (.xlsx)', active: hasPlan, handler: handleUploadSaldos },
-            { num:'03', label:'Estado de Resultados (.xlsx)', active: true, multiple: true, handler: handleUploadResultados },
-            { num:'04', label:'Auxiliares Dinámicos (.xlsx)', active: true, multiple: true, handler: handleUploadAuxiliar },
-          ].map(step => (
-            <label key={step.num} className={`flex items-center gap-4 p-4 rounded-xl border border-slate-200 cursor-pointer transition-all hover:-translate-y-0.5 shadow-sm hover:shadow-md bg-white ${step.active ? 'hover:border-orange-500/50 hover:bg-orange-50/30' : 'opacity-50 cursor-not-allowed'}`}>
-              <span className="text-xl font-black font-mono text-slate-300 transition-colors">{step.num}</span>
-              <span className="flex-1 font-bold text-xs uppercase tracking-wider text-slate-600">{step.label}</span>
-              <Upload size={16} className="text-slate-300"/>
-              <input type="file" multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
+            { n:'01', l:'Plan de Cuentas (.txt)', h: (e)=>processPlanCuentas(e.target.files[0]).then(p=>{setPlanCuentas(p); alert("OK")}) },
+            { n:'02', l:'Saldos Iniciales — Balance (.xlsx)', h: (e)=>processSaldosBalance(e.target.files[0], planCuentas).then(d=>setDbData(prev=>[...prev, ...d])) },
+            { n:'03', l:'Estado de Resultados (.xlsx)', h: (e)=>processFiles(e.target.files).then(d=>setDbData(prev=>[...prev, ...d])), m:true },
+            { n:'04', l:'Auxiliares CxC / CxP (.xlsx)', h: (e)=>processAuxFile(e.target.files).then(a=>setAuxDataConfig(a)), m:true }
+          ].map(s => (
+            <label key={s.n} className="flex items-center gap-5 p-5 rounded-2xl border-2 border-slate-100 cursor-pointer hover:border-orange-500/40 hover:bg-orange-50/30 transition-all group shadow-sm active:scale-[0.98]">
+              <span className="text-2xl font-black font-mono text-slate-200 group-hover:text-orange-500 transition-colors">{s.n}</span>
+              <span className="flex-1 font-bold text-xs uppercase tracking-wider text-slate-600">{s.l}</span>
+              <Upload size={20} className="text-slate-300 group-hover:text-orange-500"/>
+              <input type="file" multiple={s.m} className="hidden" onChange={s.h}/>
             </label>
           ))}
         </div>
-        <button onClick={() => { if(window.confirm("¿Borrar todo?")) { setDbData([]); setPlanCuentas({}); setAuxDataConfig({}); }}} className="w-full bg-white text-red-500 border border-red-200 px-4 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-red-50 hover:border-red-300 transition-all shadow-sm">Limpiar Base de Datos</button>
-      </main>
+        <button onClick={()=>{if(window.confirm("¿Borrar todo?")){setDbData([]); setPlanCuentas({}); setAuxDataConfig({})}}} className="w-full mt-10 p-4 border border-red-200 text-red-500 font-black uppercase text-[10px] rounded-2xl hover:bg-red-50 transition-all">Limpiar Base de Datos</button>
+      </div>
     </div>
   );
 
-  if (view === 'resultado') return <EstadoResultadoView onBack={() => setView('dashboard')} dbData={dbData}/>;
-  if (view === 'balance') return <BalanceGeneralView onBack={() => setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig}/>;
-  if (view === 'comparativo') return <AnalisisComparativoView onBack={() => setView('dashboard')} dbData={dbData} />;
-  if (view === 'inversiones') return <InversionesView onBack={() => setView('dashboard')} />;
-
-  const modules = [
-    { id:'resultado', title:'Estado de Resultados', desc:'Rentabilidad mensual y acumulada', icon:<LineChart size={28}/>, onClick:() => dbData.length > 0 ? setView('resultado') : alert('Carga datos en Configuración.') },
-    { id:'balance', title:'Balance General', desc:'Situación financiera actualizada', icon:<Scale size={28}/>, onClick:() => dbData.length > 0 ? setView('balance') : alert('Carga datos en Configuración.') },
-    { id:'comparativo', title:'Análisis de Variación', desc:'Comparativo mensual', icon:<GitCompare size={28}/>, onClick:() => dbData.length >= 2 ? setView('comparativo') : alert('Mínimo 2 meses cargados.') },
-    { id:'inversiones', title:'Activos Fijos', desc:'Registro de depreciación', icon:<Landmark size={28}/>, onClick:() => setView('inversiones') },
-  ];
+  if (view === 'resultado') return <EstadoResultadoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
+  if (view === 'balance')   return <BalanceGeneralView onBack={()=>setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig}/>;
 
   return (
-    <div className="min-h-screen bg-[#f0f4f8] text-slate-800 font-sans relative overflow-hidden">
-      {/* Fondo con Cuadrícula sutil profesional */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:32px_32px]"></div>
-
-      <header className="relative z-10 px-8 py-6 border-b border-slate-200 flex justify-between items-center bg-white/80 backdrop-blur-md shadow-sm">
-        <div><h1 className="text-slate-900 font-black text-2xl tracking-[0.1em] uppercase flex items-center gap-3"><Activity size={28} className="text-orange-500"/> JIRET G&B <span className="text-slate-400 font-normal">Finance</span></h1><p className="text-slate-500 text-[10px] font-black tracking-[0.2em] uppercase mt-1">Servicios Jiret G&B, C.A. · RIF: J-412309374</p></div>
-        <button onClick={() => setView('configuracion')} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 px-5 py-2.5 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 flex items-center gap-2"><Database size={14}/> Configuración</button>
+    <div className="min-h-screen bg-[#f4f7fa] relative overflow-hidden">
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:40px_40px]"></div>
+      <header className="relative z-10 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.05)] border-b border-slate-200 p-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3 uppercase"><Activity size={32} className="text-orange-500"/> Jiret G&B <span className="text-slate-400 font-normal">Finance</span></h1>
+          <p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase mt-1">Servicios Administrativos Contables</p>
+        </div>
+        <button onClick={()=>setView('configuracion')} className="bg-white border-2 border-slate-100 hover:border-orange-500 hover:text-orange-600 px-6 py-3 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all flex items-center gap-2"><Database size={16}/> Configuración</button>
       </header>
 
-      <main className="relative z-10 max-w-6xl mx-auto px-6 py-20">
-        <div className="mb-12"><h2 className="text-slate-900 font-black text-3xl tracking-tight mb-2 uppercase">Panel Administrativo</h2><div className="w-16 h-1.5 bg-orange-500 rounded-full"></div></div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {modules.map(mod => (
-            <button key={mod.id} onClick={mod.onClick} className="group relative bg-white rounded-2xl p-8 text-left border border-slate-100 shadow-[0_10px_20px_rgba(0,0,0,0.04)] transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.08)] hover:border-orange-200 active:translate-y-0 overflow-hidden">
-              <div className="bg-slate-50 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 border border-slate-100 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] group-hover:bg-orange-50 group-hover:border-orange-200 transition-colors text-slate-600 group-hover:text-orange-500">
-                {mod.icon}
+      <main className="relative z-10 max-w-7xl mx-auto px-10 py-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
+          {[
+            { id:'resultado', t:'Estado de Resultados', d:'Rentabilidad Mensual', i:<LineChart size={32}/> },
+            { id:'balance', t:'Balance General', d:'Situación Financiera', i:<Scale size={32}/> },
+            { id:'comparativo', t:'Análisis Variación', d:'Mes vs Mes', i:<GitCompare size={32}/> },
+            { id:'config', t:'Base de Datos', d:'Ingesta de Archivos', i:<Database size={32}/>, act:()=>setView('configuracion') }
+          ].map(m => (
+            <button key={m.id} onClick={m.act || (()=>setView(m.id))} className="group relative bg-white rounded-[2rem] p-10 text-left border-b-8 border-slate-200 shadow-[0_15px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_25px_50px_rgba(0,0,0,0.1)] hover:-translate-y-3 hover:border-orange-500 transition-all duration-300">
+              <div className="bg-slate-50 w-20 h-20 rounded-3xl flex items-center justify-center mb-8 border border-slate-100 shadow-[inset_0_4px_8px_rgba(0,0,0,0.05)] group-hover:bg-orange-50 group-hover:border-orange-200 text-slate-600 group-hover:text-orange-500 transition-colors">
+                {m.i}
               </div>
-              <h3 className="font-black text-sm text-slate-900 mb-2 uppercase tracking-tight">{mod.title}</h3>
-              <p className="text-[11px] text-slate-500 font-bold leading-relaxed">{mod.desc}</p>
-              <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all"><ChevronRight size={20} className="text-orange-500"/></div>
+              <h3 className="font-black text-base text-slate-900 mb-2 uppercase tracking-tighter leading-none">{m.t}</h3>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{m.d}</p>
+              <div className="absolute bottom-10 right-10 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all"><ChevronRight className="text-orange-500" size={24}/></div>
             </button>
           ))}
         </div>
-        <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-[0.4em] mt-24">Supply ERP · Jiret G&B Finance v3.0</p>
+        <p className="text-center text-slate-300 font-black text-[10px] uppercase tracking-[0.5em] mt-32">Supply ERP · High Impact Accounting v4.0</p>
       </main>
     </div>
   );
