@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, Upload, CheckCircle, Scale, LayoutDashboard,
   LineChart, CalendarDays, AlertTriangle, ChevronRight, ChevronDown, Star, PlusCircle, Trash2, ArrowUpRight, ArrowDownRight, GitCompare, Landmark, FileSpreadsheet,
-  FileText, Users, Briefcase, Search, BookOpen, Database, FileOutput, Printer, Download, Activity, Menu, X
+  FileText, Users, Briefcase, Search, BookOpen, Database, FileOutput, Printer, Download, Activity, Menu, X, Edit, Save
 } from 'lucide-react';
 
 // ============================================================================
@@ -63,9 +63,8 @@ const handleExportExcel = (tableId, fileName, reportTitle) => {
   window.XLSX.utils.book_append_sheet(wb, ws, "Reporte");
   window.XLSX.writeFile(wb, `${fileName}.xlsx`);
 };
-
 // ============================================================================
-// 2. PROCESADORES DE DATOS (Saldos Iniciales y Anti-Errores)
+// 2. PROCESADORES DE DATOS (LECTURA INTELIGENTE DE SALDOS Y RESULTADOS)
 // ============================================================================
 const loadSheetJS = () => new Promise((r) => {
   if (window.XLSX) return r(window.XLSX);
@@ -156,15 +155,20 @@ const processSaldosBalance = async (file, planCuentas) => {
 
   return rows.filter((r, i) => i > 0 && r[0]).map(row => {
     const rawName = String(row[0]).trim();
-    const isAuxAccount = rawName.startsWith('1.1.02') || rawName.startsWith('2.1.01'); // REGLA: No duplica CxC/CxP
+    const isAuxAccount = rawName.startsWith('1.1.02') || rawName.startsWith('2.1.01'); // Ignorar CxC/CxP
     
-    let path = planCuentas[rawName];
+    // Separar código de la descripción para buscar en el Plan de Cuentas
+    const nameParts = rawName.split('-');
+    const cleanName = nameParts.length > 1 ? nameParts.slice(1).join('-').trim() : rawName;
+    
+    let path = planCuentas[cleanName] || planCuentas[rawName];
     if (!path) {
       if (rawName.startsWith('1.')) path = 'ACTIVOS>OTROS ACTIVOS';
       else if (rawName.startsWith('2.')) path = 'PASIVOS>OTROS PASIVOS';
       else if (rawName.startsWith('3.')) path = 'PATRIMONIO>CAPITAL';
       else path = 'OTROS';
     }
+
     return {
       month: 'Saldos Iniciales', year, path, name: rawName,
       usd: isAuxAccount ? 0 : parseVal(row[1]),
@@ -211,7 +215,7 @@ const processAuxFile = async (files) => {
   return result;
 };
 // ============================================================================
-// 3. COMPONENTE: ÁRBOL EXPANDIBLE (RESTAURADO CON BOTONES + / -)
+// 3. COMPONENTE: FILA DESPLEGABLE 
 // ============================================================================
 const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -270,35 +274,19 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 };
 
 // ============================================================================
-// 4. VISTA: ESTADO DE RESULTADOS
+// 4. VISTAS: RESULTADOS Y COMPARATIVO
 // ============================================================================
-function EstadoResultadoView({ dbData }) {
+function EstadoResultadoView({ onBack, dbData }) {
   const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
   const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || new Date().getFullYear().toString());
   const availableMonths = useMemo(() => [...new Set(dbData.filter(d => d.year === selectedYear).map(d => d.month))].filter(m=>m!=='Sin Mes' && m!=='Saldos Iniciales'), [dbData, selectedYear]);
   const [selectedMonth, setSelectedMonth] = useState('General');
-  
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
-
-  const [highlightedAccounts, setHighlightedAccounts] = useState(() => {
-    try { const saved = localStorage.getItem('jiret_highlighted_accounts'); return saved ? new Set(JSON.parse(saved)) : new Set(); } 
-    catch (e) { return new Set(); }
-  });
-  useEffect(() => { localStorage.setItem('jiret_highlighted_accounts', JSON.stringify([...highlightedAccounts])); }, [highlightedAccounts]);
-
-  const toggleHighlight = (accountName) => {
-    setHighlightedAccounts(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(accountName)) newSet.delete(accountName); else newSet.add(accountName);
-      return newSet;
-    });
-  };
 
   const { trees, totals } = useMemo(() => {
     const data = selectedMonth === 'General' ? dbData.filter(d=>d.year===selectedYear && d.month !== 'Saldos Iniciales') : dbData.filter(d=>d.year===selectedYear && d.month===selectedMonth);
     const resData = data.filter(i => !i.path?.toUpperCase().includes('ACTIVO') && !i.path?.toUpperCase().includes('PASIVO') && !/^[123]/.test(i.name||''));
-    
     const build = (arr, mult = 1) => {
       const root = [];
       arr.forEach(i => {
@@ -313,19 +301,14 @@ function EstadoResultadoView({ dbData }) {
         if (!leaf) cur.push({ n: i.name, u: i.usd*mult, b: i.bs*mult, isLeaf: true });
         else { leaf.u += i.usd*mult; leaf.b += i.bs*mult; }
       });
-      const comp = (nodes) => {
-        let u=0, b=0; nodes.forEach(n => { if(!n.isLeaf){ const t=comp(n.c); n.u=t.u; n.b=t.b; } u+=n.u; b+=n.b; });
-        return {u, b};
-      };
+      const comp = (nodes) => { let u=0, b=0; nodes.forEach(n => { if(!n.isLeaf){ const t=comp(n.c); n.u=t.u; n.b=t.b; } u+=n.u; b+=n.b; }); return {u, b}; };
       comp(root); return root;
     };
-
     const isIng = i => (i.path||'').toUpperCase().includes('INGRESO') || (i.name||'').startsWith('4');
     const isCos = i => (i.path||'').toUpperCase().includes('COSTO') || (i.name||'').startsWith('5');
     const tIng = build(resData.filter(isIng), -1); 
     const tCos = build(resData.filter(isCos));
     const tGas = build(resData.filter(i => !isIng(i) && !isCos(i)));
-
     const s = (n) => n.reduce((a,c)=>a+c.u, 0);
     const ti=s(tIng), tc=s(tCos), tg=s(tGas);
     return { trees: { tIng, tCos, tGas }, totals: { ti, tc, tg, ub: ti-tc, un: (ti-tc)-tg } };
@@ -337,12 +320,13 @@ function EstadoResultadoView({ dbData }) {
     <div className="pb-20 animate-in fade-in">
       <PrintStyles />
       <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm rounded-b-2xl mb-6 flex-wrap gap-4">
-        <div className="flex gap-3 items-center">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Panel</button>
+        <div className="flex gap-2 items-center">
           <select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl p-2 font-bold outline-none shadow-sm">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
           <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl p-2 font-bold outline-none shadow-sm"><option value="General">Acumulado General</option>{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
-          <div className="h-6 w-px bg-slate-300 mx-2"></div>
-          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-bold uppercase flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-sm"><ChevronDown size={14}/> Expandir</button>
-          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-bold uppercase flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-sm"><ChevronRight size={14}/> Contraer</button>
+          <span className="text-slate-300 mx-2">|</span>
+          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-slate-200 transition-colors shadow-sm"><ChevronDown size={14}/> Expandir</button>
+          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-slate-200 transition-colors shadow-sm"><ChevronRight size={14}/> Contraer</button>
         </div>
         <div className="flex gap-3">
           <button onClick={()=>window.print()} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-slate-800 transition-colors"><Printer size={14}/> PDF</button>
@@ -362,17 +346,17 @@ function EstadoResultadoView({ dbData }) {
             </thead>
             <tbody key={expandKey}>
               <tr className="bg-white border-b border-slate-100 font-black text-xs uppercase"><td colSpan={4} className="px-6 py-5 tracking-widest text-slate-800">I. INGRESOS</td></tr>
-              {trees.tIng.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>)}
+              {trees.tIng.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen}/>)}
               <tr className="bg-slate-50 text-slate-800 font-black border-y-2 border-slate-200"><td className="px-6 py-4 pl-10 text-[11px] uppercase tracking-widest">TOTAL INGRESOS</td><td className="px-4 py-4 text-right font-mono text-sm">{fmtR(totals.ti)}</td><td className="hidden sm:table-cell px-4 py-4 text-right font-mono text-sm">{fmtR(totals.ti*45)}</td><td className="px-4 py-4 text-right font-mono text-sm">100%</td></tr>
 
               <tr className="bg-white border-b border-slate-100 font-black text-xs uppercase"><td colSpan={4} className="px-6 py-5 pt-8 tracking-widest text-slate-800">II. COSTOS DE VENTA</td></tr>
-              {trees.tCos.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>)}
+              {trees.tCos.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen}/>)}
               <tr className="bg-slate-50 text-slate-800 font-black border-y-2 border-slate-200"><td className="px-6 py-4 pl-10 text-[11px] uppercase tracking-widest">TOTAL COSTOS</td><td className="px-4 py-4 text-right font-mono text-sm">{fmtR(totals.tc)}</td><td className="hidden sm:table-cell px-4 py-4 text-right font-mono text-sm">{fmtR(totals.tc*45)}</td><td className="px-4 py-4 text-right font-mono text-sm">{(totals.tc/(totals.ti||1)*100).toFixed(2)}%</td></tr>
 
               <tr className="bg-slate-900 text-white font-black border-y-4 border-slate-400 print:bg-slate-200 print:text-black print:border-black"><td className="px-6 py-6 uppercase tracking-widest">III. UTILIDAD BRUTA</td><td className={`px-4 py-6 text-right text-lg font-mono ${totals.ub < 0 ? 'text-red-400':'text-emerald-400'} print:text-black`}>{fmtR(totals.ub)}</td><td className="hidden sm:table-cell"/><td className="px-4 py-6 text-right font-mono text-slate-300 print:text-black">{(Math.abs(totals.ub)/(totals.ti||1)*100).toFixed(2)}%</td></tr>
 
               <tr className="bg-white border-b border-slate-100 font-black text-xs uppercase"><td colSpan={4} className="px-6 py-5 pt-8 tracking-widest text-slate-800">IV. GASTOS OPERATIVOS</td></tr>
-              {trees.tGas.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}/>)}
+              {trees.tGas.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen}/>)}
               <tr className="bg-slate-50 text-slate-800 font-black border-y-2 border-slate-200"><td className="px-6 py-4 pl-10 text-[11px] uppercase tracking-widest">TOTAL GASTOS</td><td className="px-4 py-4 text-right font-mono text-sm">{fmtR(totals.tg)}</td><td className="hidden sm:table-cell px-4 py-4 text-right font-mono text-sm">{fmtR(totals.tg*45)}</td><td className="px-4 py-4 text-right font-mono text-sm">{(totals.tg/(totals.ti||1)*100).toFixed(2)}%</td></tr>
 
               <tr className="bg-orange-500 text-white font-black border-t-4 border-orange-600 print:bg-slate-400 print:text-black print:border-black"><td className="px-6 py-8 uppercase text-lg tracking-widest">V. RESULTADO NETO</td><td className="px-4 py-8 text-right text-2xl font-mono">{fmtR(totals.un)}</td><td className="hidden sm:table-cell"/><td className="px-4 py-8 text-right font-mono text-orange-200 print:text-slate-800">{(Math.abs(totals.un)/(totals.ti||1)*100).toFixed(2)}%</td></tr>
@@ -383,150 +367,13 @@ function EstadoResultadoView({ dbData }) {
     </div>
   );
 }
-// ============================================================================
-// 5. VISTA: BALANCE GENERAL (ACUMULATIVO REAL + AUXILIARES)
-// ============================================================================
-function BalanceGeneralView({ dbData, auxDataConfig, setSubView }) {
-  const balanceRecords = useMemo(() => dbData.filter(item => item.path?.toUpperCase().includes('ACTIVO') || item.path?.toUpperCase().includes('PASIVO') || item.path?.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name || '')), [dbData]);
-  const availableYears = useMemo(() => [...new Set(balanceRecords.map(d => d.year))].filter(Boolean).sort(), [balanceRecords]);
-  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || new Date().getFullYear().toString());
-  
-  const availableMonths = useMemo(() => [...new Set(balanceRecords.filter(d => d.year === selectedYear).map(d => d.month))], [balanceRecords, selectedYear]);
-  // Selecciona por defecto el último mes que no sea "Saldos Iniciales"
-  const defaultMonth = availableMonths.filter(m => m !== 'Saldos Iniciales').pop() || availableMonths[0] || 'Enero';
-  const [selectedMonth, setSelectedMonth] = useState(defaultMonth); 
-  const [tasa, setTasa] = useState(90);
 
-  // Lógica Acumulativa: Suma histórica hasta el mes de corte
-  const tree = useMemo(() => {
-    const root = [];
-    const selectedMonthIndex = monthOrder[selectedMonth] || 0;
-    
-    // Acumulativo: Suma Saldos Iniciales + Meses Anteriores + Mes Seleccionado
-    const cumulativeData = balanceRecords.filter(d => {
-      if (d.year !== selectedYear) return false;
-      const mIndex = monthOrder[d.month] || 0; 
-      return mIndex <= selectedMonthIndex;
-    });
-    
-    // Inyección dinámica de Auxiliares
-    const auxEntries = [];
-    for (const code in auxDataConfig) {
-      const group = auxDataConfig[code];
-      const totalMonto = group.records.reduce((acc, r) => acc + r.monto, 0);
-      if (totalMonto !== 0) {
-        auxEntries.push({
-          name: `${code} - ${group.label}`,
-          path: code.startsWith('1') ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR',
-          usd: totalMonto, bs: totalMonto * tasa
-        });
-      }
-    }
-
-    const fullData = [...cumulativeData, ...auxEntries];
-    const normKey = s => String(s || '').trim().replace(/\s+/g,' ').toUpperCase();
-
-    fullData.forEach(item => {
-      const pathArray = (item.path || 'OTROS').split('>');
-      let cur = root;
-      pathArray.forEach(folderName => {
-        if(!folderName) return;
-        const key = normKey(folderName);
-        let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
-        cur = folder.c;
-      });
-      const leafKey = normKey(item.name);
-      let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
-      if (!leaf) cur.push({ n: String(item.name || '').trim(), u: item.usd, b: item.bs, isLeaf: true });
-      else { leaf.u += item.usd; leaf.b += item.bs; }
-    });
-
-    const compute = (nodes) => {
-      let u = 0, b = 0;
-      nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; });
-      return { u, b };
-    };
-    compute(root);
-
-    const sectionOrder = (name) => {
-      const n = name.toUpperCase();
-      if (n.includes('ACTIVO') || n.startsWith('1')) return 1;
-      if (n.includes('PASIVO') || n.startsWith('2')) return 2;
-      if (n.includes('PATRIMONIO') || n.startsWith('3')) return 3;
-      return 9;
-    };
-    return root.sort((a, b) => sectionOrder(a.n) - sectionOrder(b.n));
-  }, [balanceRecords, selectedMonth, selectedYear, tasa, auxDataConfig]);
-
-  let totalActivos = 0; let totalPasPat = 0;
-  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIVO') || n.n.startsWith('1')) totalActivos += n.u; else totalPasPat += n.u; });
-
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
-
-  return (
-    <div className="pb-20 animate-in fade-in">
-      <PrintStyles />
-      {/* Header sin botones de Expandir/Contraer, tal como lo pediste */}
-      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm rounded-b-2xl mb-6">
-        <div className="flex items-center gap-3">
-          <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl p-2 font-bold outline-none shadow-sm">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Corte Acumulado:</span>
-          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl p-2 font-bold outline-none shadow-sm">
-            {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <div className="h-6 w-px bg-slate-300 mx-2"></div>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tasa Bs:</span>
-          <input type="number" min="1" step="0.01" value={tasa} onChange={e => setTasa(parseFloat(e.target.value) || 1)} className="bg-slate-50 border border-slate-200 rounded-xl p-2 w-24 font-black outline-none text-xs shadow-sm"/>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={() => window.print()} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-slate-800 transition-colors"><Printer size={14}/> PDF</button>
-          <button onClick={() => handleExportExcel('table-balance', `Balance_${selectedMonth}`, `Balance General`)} className="px-5 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-orange-600 transition-colors"><Download size={14}/> Excel</button>
-        </div>
-      </header>
-      <main className="max-w-5xl mx-auto print-area">
-        <HeaderMembretado isExport={true} />
-        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden print:shadow-none print:border-none">
-          <div className="bg-slate-50 p-8 border-b border-slate-100 text-center print:bg-white print:border-none print:p-0 print:mb-6">
-             <h2 className="text-2xl font-black text-slate-900 uppercase tracking-widest">Balance de Situación</h2>
-             <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">Acumulado al Corte: {selectedMonth} {selectedYear}</p>
-          </div>
-          <table id="table-balance" className="w-full text-left border-collapse">
-            <thead className="bg-white text-[10px] font-black text-slate-400 uppercase border-b border-slate-200">
-              <tr><th className="px-6 py-5 w-[55%]">Estructura Patrimonial</th><th className="px-4 py-5 text-right">Saldo USD</th><th className="px-4 py-5 text-right hidden sm:table-cell">Equiv. Bs.</th><th className="px-4 py-5 text-right">%</th></tr>
-            </thead>
-            <tbody>
-              {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={false} onShowReport={(code) => setSubView({type:'auxiliar', code})} isBalance={true}/>)}
-              <tr className="bg-slate-900 text-white font-black border-t-4 border-slate-400 print:bg-slate-200 print:text-black print:border-black">
-                <td colSpan={4} className="p-8">
-                  <div className="flex justify-between items-center px-4">
-                    <div className="flex items-center gap-5"><Scale size={40} className="text-slate-400 print:text-slate-800"/><div><p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold print:text-slate-600">Ecuación Patrimonial</p><p className="text-sm font-black tracking-widest text-slate-200 print:text-slate-900">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
-                    <div className="flex gap-10 text-right">
-                      <div><p className="text-[10px] text-slate-400 uppercase font-bold print:text-slate-600">Total Activos</p><p className="text-2xl font-mono text-white print:text-slate-900">USD {fmtR(totalActivos)}</p></div>
-                      <div><p className="text-[10px] text-slate-400 uppercase font-bold print:text-slate-600">Pasivo + Pat.</p><p className="text-2xl font-mono text-white print:text-slate-900">USD {fmtR(totalPasPat)}</p></div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-// ============================================================================
-// 6. VISTA: ANÁLISIS COMPARATIVO (ESTADO DE RESULTADOS)
-// ============================================================================
-function AnalisisComparativoView({ dbData }) {
+function AnalisisComparativoView({ onBack, dbData }) {
   const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
   const [year1, setYear1] = useState(availableYears[availableYears.length - 1] || '2026');
   const [year2, setYear2] = useState(availableYears[availableYears.length - 1] || '2026');
-  
   const getMonths = (y) => [...new Set(dbData.filter(d=>d.year===y).map(d => d.month))].filter(m => m !== 'Sin Mes' && m !== 'Saldos Iniciales');
   const months1 = getMonths(year1); const months2 = getMonths(year2);
-  
   const [month1, setMonth1] = useState(months1[0] || '');
   const [month2, setMonth2] = useState(months2[1] || months2[0] || '');
 
@@ -553,19 +400,15 @@ function AnalisisComparativoView({ dbData }) {
 
       if (isM1) accountNode.m1_u += item.usd; else accountNode.m2_u += item.usd;
     };
-
     m1Data.forEach(item => processItem(item, true));
     m2Data.forEach(item => processItem(item, false));
-
     root.forEach(cat => {
       let cat_m1 = 0, cat_m2 = 0;
       const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key?.startsWith('4');
       const multiplier = isIngreso ? -1 : 1;
-
       cat.c.forEach(acc => { acc.m1_u *= multiplier; acc.m2_u *= multiplier; cat_m1 += acc.m1_u; cat_m2 += acc.m2_u; });
       cat.m1_u = cat_m1; cat.m2_u = cat_m2;
     });
-
     return root;
   }, [dbData, month1, year1, month2, year2]);
 
@@ -574,7 +417,6 @@ function AnalisisComparativoView({ dbData }) {
     const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || (cat.key && cat.key.startsWith('4'));
     if (isIngreso) { total_m1 += cat.m1_u; total_m2 += cat.m2_u; } else { total_m1 -= cat.m1_u; total_m2 -= cat.m2_u; }
   });
-
   const varAbsTotal = total_m1 - total_m2;
   const varPctTotal = total_m2 !== 0 ? (varAbsTotal / Math.abs(total_m2)) * 100 : (total_m1 !== 0 ? 100 : 0);
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
@@ -583,6 +425,7 @@ function AnalisisComparativoView({ dbData }) {
     <div className="pb-20 animate-in fade-in">
       <PrintStyles />
       <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm rounded-b-2xl mb-6">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Panel</button>
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Base:</span>
           <select value={year1} onChange={(e) => setYear1(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-xl p-2 font-bold outline-none text-xs shadow-sm">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
@@ -600,11 +443,7 @@ function AnalisisComparativoView({ dbData }) {
       <main className="max-w-5xl mx-auto print-area">
         <HeaderMembretado isExport={true} />
         {!month1 || !month2 ? (
-          <div className="bg-white p-12 text-center rounded-3xl border border-slate-100 shadow-xl mt-10">
-            <AlertTriangle className="mx-auto text-orange-400 mb-6" size={64}/>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest mb-2">Faltan Datos</h2>
-            <p className="text-slate-500 font-bold uppercase text-xs tracking-wider">Carga información de al menos 2 meses para comparar.</p>
-          </div>
+          <div className="bg-white p-12 text-center rounded-[2rem] border border-slate-100 shadow-xl mt-10"><AlertTriangle className="mx-auto text-orange-400 mb-6" size={64}/><h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest mb-2">Faltan Datos</h2><p className="text-slate-500 font-bold uppercase text-xs tracking-wider">Carga información de al menos 2 meses.</p></div>
         ) : (
           <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden print:shadow-none print:border-none">
             <div className="bg-slate-50 p-8 border-b border-slate-100 text-center print:bg-white print:border-none print:p-0 print:mb-6">
@@ -628,28 +467,18 @@ function AnalisisComparativoView({ dbData }) {
                         const good = isIngreso ? vA > 0 : vA < 0;
                         return (
                           <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
-                            <td className="px-6 py-3 pl-10 text-[11px] font-bold text-slate-600 truncate max-w-xs">{acc.n}</td>
-                            <td className="px-4 py-3 text-right font-mono text-[11px]">{fmtR(acc.m1_u)}</td>
-                            <td className="px-4 py-3 text-right font-mono text-[11px] font-bold bg-slate-50/50">{fmtR(acc.m2_u)}</td>
-                            <td className={`px-4 py-3 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-500':'text-red-500'}`}>{vA>0?'+':''}{fmtR(vA)}</td>
-                            <td className={`px-4 py-3 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-500':'text-red-500'}`}>{Math.abs(vP).toFixed(2)}%</td>
+                            <td className="px-6 py-3 pl-10 text-[11px] font-bold text-slate-600 truncate max-w-xs">{acc.n}</td><td className="px-4 py-3 text-right font-mono text-[11px]">{fmtR(acc.m1_u)}</td><td className="px-4 py-3 text-right font-mono text-[11px] font-bold bg-slate-50/50">{fmtR(acc.m2_u)}</td><td className={`px-4 py-3 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-500':'text-red-500'}`}>{vA>0?'+':''}{fmtR(vA)}</td><td className={`px-4 py-3 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-500':'text-red-500'}`}>{Math.abs(vP).toFixed(2)}%</td>
                           </tr>
                         );
                       })}
                       <tr className="bg-slate-100 font-black text-[11px] border-y border-slate-200">
-                        <td className="px-6 py-4 pl-10 uppercase tracking-widest">TOTAL {cat.n}</td>
-                        <td className="px-4 py-4 text-right font-mono">{fmtR(cat.m1_u)}</td><td className="px-4 py-4 text-right font-mono bg-slate-200/50">{fmtR(cat.m2_u)}</td>
-                        <td className={`px-4 py-4 text-right font-mono ${cGood?'text-emerald-600':'text-red-500'}`}>{fmtR(cat.m1_u - cat.m2_u)}</td><td className={`px-4 py-4 text-right font-mono ${cGood?'text-emerald-600':'text-red-500'}`}>{Math.abs(cat.m2_u!==0?((cat.m1_u-cat.m2_u)/Math.abs(cat.m2_u)*100):100).toFixed(2)}%</td>
+                        <td className="px-6 py-4 pl-10 uppercase tracking-widest">TOTAL {cat.n}</td><td className="px-4 py-4 text-right font-mono">{fmtR(cat.m1_u)}</td><td className="px-4 py-4 text-right font-mono bg-slate-200/50">{fmtR(cat.m2_u)}</td><td className={`px-4 py-4 text-right font-mono ${cGood?'text-emerald-600':'text-red-500'}`}>{fmtR(cat.m1_u - cat.m2_u)}</td><td className={`px-4 py-4 text-right font-mono ${cGood?'text-emerald-600':'text-red-500'}`}>{Math.abs(cat.m2_u!==0?((cat.m1_u-cat.m2_u)/Math.abs(cat.m2_u)*100):100).toFixed(2)}%</td>
                       </tr>
                     </React.Fragment>
                   );
                 })}
                 <tr className="bg-slate-900 text-white font-black border-t-4 border-orange-500 print:bg-slate-300 print:text-black print:border-black">
-                  <td className="px-6 py-6 uppercase text-sm tracking-widest">RESULTADO NETO</td>
-                  <td className="px-4 py-6 text-right font-mono text-base border-l border-slate-800 print:border-slate-400">{fmtR(total_m1)}</td>
-                  <td className="px-4 py-6 text-right font-mono text-base border-l border-slate-800 print:border-slate-400">{fmtR(total_m2)}</td>
-                  <td className={`px-4 py-6 text-right font-mono text-lg border-l border-slate-800 print:border-slate-400 ${varAbsTotal > 0?'text-emerald-400 print:text-black':'text-red-400 print:text-black'}`}>{fmtR(varAbsTotal)}</td>
-                  <td className={`px-4 py-6 text-right font-mono text-lg border-l border-slate-800 print:border-slate-400 ${varAbsTotal > 0?'text-emerald-400 print:text-black':'text-red-400 print:text-black'}`}>{Math.abs(varPctTotal).toFixed(2)}%</td>
+                  <td className="px-6 py-6 uppercase text-sm tracking-widest">RESULTADO NETO</td><td className="px-4 py-6 text-right font-mono text-base border-l border-slate-800 print:border-slate-400">{fmtR(total_m1)}</td><td className="px-4 py-6 text-right font-mono text-base border-l border-slate-800 print:border-slate-400">{fmtR(total_m2)}</td><td className={`px-4 py-6 text-right font-mono text-lg border-l border-slate-800 print:border-slate-400 ${varAbsTotal > 0?'text-emerald-400 print:text-black':'text-red-400 print:text-black'}`}>{fmtR(varAbsTotal)}</td><td className={`px-4 py-6 text-right font-mono text-lg border-l border-slate-800 print:border-slate-400 ${varAbsTotal > 0?'text-emerald-400 print:text-black':'text-red-400 print:text-black'}`}>{Math.abs(varPctTotal).toFixed(2)}%</td>
                 </tr>
               </tbody>
             </table>
@@ -659,8 +488,116 @@ function AnalisisComparativoView({ dbData }) {
     </div>
   );
 }
+
+function BalanceGeneralView({ onBack, dbData, auxDataConfig, setSubView }) {
+  const balanceRecords = useMemo(() => dbData.filter(item => item.path?.toUpperCase().includes('ACTIVO') || item.path?.toUpperCase().includes('PASIVO') || item.path?.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name || '')), [dbData]);
+  const availableYears = useMemo(() => [...new Set(balanceRecords.map(d => d.year))].filter(Boolean).sort(), [balanceRecords]);
+  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || new Date().getFullYear().toString());
+  
+  const availableMonths = useMemo(() => [...new Set(balanceRecords.filter(d => d.year === selectedYear).map(d => d.month))], [balanceRecords, selectedYear]);
+  const defaultMonth = availableMonths.filter(m => m !== 'Saldos Iniciales').pop() || availableMonths[0] || 'Enero';
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth); 
+  const [tasa, setTasa] = useState(90);
+
+  const tree = useMemo(() => {
+    const root = [];
+    const selectedMonthIndex = monthOrder[selectedMonth] || 0;
+    const cumulativeData = balanceRecords.filter(d => {
+      if (d.year !== selectedYear) return false;
+      return (monthOrder[d.month] || 0) <= selectedMonthIndex;
+    });
+    
+    const auxEntries = [];
+    for (const code in auxDataConfig) {
+      const group = auxDataConfig[code];
+      const totalMonto = group.records.reduce((acc, r) => acc + r.monto, 0);
+      if (totalMonto !== 0) {
+        auxEntries.push({
+          name: `${code} - ${group.label}`,
+          path: code.startsWith('1') ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR',
+          usd: totalMonto, bs: totalMonto * tasa
+        });
+      }
+    }
+
+    [...cumulativeData, ...auxEntries].forEach(item => {
+      let cur = root;
+      (item.path || 'OTROS').split('>').forEach(folderName => {
+        if(!folderName) return;
+        const key = String(folderName).trim().replace(/\s+/g,' ').toUpperCase();
+        let folder = cur.find(n => String(n.n).trim().replace(/\s+/g,' ').toUpperCase() === key);
+        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        cur = folder.c;
+      });
+      const leafKey = String(item.name || '').trim().replace(/\s+/g,' ').toUpperCase();
+      let leaf = cur.find(n => String(n.n).trim().replace(/\s+/g,' ').toUpperCase() === leafKey && n.isLeaf);
+      if (!leaf) cur.push({ n: String(item.name || '').trim(), u: item.usd, b: item.bs, isLeaf: true });
+      else { leaf.u += item.usd; leaf.b += item.bs; }
+    });
+
+    const compute = (nodes) => { let u = 0, b = 0; nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; }); return { u, b }; };
+    compute(root);
+    return root.sort((a, b) => {
+      const gO = n => { const x=n.toUpperCase(); if(x.includes('ACTIVO')||x.startsWith('1'))return 1; if(x.includes('PASIVO')||x.startsWith('2'))return 2; if(x.includes('PATRIMONIO')||x.startsWith('3'))return 3; return 9; };
+      return gO(a.n) - gO(b.n);
+    });
+  }, [balanceRecords, selectedMonth, selectedYear, tasa, auxDataConfig]);
+
+  let totalActivos = 0; let totalPasPat = 0;
+  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIVO') || n.n.startsWith('1')) totalActivos += n.u; else totalPasPat += n.u; });
+  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
+
+  return (
+    <div className="pb-20 animate-in fade-in">
+      <PrintStyles />
+      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm rounded-b-2xl mb-6">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Panel</button>
+        <div className="flex items-center gap-3">
+          <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl p-2 font-bold outline-none shadow-sm">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Corte Acumulado:</span>
+          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl p-2 font-bold outline-none shadow-sm">{availableMonths.map(m => <option key={m} value={m}>{m}</option>)}</select>
+          <div className="h-6 w-px bg-slate-300 mx-2"></div>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tasa Bs:</span>
+          <input type="number" min="1" step="0.01" value={tasa} onChange={e => setTasa(parseFloat(e.target.value) || 1)} className="bg-slate-50 border border-slate-200 rounded-xl p-2 w-24 font-black outline-none text-xs shadow-sm"/>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => window.print()} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-slate-800 transition-colors"><Printer size={14}/> PDF</button>
+          <button onClick={() => handleExportExcel('table-balance', `Balance_${selectedMonth}`, `Balance General`)} className="px-5 py-2 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-orange-600 transition-colors"><Download size={14}/> Excel</button>
+        </div>
+      </header>
+      <main className="max-w-5xl mx-auto print-area">
+        <HeaderMembretado isExport={true} />
+        <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden print:shadow-none print:border-none">
+          <div className="bg-slate-50 p-8 border-b border-slate-100 text-center print:bg-white print:border-none print:p-0 print:mb-6">
+             <h2 className="text-2xl font-black text-slate-900 uppercase tracking-widest">Balance de Situación Financiera</h2>
+             <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">Acumulado al Corte: {selectedMonth} {selectedYear}</p>
+          </div>
+          <table id="table-balance" className="w-full text-left border-collapse">
+            <thead className="bg-white text-[10px] font-black text-slate-400 uppercase border-b border-slate-200">
+              <tr><th className="px-6 py-5 w-[55%]">Estructura Patrimonial</th><th className="px-4 py-5 text-right">Saldo USD</th><th className="px-4 py-5 text-right hidden sm:table-cell">Equiv. Bs.</th><th className="px-4 py-5 text-right">%</th></tr>
+            </thead>
+            <tbody>
+              {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={false} onShowReport={(code) => setSubView({type:'auxiliar', code})} isBalance={true}/>)}
+              <tr className="bg-slate-900 text-white font-black border-t-4 border-slate-400 print:bg-slate-200 print:text-black print:border-black">
+                <td colSpan={4} className="p-8">
+                  <div className="flex justify-between items-center px-4">
+                    <div className="flex items-center gap-5"><Scale size={40} className="text-slate-400 print:text-slate-800"/><div><p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold print:text-slate-600">Ecuación Patrimonial</p><p className="text-sm font-black tracking-widest text-slate-200 print:text-slate-900">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
+                    <div className="flex gap-10 text-right">
+                      <div><p className="text-[10px] text-slate-400 uppercase font-bold print:text-slate-600">Total Activos</p><p className="text-2xl font-mono text-white print:text-slate-900">USD {fmtR(totalActivos)}</p></div>
+                      <div><p className="text-[10px] text-slate-400 uppercase font-bold print:text-slate-600">Pasivo + Pat.</p><p className="text-2xl font-mono text-white print:text-slate-900">USD {fmtR(totalPasPat)}</p></div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  );
+}
 // ============================================================================
-// 7. VISTA: SUB-REPORTE AUXILIARES (SE ABRE DENTRO DEL BALANCE)
+// 7. VISTA: SUB-REPORTE AUXILIARES
 // ============================================================================
 function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
   const group = auxDataConfig[accountCode] || { label: 'Sin registros', records: [] };
@@ -705,36 +642,105 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 }
 
 // ============================================================================
-// 8. VISTA: ACTIVOS FIJOS / INVERSIONES (RESTAURADO)
+// 8. VISTA: ACTIVOS FIJOS CON CRUD (CREAR, EDITAR, ELIMINAR, AUTO-CÓDIGO)
 // ============================================================================
-const ACTIVOS_FIJOS = [
-  { grupo:'Vehículos',                   cod:'AF-V001', descripcion:'Camión Reparto — Chevrolet N300',          fechaAdq:'07/10/2025', costoOriginal:21110.23, depAcum:2637.53, vidaUtil:60 },
-  { grupo:'Inmuebles',                   cod:'AF-I001', descripcion:'Local Comercial — Contrato Pacomela',      fechaAdq:'02/01/2026', costoOriginal:169547.91,depAcum:4238.70, vidaUtil:240 },
-  { grupo:'Maquinaria y Equipos',        cod:'AF-M001', descripcion:'Equipos de Producción y Empaque',         fechaAdq:'01/06/2024', costoOriginal:15000.00, depAcum:3750.00, vidaUtil:60 },
-  { grupo:'Maquinaria y Equipos',        cod:'AF-M002', descripcion:'Sistema de Refrigeración Industrial',     fechaAdq:'15/08/2024', costoOriginal:8500.00,  depAcum:1487.50, vidaUtil:84 },
-  { grupo:'Mobiliario y Equipos Oficina',cod:'AF-O001', descripcion:'Mobiliario Oficina Administrativa',       fechaAdq:'01/03/2024', costoOriginal:3200.00,  depAcum:1280.00, vidaUtil:60 },
-  { grupo:'Mobiliario y Equipos Oficina',cod:'AF-O002', descripcion:'Equipos de Computación y Periféricos',   fechaAdq:'15/09/2024', costoOriginal:4800.00,  depAcum:1200.00, vidaUtil:36 },
+const ACTIVOS_DEFAULT = [
+  { cod:'AF-V001', grupo:'Vehículos', descripcion:'Camión Reparto Chevrolet', fechaAdq:'2025-10-07', costoOriginal:21110.23, depAcum:2637.53, vidaUtil:60 },
+  { cod:'AF-I001', grupo:'Inmuebles', descripcion:'Local Comercial', fechaAdq:'2026-01-02', costoOriginal:169547.91, depAcum:4238.70, vidaUtil:240 },
 ];
 
-function InversionesView() {
-  const grupos = [...new Set(ACTIVOS_FIJOS.map(a => a.grupo))];
+function InversionesView({ onBack }) {
+  const [activos, setActivos] = useState(() => { try { const s = localStorage.getItem('j_activos'); return s ? JSON.parse(s) : ACTIVOS_DEFAULT; } catch(e){return ACTIVOS_DEFAULT} });
+  useEffect(() => { localStorage.setItem('j_activos', JSON.stringify(activos)); }, [activos]);
+
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({ id: null, grupo: 'Maquinaria y Equipos', descripcion: '', fechaAdq: '', costoOriginal: 0, depAcum: 0, vidaUtil: 60 });
+
+  const gruposUnicos = [...new Set([...activos.map(a => a.grupo), 'Vehículos', 'Inmuebles', 'Maquinaria y Equipos', 'Mobiliario y Equipos Oficina'])];
+  const totalCosto = activos.reduce((s,a) => s + parseFloat(a.costoOriginal||0), 0);
+  const totalDep   = activos.reduce((s,a) => s + parseFloat(a.depAcum||0), 0);
   const fmt = v => new Intl.NumberFormat('es-VE', { minimumFractionDigits:2, maximumFractionDigits:2 }).format(v);
-  const totalCosto = ACTIVOS_FIJOS.reduce((s,a) => s + a.costoOriginal, 0);
-  const totalDep   = ACTIVOS_FIJOS.reduce((s,a) => s + a.depAcum, 0);
-  const currentYear = new Date().getFullYear().toString();
+
+  const generateCode = (grupo) => {
+    let prefix = 'G';
+    const g = grupo.toUpperCase();
+    if (g.includes('VEH')) prefix = 'V';
+    else if (g.includes('INM')) prefix = 'I';
+    else if (g.includes('MAQ')) prefix = 'M';
+    else if (g.includes('MOB') || g.includes('OFI')) prefix = 'O';
+
+    const related = activos.filter(a => a.cod.startsWith(`AF-${prefix}`));
+    let maxNum = 0;
+    related.forEach(a => {
+      const num = parseInt(a.cod.replace(`AF-${prefix}`, ''), 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
+    });
+    return `AF-${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    if (formData.id) {
+      setActivos(activos.map(a => a.cod === formData.id ? { ...formData, cod: formData.id } : a));
+    } else {
+      const newCode = generateCode(formData.grupo);
+      setActivos([...activos, { ...formData, cod: newCode }]);
+    }
+    setShowForm(false);
+  };
+
+  const handleEdit = (activo) => { setFormData({ ...activo, id: activo.cod }); setShowForm(true); };
+  const handleDelete = (cod) => { if(window.confirm("¿Eliminar este activo?")) setActivos(activos.filter(a => a.cod !== cod)); };
 
   return (
-    <div className="pb-20 animate-in fade-in">
+    <div className="pb-20 animate-in fade-in relative">
       <PrintStyles />
       <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm rounded-b-2xl mb-6">
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 shadow-sm">Año Fiscal: {currentYear}</span>
-        </div>
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Panel</button>
         <div className="flex gap-3">
-          <button onClick={() => window.print()} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-slate-800 transition-colors"><Printer size={14}/> PDF</button>
-          <button onClick={() => handleExportExcel('table-activos', 'Activos_Fijos', 'Registro de Activos Fijos')} className="px-5 py-2 bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-emerald-600 transition-colors"><Download size={14}/> Excel</button>
+          <button onClick={() => { setFormData({ id: null, grupo: 'Maquinaria y Equipos', descripcion: '', fechaAdq: '', costoOriginal: 0, depAcum: 0, vidaUtil: 60 }); setShowForm(true); }} className="px-5 py-2 bg-orange-50 text-orange-600 border border-orange-200 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-sm hover:bg-orange-100"><PlusCircle size={14}/> Nuevo Activo</button>
+          <span className="text-slate-300 mx-1">|</span>
+          <button onClick={() => window.print()} className="px-5 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-slate-800"><Printer size={14}/> PDF</button>
+          <button onClick={() => handleExportExcel('table-activos', 'Activos_Fijos', 'Registro de Activos Fijos')} className="px-5 py-2 bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-2 shadow-md hover:bg-emerald-600"><Download size={14}/> Excel</button>
         </div>
       </header>
+
+      {/* MODAL FORMULARIO */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 no-print">
+          <form onSubmit={handleSave} className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg border border-slate-100 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">{formData.id ? 'Editar Activo' : 'Nuevo Activo Fijo'}</h3>
+              <button type="button" onClick={()=>setShowForm(false)} className="text-slate-400 hover:text-slate-800"><X size={24}/></button>
+            </div>
+            <div className="grid grid-cols-2 gap-5 mb-8">
+              <div className="col-span-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Descripción del Activo</label>
+                <input required type="text" value={formData.descripcion} onChange={e=>setFormData({...formData, descripcion:e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-700 focus:border-orange-500 outline-none"/>
+              </div>
+              <div className="col-span-2 md:col-span-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Grupo / Categoría</label>
+                <input required list="grupos" value={formData.grupo} onChange={e=>setFormData({...formData, grupo:e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-700 focus:border-orange-500 outline-none"/>
+                <datalist id="grupos">{gruposUnicos.map(g => <option key={g} value={g}/>)}</datalist>
+              </div>
+              <div className="col-span-2 md:col-span-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Fecha de Adquisición</label>
+                <input required type="date" value={formData.fechaAdq} onChange={e=>setFormData({...formData, fechaAdq:e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-700 focus:border-orange-500 outline-none"/>
+              </div>
+              <div className="col-span-2 md:col-span-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Costo Original (USD)</label>
+                <input required type="number" step="0.01" value={formData.costoOriginal} onChange={e=>setFormData({...formData, costoOriginal:parseFloat(e.target.value)||0})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-mono font-black text-slate-700 focus:border-orange-500 outline-none"/>
+              </div>
+              <div className="col-span-2 md:col-span-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Dep. Acumulada (USD)</label>
+                <input required type="number" step="0.01" value={formData.depAcum} onChange={e=>setFormData({...formData, depAcum:parseFloat(e.target.value)||0})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-mono font-black text-slate-700 focus:border-orange-500 outline-none"/>
+              </div>
+            </div>
+            <button type="submit" className="w-full py-4 bg-orange-500 text-white rounded-xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-orange-500/30 hover:bg-orange-600 transition-colors"><Save size={18}/> Guardar Registro</button>
+          </form>
+        </div>
+      )}
+
       <main className="max-w-6xl mx-auto print-area">
         <HeaderMembretado isExport={true} />
         <div className="bg-white p-8 border border-slate-100 shadow-xl flex flex-col items-center text-center mb-8 rounded-[2rem] print:shadow-none print:border-none print:p-0 print:mb-6">
@@ -750,10 +756,10 @@ function InversionesView() {
         </div>
         
         <div id="table-activos" className="space-y-6">
-        {grupos.map(grupo => {
-          const items = ACTIVOS_FIJOS.filter(a => a.grupo === grupo);
-          const gCosto = items.reduce((s,a) => s + a.costoOriginal, 0);
-          const gDep   = items.reduce((s,a) => s + a.depAcum, 0);
+        {gruposUnicos.filter(g => activos.some(a=>a.grupo === g)).map(grupo => {
+          const items = activos.filter(a => a.grupo === grupo);
+          const gCosto = items.reduce((s,a) => s + parseFloat(a.costoOriginal||0), 0);
+          const gDep   = items.reduce((s,a) => s + parseFloat(a.depAcum||0), 0);
           return (
             <div key={grupo} className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100 print:shadow-none print:border-slate-300">
               <div className="bg-slate-50 px-8 py-5 flex justify-between items-center border-b border-slate-200">
@@ -761,26 +767,33 @@ function InversionesView() {
                 <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Neto: <span className="text-slate-900 font-black ml-2 text-sm font-mono">USD {fmt(gCosto-gDep)}</span></span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" style={{minWidth: '700px'}}>
+                <table className="w-full text-left border-collapse" style={{minWidth: '800px'}}>
                   <thead className="bg-white text-[10px] uppercase font-black text-slate-400 border-b border-slate-100">
-                    <tr><th className="px-6 py-4">Código</th><th className="px-4 py-4">Descripción</th><th className="px-4 py-4">Adq.</th><th className="px-4 py-4 text-right">Costo USD</th><th className="px-4 py-4 text-right">Dep. Acum.</th><th className="px-6 py-4 text-right">Valor Neto</th></tr>
+                    <tr><th className="px-6 py-4">Código</th><th className="px-4 py-4">Descripción</th><th className="px-4 py-4">Adq.</th><th className="px-4 py-4 text-right">Costo USD</th><th className="px-4 py-4 text-right">Dep. Acum.</th><th className="px-6 py-4 text-right">Valor Neto</th><th className="px-4 py-4 text-center no-print">Acciones</th></tr>
                   </thead>
                   <tbody>
                     {items.map((a,i) => (
-                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors print:border-b-slate-200">
+                      <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors print:border-b-slate-200 group">
                         <td className="px-6 py-4 text-[11px] font-black text-slate-400">{a.cod}</td>
-                        <td className="px-4 py-4 text-[11px] font-bold text-slate-800">{a.descripcion}</td>
-                        <td className="px-4 py-4 text-[11px] text-slate-400">{a.fechaAdq}</td>
+                        <td className="px-4 py-4 text-[11px] font-bold text-slate-800 truncate max-w-[200px]">{a.descripcion}</td>
+                        <td className="px-4 py-4 text-[11px] text-slate-400 font-mono">{a.fechaAdq}</td>
                         <td className="px-4 py-4 text-right text-[12px] font-mono text-slate-600">{fmt(a.costoOriginal)}</td>
                         <td className="px-4 py-4 text-right text-[12px] font-mono text-red-400">({fmt(a.depAcum)})</td>
                         <td className="px-6 py-4 text-right text-[12px] font-mono font-black text-slate-800">{fmt(a.costoOriginal-a.depAcum)}</td>
+                        <td className="px-4 py-4 text-center no-print opacity-0 group-hover:opacity-100 transition-opacity">
+                           <div className="flex justify-center gap-2">
+                              <button onClick={()=>handleEdit(a)} className="p-1.5 bg-blue-50 text-blue-500 rounded hover:bg-blue-500 hover:text-white transition-colors"><Edit size={14}/></button>
+                              <button onClick={()=>handleDelete(a.cod)} className="p-1.5 bg-red-50 text-red-500 rounded hover:bg-red-500 hover:text-white transition-colors"><Trash2 size={14}/></button>
+                           </div>
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-slate-100 font-black text-[11px] border-t-2 border-slate-200">
-                      <td colSpan={3} className="px-6 py-5 text-slate-700 uppercase tracking-widest">Total {grupo}</td>
+                      <td colSpan={3} className="px-6 py-5 text-slate-700 uppercase tracking-wider">Total {grupo}</td>
                       <td className="px-4 py-5 text-right font-mono text-[13px] text-slate-800">{fmt(gCosto)}</td>
                       <td className="px-4 py-5 text-right font-mono text-[13px] text-red-500">({fmt(gDep)})</td>
                       <td className="px-6 py-5 text-right font-mono text-[14px] text-slate-900">{fmt(gCosto-gDep)}</td>
+                      <td className="no-print"></td>
                     </tr>
                   </tbody>
                 </table>
@@ -795,14 +808,12 @@ function InversionesView() {
 }
 
 // ============================================================================
-// 9. APLICACIÓN PRINCIPAL (MENÚ LATERAL + DASHBOARD TIPO ERP)
+// 9. APP PRINCIPAL: DASHBOARD TIPO GLASSMORPHISM (COMO LA IMAGEN)
 // ============================================================================
 function ReportesFinancierosApp() {
-  const [view, setView] = useState('resultado');
-  const [subView, setSubView] = useState(null); 
-  const [menuOpen, setMenuOpen] = useState(true);
+  const [view, setView] = useState('dashboard');
+  const [subView, setSubView] = useState(null);
 
-  // MANEJO DE ESTADO CONSTRUIDO PARA EVITAR ERRORES DE LOCALSTORAGE
   const [dbData, setDbData] = useState(() => { try { return JSON.parse(localStorage.getItem('j_db') || '[]'); } catch(e){return []} });
   const [planCuentas, setPlanCuentas] = useState(() => { try { return JSON.parse(localStorage.getItem('j_pc') || '{}'); } catch(e){return {}} });
   const [auxDataConfig, setAuxDataConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('j_ax') || '{}'); } catch(e){return {}} });
@@ -813,126 +824,123 @@ function ReportesFinancierosApp() {
       localStorage.setItem('j_pc', JSON.stringify(planCuentas));
       localStorage.setItem('j_ax', JSON.stringify(auxDataConfig));
     } catch (e) {
-      console.warn("Memoria Local superada. Los datos vivirán solo en esta sesión (hasta recargar).");
+      console.warn("Memoria Local superada. Los datos vivirán solo en esta sesión.");
     }
   }, [dbData, planCuentas, auxDataConfig]);
 
-  const MenuItem = ({ id, icon: Icon, label }) => (
-    <button onClick={() => { setView(id); setSubView(null); if(window.innerWidth < 768) setMenuOpen(false); }} 
-            className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all duration-300 ${view === id ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}>
-      <Icon size={20} className={view === id ? 'text-white' : 'text-slate-400'}/> {label}
-    </button>
+  if (view === 'resultado')   return <EstadoResultadoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
+  if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
+  if (view === 'inversiones') return <InversionesView onBack={()=>setView('dashboard')} />;
+  if (view === 'balance') return (
+     subView?.type === 'auxiliar' 
+     ? <AuxiliarReportView accountCode={subView.code} onBack={()=>setSubView(null)} auxDataConfig={auxDataConfig} />
+     : <BalanceGeneralView onBack={()=>setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} setSubView={setSubView}/>
+  );
+
+  if (view === 'configuracion') return (
+    <div className="min-h-screen bg-[#f4f7fa] p-8 relative overflow-hidden font-sans">
+      <div className="absolute top-[-10%] left-[-5%] w-[400px] h-[400px] bg-orange-400/10 rounded-full blur-[100px] pointer-events-none"></div>
+      <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-xl rounded-[2.5rem] p-8 md:p-12 border border-white shadow-[0_20px_50px_rgba(0,0,0,0.05)] relative z-10 animate-in fade-in slide-in-from-bottom-4 mt-10">
+        <button onClick={()=>setView('dashboard')} className="flex items-center gap-2 font-black text-[10px] uppercase text-slate-400 mb-8 hover:text-orange-500 transition-colors"><ArrowLeft size={16}/> Volver al Panel</button>
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-6">
+           <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter flex items-center gap-4">
+             <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 text-orange-500"><Database size={28}/></div> 
+             Ingesta de Datos
+           </h2>
+           <div className="text-left md:text-right bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Registros en Memoria</p>
+              <p className="text-2xl font-black text-slate-800 font-mono">{dbData.length}</p>
+           </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[
+            { n:'01', l:'Plan de Cuentas (.txt)', h: (e)=>processPlanCuentas(e.target.files[0]).then(p=>{setPlanCuentas(p); alert("Plan de Cuentas Listo")}) },
+            { n:'02', l:'Saldos Iniciales (.csv / .xlsx)', h: (e)=>processSaldosBalance(e.target.files[0], planCuentas).then(d=>{setDbData(prev=>[...prev, ...d]); alert("Saldos Iniciales Cargados")}) },
+            { n:'03', l:'Meses (Resultados) (.xlsx)', h: (e)=>processFiles(e.target.files).then(d=>{setDbData(prev=>[...prev, ...d]); alert("Archivos procesados")}), m:true },
+            { n:'04', l:'Auxiliares CxC/CxP (.xlsx)', h: (e)=>processAuxFile(e.target.files).then(a=>{setAuxDataConfig(a); alert("Auxiliares listos")}), m:true }
+          ].map(s => (
+            <label key={s.n} className="flex items-center gap-5 p-6 rounded-3xl border border-slate-100 bg-white cursor-pointer hover:border-orange-500/30 hover:shadow-[0_10px_20px_rgba(249,115,22,0.05)] hover:-translate-y-1 transition-all duration-300 group">
+              <span className="text-3xl font-black font-mono text-slate-100 group-hover:text-orange-200 transition-colors">{s.n}</span>
+              <span className="flex-1 font-bold text-[11px] md:text-xs uppercase tracking-wider text-slate-600 group-hover:text-slate-900">{s.l}</span>
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-orange-50 transition-colors">
+                <Upload size={20} className="text-slate-300 group-hover:text-orange-500"/>
+              </div>
+              <input type="file" multiple={s.m} className="hidden" onChange={s.h}/>
+            </label>
+          ))}
+        </div>
+        
+        <div className="mt-12 p-6 bg-red-50/50 border border-red-100 rounded-3xl">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-black text-red-600 uppercase tracking-widest mb-1">Zona de Peligro</h3>
+              <p className="text-xs font-bold text-red-400">Borrará toda la información del sistema.</p>
+            </div>
+            <button onClick={()=>{if(window.confirm("¿Seguro de borrar toda la base de datos?")){setDbData([]); setPlanCuentas({}); setAuxDataConfig({})}}} 
+                    className="w-full md:w-auto px-6 py-3 bg-white border-2 border-red-100 text-red-500 font-black uppercase text-[11px] tracking-widest rounded-xl hover:bg-red-500 hover:border-red-500 hover:text-white transition-all duration-300 shadow-sm">
+              Limpiar Sistema
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 
   return (
-    <div className="flex h-screen bg-[#f4f7fa] font-sans overflow-hidden">
+    <div className="min-h-screen bg-[#f4f7fa] font-sans overflow-x-hidden relative flex flex-col">
+      {/* Fondo Glassmorphism estilo imagen proporcionada */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none"></div>
+      <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-orange-400/10 rounded-full blur-[100px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] bg-blue-400/10 rounded-full blur-[100px] pointer-events-none"></div>
       
-      {/* MENÚ LATERAL (SIDEBAR) */}
-      <aside className={`no-print bg-white border-r border-slate-100 flex flex-col transition-all duration-300 z-40 ${menuOpen ? 'w-72' : 'w-0 hidden'} shadow-[10px_0_30px_rgba(0,0,0,0.02)] relative shrink-0`}>
-        <div className="p-8 border-b border-slate-50 flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/30 shrink-0">
-            <Activity size={24} className="text-white"/>
+      {/* HEADER TIPO DASHBOARD */}
+      <header className="relative z-10 w-full max-w-7xl mx-auto mt-8 px-8 py-6 bg-white/70 backdrop-blur-2xl rounded-[2rem] border border-white shadow-[0_15px_35px_rgba(0,0,0,0.03)] flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/30">
+            <Activity size={28} className="text-white"/>
           </div>
-          <div className="overflow-hidden whitespace-nowrap">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">Supply</h1>
-            <p className="text-[9px] font-black text-orange-500 tracking-[0.2em] uppercase mt-1">Jiret G&B Finance</p>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none">Jiret G&B <span className="text-slate-400 font-normal">Finance</span></h1>
+            <p className="text-[9px] font-black text-orange-500 tracking-[0.2em] uppercase mt-1">Servicios Administrativos Contables</p>
           </div>
         </div>
-        
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
-          <p className="px-6 py-4 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Módulos Financieros</p>
-          <MenuItem id="resultado" icon={LineChart} label="Resultados" />
-          <MenuItem id="balance" icon={Scale} label="Balance General" />
-          <MenuItem id="comparativo" icon={GitCompare} label="Variaciones" />
-          <MenuItem id="inversiones" icon={Landmark} label="Activos Fijos" />
-          
-          <p className="px-6 pt-8 pb-4 text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Configuración</p>
-          <MenuItem id="configuracion" icon={Database} label="Base de Datos" />
-        </nav>
-        
-        <div className="p-6 border-t border-slate-50 text-center bg-slate-50/50">
-           <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.2em]">Versión 5.0 PRO</p>
-        </div>
-      </aside>
+        <button onClick={()=>setView('configuracion')} className="bg-white border border-slate-100 hover:border-orange-500 hover:text-orange-600 px-6 py-4 rounded-2xl font-black uppercase text-[11px] shadow-[0_5px_15px_rgba(0,0,0,0.05)] hover:shadow-[0_10px_25px_rgba(249,115,22,0.15)] transition-all flex items-center gap-3 active:scale-95">
+          <Database size={16}/> <span className="hidden md:block">Base de Datos</span>
+        </button>
+      </header>
 
-      {/* ÁREA PRINCIPAL DE TRABAJO */}
-      <main className="flex-1 h-screen overflow-y-auto relative bg-[#f4f7fa]">
-        {/* Decoración Glassmorphism (Solo visible en pantallas grandes) */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none hidden md:block"></div>
-        <div className="absolute top-[-10%] left-[-5%] w-[400px] h-[400px] bg-orange-400/10 rounded-full blur-[100px] pointer-events-none hidden md:block"></div>
-        
-        <div className="relative z-10 p-4 md:p-8">
-          
-          {/* Botón Flotante para abrir/cerrar menú */}
-          <div className="no-print mb-6 flex items-center justify-between">
-            <button onClick={()=>setMenuOpen(!menuOpen)} className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-500 hover:text-orange-500 shadow-md border border-slate-100 transition-all hover:scale-105 active:scale-95">
-              {menuOpen ? <X size={20}/> : <Menu size={20}/>}
+      {/* ÁREA CENTRAL DE MÓDULOS */}
+      <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto p-8 flex flex-col justify-center">
+        <div className="mb-10 text-center md:text-left">
+          <h2 className="text-slate-900 font-black text-4xl tracking-tight mb-2">Panel Central</h2>
+          <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Selecciona un módulo para visualizar los reportes</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {[
+            { id:'resultado', t:'Estado de Resultados', d:'Rentabilidad Mensual', i:<LineChart size={36} strokeWidth={1.5}/> },
+            { id:'balance', t:'Balance General', d:'Situación Acumulada', i:<Scale size={36} strokeWidth={1.5}/> },
+            { id:'comparativo', t:'Análisis Variación', d:'Comparativo de Meses', i:<GitCompare size={36} strokeWidth={1.5}/> },
+            { id:'inversiones', t:'Activos Fijos', d:'Registro Inversiones', i:<Landmark size={36} strokeWidth={1.5}/> }
+          ].map(m => (
+            <button key={m.id} onClick={()=>setView(m.id)} className="group relative bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-10 text-left border border-white shadow-[0_20px_40px_rgba(0,0,0,0.04)] hover:shadow-[0_30px_60px_rgba(249,115,22,0.12)] hover:-translate-y-4 hover:border-orange-200 transition-all duration-500 overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-40 h-40 bg-orange-50 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+              
+              <div className="relative z-10 bg-slate-50 w-24 h-24 rounded-[1.5rem] flex items-center justify-center mb-8 border border-slate-100 shadow-[inset_0_4px_10px_rgba(0,0,0,0.03)] group-hover:bg-gradient-to-br group-hover:from-orange-400 group-hover:to-orange-500 group-hover:border-orange-400 text-slate-400 group-hover:text-white transition-all duration-300 group-hover:scale-110 group-hover:-rotate-6">
+                {m.i}
+              </div>
+              <h3 className="relative z-10 font-black text-xl text-slate-900 mb-2 uppercase tracking-tighter leading-none group-hover:text-orange-600 transition-colors">{m.t}</h3>
+              <p className="relative z-10 text-[11px] font-bold text-slate-400 uppercase tracking-widest">{m.d}</p>
+              
+              <div className="absolute bottom-10 right-10 w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center opacity-0 scale-50 group-hover:opacity-100 group-hover:scale-100 transition-all duration-300">
+                <ArrowUpRight className="text-orange-600" size={20} strokeWidth={3}/>
+              </div>
             </button>
-            <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100 hidden md:flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sistema Activo</span>
-            </div>
-          </div>
-
-          {/* RENDERIZADO DINÁMICO DE VISTAS */}
-          {view === 'resultado' && <EstadoResultadoView dbData={dbData}/>}
-          {view === 'comparativo' && <AnalisisComparativoView dbData={dbData}/>}
-          {view === 'inversiones' && <InversionesView />}
-          
-          {view === 'balance' && (
-             subView?.type === 'auxiliar' 
-             ? <AuxiliarReportView accountCode={subView.code} onBack={()=>setSubView(null)} auxDataConfig={auxDataConfig} />
-             : <BalanceGeneralView dbData={dbData} auxDataConfig={auxDataConfig} setSubView={setSubView}/>
-          )}
-
-          {/* VISTA CONFIGURACIÓN E INGESTA DE DATOS */}
-          {view === 'configuracion' && (
-            <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-xl rounded-[2.5rem] p-8 md:p-12 border border-white shadow-[0_20px_50px_rgba(0,0,0,0.05)] animate-in fade-in slide-in-from-bottom-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-6">
-                 <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter flex items-center gap-4">
-                   <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100 text-orange-500"><Database size={28}/></div> 
-                   Ingesta de Datos
-                 </h2>
-                 <div className="text-left md:text-right bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Registros en Memoria</p>
-                    <p className="text-2xl font-black text-slate-800 font-mono">{dbData.length}</p>
-                 </div>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {[
-                  { n:'01', l:'Plan de Cuentas (.txt)', h: (e)=>processPlanCuentas(e.target.files[0]).then(p=>{setPlanCuentas(p); alert("Plan de Cuentas Listo")}) },
-                  { n:'02', l:'Saldos Iniciales (.csv / .xlsx)', h: (e)=>processSaldosBalance(e.target.files[0], planCuentas).then(d=>{setDbData(prev=>[...prev, ...d]); alert("Saldos Iniciales Cargados")}) },
-                  { n:'03', l:'Meses (Resultados) (.xlsx)', h: (e)=>processFiles(e.target.files).then(d=>{setDbData(prev=>[...prev, ...d]); alert("Archivos procesados")}), m:true },
-                  { n:'04', l:'Auxiliares CxC/CxP (.xlsx)', h: (e)=>processAuxFile(e.target.files).then(a=>{setAuxDataConfig(a); alert("Auxiliares listos")}), m:true }
-                ].map(s => (
-                  <label key={s.n} className="flex items-center gap-5 p-6 rounded-3xl border border-slate-100 bg-white cursor-pointer hover:border-orange-500/30 hover:shadow-[0_10px_20px_rgba(249,115,22,0.05)] hover:-translate-y-1 transition-all duration-300 group">
-                    <span className="text-3xl font-black font-mono text-slate-100 group-hover:text-orange-200 transition-colors">{s.n}</span>
-                    <span className="flex-1 font-bold text-[11px] md:text-xs uppercase tracking-wider text-slate-600 group-hover:text-slate-900">{s.l}</span>
-                    <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center group-hover:bg-orange-50 transition-colors">
-                      <Upload size={20} className="text-slate-300 group-hover:text-orange-500"/>
-                    </div>
-                    <input type="file" multiple={s.m} className="hidden" onChange={s.h}/>
-                  </label>
-                ))}
-              </div>
-              
-              <div className="mt-12 p-6 bg-red-50/50 border border-red-100 rounded-3xl">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-sm font-black text-red-600 uppercase tracking-widest mb-1">Zona de Peligro</h3>
-                    <p className="text-xs font-bold text-red-400">Esta acción borrará toda la información cargada en el sistema.</p>
-                  </div>
-                  <button onClick={()=>{if(window.confirm("¿Estás seguro de borrar toda la base de datos? Esta acción no se puede deshacer.")){setDbData([]); setPlanCuentas({}); setAuxDataConfig({})}}} 
-                          className="w-full md:w-auto px-6 py-3 bg-white border-2 border-red-100 text-red-500 font-black uppercase text-[11px] tracking-widest rounded-xl hover:bg-red-500 hover:border-red-500 hover:text-white transition-all duration-300 shadow-sm">
-                    Limpiar Sistema
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
+          ))}
         </div>
+        
+        <p className="text-center text-slate-400 font-black text-[10px] uppercase tracking-[0.5em] mt-24">Supply ERP · High Impact Accounting v5.0</p>
       </main>
     </div>
   );
