@@ -83,7 +83,7 @@ const processFiles = async (files) => {
     const m = (n||'').match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
     return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).toLowerCase() : 'Enero';
   };
-  const detectYear = (n) => { const y = (n||'').match(/20\d{2}/); return y ? y[0] : '2026'; };
+  const detectYear = (n) => { const y = (n||'').match(/20\d{2}/); return y ? y[0] : new Date().getFullYear().toString(); };
 
   const XL = await loadSheetJS();
   for (const file of Array.from(files)) {
@@ -110,7 +110,7 @@ const processFiles = async (files) => {
       if (name.startsWith('Total ')) {
         const what = name.replace(/^Total\s+/i, '').trim().toUpperCase();
         let idx = pathStack.length - 1;
-        while (idx >= 0) { if (pathStack[idx].toUpperCase() === what) { pathStack.splice(idx); break; } idx--; }
+        while (idx >= 0) { if ((pathStack[idx]||'').toUpperCase() === what) { pathStack.splice(idx); break; } idx--; }
         return;
       }
       const usd = parseVal(row[1]);
@@ -142,7 +142,8 @@ const processSaldosBalance = async (file, planCuentas) => {
   const buffer = await file.arrayBuffer();
   const wb = XL.read(buffer, { type: 'array' });
   const rows = XL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null });
-  const year = file.name.match(/20\d{2}/) ? file.name.match(/20\d{2}/)[0] : '2026';
+  const yearMatch = file.name.match(/20\d{2}/);
+  const year = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
 
   const parseVal = (v) => {
     if (!v) return 0;
@@ -167,6 +168,7 @@ const processSaldosBalance = async (file, planCuentas) => {
     };
   });
 };
+
 const processAuxFile = async (files) => {
   const result = {}; 
   const XL = await loadSheetJS();
@@ -219,7 +221,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
   const fmt = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(v || 0);
   const indent = { paddingLeft: `${level * 18 + 10}px` };
 
-  if (!isLeaf && !/^\d\./.test(node.n)) {
+  if (!isLeaf && !/^\d\./.test(node.n || '')) {
     const isRoot = level === 0;
     return (
       <>
@@ -267,12 +269,14 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 // ============================================================================
 function EstadoResultadoView({ onBack, dbData }) {
   const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
-  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || '2026');
+  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || new Date().getFullYear().toString());
   const availableMonths = useMemo(() => [...new Set(dbData.filter(d => d.year === selectedYear).map(d => d.month))].filter(m=>m!=='Sin Mes' && m!=='Saldos Iniciales'), [dbData, selectedYear]);
   const [selectedMonth, setSelectedMonth] = useState('General');
+  const [defaultOpen, setDefaultOpen] = useState(false);
+  const [expandKey, setExpandKey] = useState(0);
 
   const { trees, totals } = useMemo(() => {
-    const data = selectedMonth === 'General' ? dbData.filter(d=>d.year===selectedYear) : dbData.filter(d=>d.year===selectedYear && d.month===selectedMonth);
+    const data = selectedMonth === 'General' ? dbData.filter(d=>d.year===selectedYear && d.month !== 'Saldos Iniciales') : dbData.filter(d=>d.year===selectedYear && d.month===selectedMonth);
     const resData = data.filter(i => !i.path?.toUpperCase().includes('ACTIVO') && !i.path?.toUpperCase().includes('PASIVO') && !/^[123]/.test(i.name||''));
     
     const build = (arr, mult = 1) => {
@@ -296,9 +300,9 @@ function EstadoResultadoView({ onBack, dbData }) {
       comp(root); return root;
     };
 
-    const isIng = i => (i.path||'').includes('INGRESO') || (i.name||'').startsWith('4');
-    const isCos = i => (i.path||'').includes('COSTO') || (i.name||'').startsWith('5');
-    const tIng = build(resData.filter(isIng), -1);
+    const isIng = i => (i.path||'').toUpperCase().includes('INGRESO') || (i.name||'').startsWith('4');
+    const isCos = i => (i.path||'').toUpperCase().includes('COSTO') || (i.name||'').startsWith('5');
+    const tIng = build(resData.filter(isIng), -1); // Ingresos en negativo (Haber) a positivo
     const tCos = build(resData.filter(isCos));
     const tGas = build(resData.filter(i => !isIng(i) && !isCos(i)));
 
@@ -307,29 +311,47 @@ function EstadoResultadoView({ onBack, dbData }) {
     return { trees: { tIng, tCos, tGas }, totals: { ti, tc, tg, ub: ti-tc, un: (ti-tc)-tg } };
   }, [dbData, selectedMonth, selectedYear]);
 
+  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
   return (
     <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
       <PrintStyles />
-      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
+      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-4">
         <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Panel</button>
-        <div className="flex gap-2">
-          <select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
-          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold"><option value="General">Acumulado</option>{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
+        <div className="flex gap-2 items-center">
+          <select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold outline-none">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold outline-none"><option value="General">Acumulado</option>{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
+          <span className="text-slate-300">|</span>
+          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-slate-200"><ChevronDown size={14}/> Expandir</button>
+          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-slate-200"><ChevronRight size={14}/> Contraer</button>
+          <span className="text-slate-300">|</span>
           <button onClick={()=>window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
           <button onClick={()=>handleExportExcel('table-res', 'Estado_Resultados', 'Estado de Resultados')} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-5xl mx-auto">
         <HeaderMembretado isExport={true}/>
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-slate-200 overflow-hidden">
           <table id="table-res" className="w-full text-left border-collapse">
             <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase border-b border-slate-300">
               <tr><th className="px-4 py-4 w-[55%]">Cuentas</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Saldo Bs.</th><th className="px-3 py-4 text-right">%</th></tr>
             </thead>
-            <tbody>
+            <tbody key={expandKey}>
               <tr className="bg-white border-b border-slate-200 font-black text-xs uppercase"><td colSpan={4} className="p-4">I. INGRESOS</td></tr>
-              {trees.tIng.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti}/>)}
-              <tr className="bg-slate-900 text-white font-black border-y-4 border-orange-500"><td className="p-5 uppercase text-sm">V. RESULTADO NETO</td><td className="p-5 text-right text-lg font-mono text-orange-400">{new Intl.NumberFormat('es-VE').format(totals.un)}</td><td className="hidden sm:table-cell"/><td className="p-5 text-right font-mono">{(Math.abs(totals.un)/(totals.ti||1)*100).toFixed(2)}%</td></tr>
+              {trees.tIng.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen}/>)}
+              <tr className="bg-slate-50 text-slate-800 font-black border-y-2 border-slate-300"><td className="p-3 pl-8 text-[11px] uppercase tracking-widest">TOTAL INGRESOS</td><td className="p-3 text-right font-mono">{fmtR(totals.ti)}</td><td className="hidden sm:table-cell p-3 text-right font-mono">{fmtR(totals.ti*45)}</td><td className="p-3 text-right font-mono">100%</td></tr>
+
+              <tr className="bg-white border-b border-slate-200 font-black text-xs uppercase"><td colSpan={4} className="p-4 pt-6">II. COSTOS DE VENTA</td></tr>
+              {trees.tCos.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen}/>)}
+              <tr className="bg-slate-50 text-slate-800 font-black border-y-2 border-slate-300"><td className="p-3 pl-8 text-[11px] uppercase tracking-widest">TOTAL COSTOS</td><td className="p-3 text-right font-mono">{fmtR(totals.tc)}</td><td className="hidden sm:table-cell p-3 text-right font-mono">{fmtR(totals.tc*45)}</td><td className="p-3 text-right font-mono">{(totals.tc/(totals.ti||1)*100).toFixed(2)}%</td></tr>
+
+              <tr className="bg-slate-800 text-white font-black border-y-4 border-slate-400"><td className="p-5 uppercase text-sm">III. UTILIDAD BRUTA</td><td className={`p-5 text-right text-base font-mono ${totals.ub < 0 ? 'text-red-400':'text-emerald-400'}`}>{fmtR(totals.ub)}</td><td className="hidden sm:table-cell"/><td className="p-5 text-right font-mono">{(Math.abs(totals.ub)/(totals.ti||1)*100).toFixed(2)}%</td></tr>
+
+              <tr className="bg-white border-b border-slate-200 font-black text-xs uppercase"><td colSpan={4} className="p-4 pt-6">IV. GASTOS OPERATIVOS</td></tr>
+              {trees.tGas.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={totals.ti} defaultOpen={defaultOpen}/>)}
+              <tr className="bg-slate-50 text-slate-800 font-black border-y-2 border-slate-300"><td className="p-3 pl-8 text-[11px] uppercase tracking-widest">TOTAL GASTOS</td><td className="p-3 text-right font-mono">{fmtR(totals.tg)}</td><td className="hidden sm:table-cell p-3 text-right font-mono">{fmtR(totals.tg*45)}</td><td className="p-3 text-right font-mono">{(totals.tg/(totals.ti||1)*100).toFixed(2)}%</td></tr>
+
+              <tr className="bg-slate-900 text-white font-black border-t-4 border-orange-500"><td className="p-6 uppercase text-sm">V. RESULTADO NETO</td><td className={`p-6 text-right text-xl font-mono ${totals.un < 0 ? 'text-red-500':'text-orange-500'}`}>{fmtR(totals.un)}</td><td className="hidden sm:table-cell"/><td className="p-6 text-right font-mono text-slate-300">{(Math.abs(totals.un)/(totals.ti||1)*100).toFixed(2)}%</td></tr>
             </tbody>
           </table>
         </div>
@@ -339,85 +361,269 @@ function EstadoResultadoView({ onBack, dbData }) {
 }
 
 // ============================================================================
-// 6. VISTA: BALANCE GENERAL (ACUMULATIVO REAL)
+// 5. VISTA: ANÁLISIS COMPARATIVO
 // ============================================================================
-function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
+function AnalisisComparativoView({ onBack, dbData }) {
   const availableYears = useMemo(() => [...new Set(dbData.map(d => d.year))].filter(Boolean).sort(), [dbData]);
-  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || '2026');
-  const availableMonths = useMemo(() => [...new Set(dbData.filter(d => d.year === selectedYear).map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData, selectedYear]);
-  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || 'Enero');
-  const [activeCode, setActiveCode] = useState(null);
+  const [year1, setYear1] = useState(availableYears[availableYears.length - 1] || '2026');
+  const [year2, setYear2] = useState(availableYears[availableYears.length - 1] || '2026');
+  
+  const getMonths = (y) => [...new Set(dbData.filter(d=>d.year===y).map(d => d.month))].filter(m => m !== 'Sin Mes' && m !== 'Saldos Iniciales');
+  const months1 = getMonths(year1); const months2 = getMonths(year2);
+  
+  const [month1, setMonth1] = useState(months1[0] || '');
+  const [month2, setMonth2] = useState(months2[1] || months2[0] || '');
+
+  useEffect(() => { setMonth1(getMonths(year1)[0] || ''); }, [year1]);
+  useEffect(() => { setMonth2(getMonths(year2)[1] || getMonths(year2)[0] || ''); }, [year2]);
 
   const tree = useMemo(() => {
-    const limitOrder = monthOrder[selectedMonth];
-    // Lógica Acumulativa: Todo lo anterior + el mes seleccionado
-    const historical = dbData.filter(d => d.year === selectedYear && monthOrder[d.month] <= limitOrder);
-    
-    // Inyección de Auxiliares
-    const auxs = [];
-    for (const code in auxDataConfig) {
-      const sum = auxDataConfig[code].records.reduce((a,r)=>a+r.monto, 0);
-      if (sum !== 0) auxs.push({
-        name: `${code} - ${auxDataConfig[code].label}`,
-        path: code.startsWith('1') ? 'ACTIVOS>CIRCULANTE>CXC' : 'PASIVOS>CIRCULANTE>CXP',
-        usd: sum, bs: 0
-      });
-    }
-
-    const all = [...historical, ...auxs];
     const root = [];
-    all.forEach(i => {
-      if (!i.path?.toUpperCase().includes('ACTIVO') && !i.path?.toUpperCase().includes('PASIVO') && !/^[123]/.test(i.name)) return;
-      let cur = root;
-      const path = (i.path || 'OTROS').split('>');
-      path.forEach(f => {
-        let folder = cur.find(n => n.n === f);
-        if (!folder) { folder = { n: f, c: [], u: 0, b: 0 }; cur.push(folder); }
-        cur = folder.c;
-      });
-      let leaf = cur.find(n => n.n === i.name);
-      if (!leaf) cur.push({ n: i.name, u: i.usd, b: i.bs, isLeaf: true });
-      else { leaf.u += i.usd; leaf.b += i.bs; }
-    });
-    const comp = (nodes) => {
-      let u=0, b=0; nodes.forEach(n => { if(!n.isLeaf){ const t=comp(n.c); n.u=t.u; n.b=t.b; } u+=n.u; b+=n.b; });
-      return {u, b};
-    };
-    comp(root); 
-    return root.sort((a,b) => (a.n.includes('ACTIVO') ? -1 : 1));
-  }, [dbData, selectedMonth, selectedYear, auxDataConfig]);
+    const m1Data = dbData.filter(d => d.year === year1 && d.month === month1 && !d.path?.toUpperCase().includes('ACTIVO') && !d.path?.toUpperCase().includes('PASIVO') && !d.path?.toUpperCase().includes('PATRIMONIO'));
+    const m2Data = dbData.filter(d => d.year === year2 && d.month === month2 && !d.path?.toUpperCase().includes('ACTIVO') && !d.path?.toUpperCase().includes('PASIVO') && !d.path?.toUpperCase().includes('PATRIMONIO'));
 
-  let ta=0, tp=0; tree.forEach(n => { if(n.n.includes('ACTIVO')) ta+=n.u; else tp+=n.u; });
-  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={()=>setActiveCode(null)} auxDataConfig={auxDataConfig} />;
+    const processItem = (item, isM1) => {
+      const pathParts = (item.path || '').split('>');
+      const mainCategory = pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS';
+      let accountOriginalName = pathParts.length > 1 ? pathParts[pathParts.length - 1].trim() : String(item.name || '').trim();
+      if (!/^(\d[\d\.]+)/.test(accountOriginalName) && /^(\d[\d\.]+)/.test(String(item.name||'').trim())) accountOriginalName = item.name.trim();
+      const matchKey = accountOriginalName.match(/^(\d[\d\.]+)/);
+      const accountKey = matchKey ? matchKey[1] : accountOriginalName.toUpperCase();
+
+      let categoryNode = root.find(n => n.key === mainCategory);
+      if (!categoryNode) { categoryNode = { key: mainCategory, n: pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS', c: [], m1_u: 0, m2_u: 0 }; root.push(categoryNode); }
+      let accountNode = categoryNode.c.find(n => n.key === accountKey);
+      if (!accountNode) { accountNode = { key: accountKey, n: accountOriginalName, m1_u: 0, m2_u: 0 }; categoryNode.c.push(accountNode); }
+
+      if (isM1) accountNode.m1_u += item.usd; else accountNode.m2_u += item.usd;
+    };
+
+    m1Data.forEach(item => processItem(item, true));
+    m2Data.forEach(item => processItem(item, false));
+
+    root.forEach(cat => {
+      let cat_m1 = 0, cat_m2 = 0;
+      const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key?.startsWith('4');
+      const multiplier = isIngreso ? -1 : 1;
+
+      cat.c.forEach(acc => {
+        acc.m1_u *= multiplier; acc.m2_u *= multiplier;
+        cat_m1 += acc.m1_u; cat_m2 += acc.m2_u;
+      });
+      cat.m1_u = cat_m1; cat.m2_u = cat_m2;
+    });
+
+    return root;
+  }, [dbData, month1, year1, month2, year2]);
+
+  let total_m1 = 0, total_m2 = 0;
+  tree.forEach(cat => {
+    const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || (cat.key && cat.key.startsWith('4'));
+    if (isIngreso) { total_m1 += cat.m1_u; total_m2 += cat.m2_u; } 
+    else { total_m1 -= cat.m1_u; total_m2 -= cat.m2_u; }
+  });
+
+  const varAbsTotal = total_m1 - total_m2;
+  const varPctTotal = total_m2 !== 0 ? (varAbsTotal / Math.abs(total_m2)) * 100 : (total_m1 !== 0 ? 100 : 0);
+  const isPosTotal = varAbsTotal > 0;
+  const isNegTotal = varAbsTotal < 0;
+  const TotalArrowIcon = isPosTotal ? ArrowUpRight : (isNegTotal ? ArrowDownRight : null);
+  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
       <PrintStyles />
-      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Panel</button>
-        <div className="flex gap-2">
-          <select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
-          <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded p-1.5 font-bold">{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
-          <button onClick={()=>window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
-          <button onClick={()=>handleExportExcel('table-bg', 'Balance_General', 'Balance General')} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
+      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-2">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Panel</button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400">Base:</span>
+          <select value={year1} onChange={(e) => setYear1(e.target.value)} className="bg-slate-50 border border-slate-200 rounded p-1.5 font-bold outline-none text-xs">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+          <select value={month1} onChange={(e) => setMonth1(e.target.value)} className="bg-slate-50 border border-slate-200 rounded p-1.5 font-bold outline-none text-xs">{months1.map(m => <option key={m}>{m}</option>)}</select>
+          <span className="mx-2 text-slate-300">VS</span>
+          <span className="text-xs font-bold text-slate-400">Comp:</span>
+          <select value={year2} onChange={(e) => setYear2(e.target.value)} className="bg-slate-50 border border-slate-200 rounded p-1.5 font-bold outline-none text-xs">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+          <select value={month2} onChange={(e) => setMonth2(e.target.value)} className="bg-slate-50 border border-slate-200 rounded p-1.5 font-bold outline-none text-xs">{months2.map(m => <option key={m}>{m}</option>)}</select>
+          <span className="mx-2 text-slate-300">|</span>
+          <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
+          <button onClick={() => handleExportExcel('table-comparativo', `Comparativo_${month1}${year1}_vs_${month2}${year2}`, `Análisis Comparativo`)} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-5xl mx-auto">
         <HeaderMembretado isExport={true} />
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <table id="table-bg" className="w-full text-left border-collapse">
+        {!month1 || !month2 ? (
+          <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-sm"><AlertTriangle className="mx-auto text-slate-300 mb-4" size={48}/><p className="text-slate-500 font-black text-xs uppercase tracking-wider">Faltan datos.</p></div>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <table id="table-comparativo" className="w-full text-left border-collapse">
+              <thead className="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b border-slate-300">
+                <tr><th className="p-4">Estructura</th><th className="p-4 text-right">📅 {month1}</th><th className="p-4 text-right">📅 {month2}</th><th className="p-4 text-right">Var. Abs</th><th className="p-4 text-right">%</th></tr>
+              </thead>
+              <tbody>
+                {tree.map((cat, i) => {
+                  const isIngreso = cat.n.includes('INGRESO') || (cat.key && cat.key.startsWith('4'));
+                  const cGood = isIngreso ? (cat.m1_u - cat.m2_u) > 0 : (cat.m1_u - cat.m2_u) < 0;
+                  return (
+                    <React.Fragment key={i}>
+                      <tr className="bg-slate-50 font-black text-xs"><td className="p-3 uppercase text-slate-800">{cat.n}</td><td colSpan={4}/></tr>
+                      {cat.c.sort((a,b)=>String(a.n).localeCompare(String(b.n))).map((acc, j) => {
+                        const vA = acc.m1_u - acc.m2_u;
+                        const vP = acc.m2_u !== 0 ? (vA/Math.abs(acc.m2_u))*100 : (acc.m1_u !== 0 ? 100 : 0);
+                        const good = isIngreso ? vA > 0 : vA < 0;
+                        return (
+                          <tr key={j} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="p-2.5 pl-6 text-[11px] font-bold text-slate-700 truncate max-w-xs">{acc.n}</td>
+                            <td className="p-2.5 text-right font-mono text-[11px]">{fmtR(acc.m1_u)}</td>
+                            <td className="p-2.5 text-right font-mono text-[11px] font-bold bg-slate-50/50">{fmtR(acc.m2_u)}</td>
+                            <td className={`p-2.5 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-500':'text-red-500'}`}>{vA>0?'+':''}{fmtR(vA)}</td>
+                            <td className={`p-2.5 text-right font-mono text-[11px] font-bold ${good ? 'text-emerald-500':'text-red-500'}`}>{Math.abs(vP).toFixed(2)}%</td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="bg-slate-100 font-black text-[11px] border-t-2 border-slate-200">
+                        <td className="p-3 pl-6 uppercase">TOTAL {cat.n}</td>
+                        <td className="p-3 text-right font-mono">{fmtR(cat.m1_u)}</td><td className="p-3 text-right font-mono bg-slate-200/50">{fmtR(cat.m2_u)}</td>
+                        <td className={`p-3 text-right font-mono ${cGood?'text-emerald-600':'text-red-500'}`}>{fmtR(cat.m1_u - cat.m2_u)}</td><td className={`p-3 text-right font-mono ${cGood?'text-emerald-600':'text-red-500'}`}>{Math.abs(cat.m2_u!==0?((cat.m1_u-cat.m2_u)/Math.abs(cat.m2_u)*100):100).toFixed(2)}%</td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
+                <tr className="bg-slate-900 text-white font-black border-t-4 border-orange-500">
+                  <td className="p-5 uppercase text-sm">RESULTADO NETO</td>
+                  <td className="p-5 text-right font-mono text-base border-l border-slate-800">{fmtR(total_m1)}</td>
+                  <td className="p-5 text-right font-mono text-base border-l border-slate-800">{fmtR(total_m2)}</td>
+                  <td className={`p-5 text-right font-mono text-lg border-l border-slate-800 ${isPosTotal?'text-emerald-400':'text-red-400'}`}>{fmtR(varAbsTotal)}</td>
+                  <td className={`p-5 text-right font-mono text-lg border-l border-slate-800 ${isPosTotal?'text-emerald-400':'text-red-400'}`}>{Math.abs(varPctTotal).toFixed(2)}%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ============================================================================
+// 6. VISTA: BALANCE GENERAL (ACUMULATIVO REAL - SIN EXPANDIR EN CABECERA)
+// ============================================================================
+function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
+  const balanceRecords = useMemo(() => dbData.filter(item => item.path?.toUpperCase().includes('ACTIVO') || item.path?.toUpperCase().includes('PASIVO') || item.path?.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name || '')), [dbData]);
+  const availableYears = useMemo(() => [...new Set(balanceRecords.map(d => d.year))].filter(Boolean).sort(), [balanceRecords]);
+  const [selectedYear, setSelectedYear] = useState(availableYears[availableYears.length - 1] || '2026');
+  
+  // Incluimos Saldos Iniciales como un mes válido para filtrar
+  const availableMonths = useMemo(() => [...new Set(balanceRecords.filter(d => d.year === selectedYear).map(d => d.month))], [balanceRecords, selectedYear]);
+  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || 'Enero'); 
+  const [tasa, setTasa] = useState(90);
+  const [activeCode, setActiveCode] = useState(null);
+
+  // Lógica Acumulativa: Suma histórica hasta el mes de corte
+  const tree = useMemo(() => {
+    const root = [];
+    const selectedMonthIndex = monthOrder[selectedMonth] || 0;
+    
+    const cumulativeData = balanceRecords.filter(d => {
+      if (d.year !== selectedYear) return false;
+      const mIndex = monthOrder[d.month] || 0; 
+      return mIndex <= selectedMonthIndex;
+    });
+    
+    // Inyección dinámica de Auxiliares
+    const auxEntries = [];
+    for (const code in auxDataConfig) {
+      const group = auxDataConfig[code];
+      const totalMonto = group.records.reduce((acc, r) => acc + r.monto, 0);
+      if (totalMonto !== 0) {
+        auxEntries.push({
+          name: `${code} - ${group.label}`,
+          path: code.startsWith('1') ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR',
+          usd: totalMonto, bs: totalMonto * tasa
+        });
+      }
+    }
+
+    const fullData = [...cumulativeData, ...auxEntries];
+    const normKey = s => String(s || '').trim().replace(/\s+/g,' ').toUpperCase();
+
+    fullData.forEach(item => {
+      const pathArray = (item.path || 'OTROS').split('>');
+      let cur = root;
+      pathArray.forEach(folderName => {
+        if(!folderName) return;
+        const key = normKey(folderName);
+        let folder = cur.find(n => normKey(n.n) === key);
+        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        cur = folder.c;
+      });
+      const leafKey = normKey(item.name);
+      let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
+      if (!leaf) cur.push({ n: String(item.name || '').trim(), u: item.usd, b: item.bs, isLeaf: true });
+      else { leaf.u += item.usd; leaf.b += item.bs; }
+    });
+
+    const compute = (nodes) => {
+      let u = 0, b = 0;
+      nodes.forEach(n => { if (!n.isLeaf) { const t = compute(n.c); n.u = t.u; n.b = t.b; } u += n.u; b += n.b; });
+      return { u, b };
+    };
+    compute(root);
+
+    const sectionOrder = (name) => {
+      const n = name.toUpperCase();
+      if (n.includes('ACTIVO') || n.startsWith('1')) return 1;
+      if (n.includes('PASIVO') || n.startsWith('2')) return 2;
+      if (n.includes('PATRIMONIO') || n.startsWith('3')) return 3;
+      return 9;
+    };
+    return root.sort((a, b) => sectionOrder(a.n) - sectionOrder(b.n));
+  }, [balanceRecords, selectedMonth, selectedYear, tasa, auxDataConfig]);
+
+  let totalActivos = 0; let totalPasPat = 0;
+  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIVO') || n.n.startsWith('1')) totalActivos += n.u; else totalPasPat += n.u; });
+
+  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
+
+  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={auxDataConfig} />;
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
+      <PrintStyles />
+      <header className="no-print bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-2">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900 transition-colors"><ArrowLeft size={16}/> Panel</button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400">Año:</span>
+            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-slate-50 border border-slate-200 rounded p-1.5 font-bold outline-none text-xs">{availableYears.map(y=><option key={y}>{y}</option>)}</select>
+            <span className="text-xs font-bold text-slate-400 ml-2">Corte Acumulado:</span>
+            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-slate-50 border border-slate-200 rounded p-1.5 font-bold outline-none text-xs">
+              {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+            <span className="text-xs font-bold text-slate-400 uppercase">Tasa Bs/USD:</span>
+            <input type="number" min="1" step="0.01" value={tasa} onChange={e => setTasa(parseFloat(e.target.value) || 1)} className="bg-slate-50 border border-slate-200 rounded p-1.5 w-24 font-black outline-none text-xs"/>
+          </div>
+          <span className="text-slate-300">|</span>
+          <button onClick={() => window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
+          <button onClick={() => handleExportExcel('table-balance', `Balance_${selectedMonth}`, `Balance General`)} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
+        </div>
+      </header>
+      <main className="p-4 md:p-8 max-w-5xl mx-auto">
+        <HeaderMembretado isExport={true} />
+        <div className="bg-white rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.05)] border border-slate-200 overflow-hidden">
+          <table id="table-balance" className="w-full text-left border-collapse">
             <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase border-b border-slate-300">
-              <tr><th className="px-4 py-4 w-[55%]">Estructura</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Saldo Bs.</th><th className="px-3 py-4 text-right">%</th></tr>
+              <tr><th className="px-4 py-4 w-[55%]">Estructura</th><th className="px-3 py-4 text-right">Saldo USD</th><th className="px-3 py-4 text-right hidden sm:table-cell">Equiv. Bs.</th><th className="px-3 py-4 text-right">%</th></tr>
             </thead>
             <tbody>
-              {tree.map((n,i)=><ExpandableRow key={i} node={n} totalBaseUSD={ta} onShowReport={setActiveCode} isBalance={true}/>)}
-              <tr className="bg-black text-white font-black border-t-4 border-orange-500">
+              {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={false} onShowReport={setActiveCode} isBalance={true}/>)}
+              <tr className="bg-slate-900 text-white font-black border-t-4 border-slate-400">
                 <td colSpan={4} className="p-6">
                   <div className="flex justify-between items-center px-4">
-                    <div className="flex items-center gap-4"><Scale size={32} className="text-slate-400"/><div><p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest leading-none mb-1">Ecuación Patrimonial</p><p className="text-xs font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
+                    <div className="flex items-center gap-4"><Scale size={32} className="text-slate-400"/><div><p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Ecuación Patrimonial</p><p className="text-sm font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
                     <div className="flex gap-10 text-right">
-                      <div><p className="text-[10px] text-slate-400 uppercase font-bold">Total Activos</p><p className="text-xl font-mono text-white">USD {ta.toLocaleString('es-VE')}</p></div>
-                      <div><p className="text-[10px] text-slate-400 uppercase font-bold">Pasivo + Pat.</p><p className="text-xl font-mono text-white">USD {tp.toLocaleString('es-VE')}</p></div>
+                      <div><p className="text-[10px] text-slate-400 uppercase font-bold">Total Activos</p><p className="text-xl font-mono text-white">USD {fmtR(totalActivos)}</p></div>
+                      <div><p className="text-[10px] text-slate-400 uppercase font-bold">Pasivo + Pat.</p><p className="text-xl font-mono text-white">USD {fmtR(totalPasPat)}</p></div>
                     </div>
                   </div>
                 </td>
@@ -429,32 +635,37 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig }) {
     </div>
   );
 }
+
 // ============================================================================
-// 7. VISTA: SUB-REPORTE AUXILIAR DINÁMICO
+// 7. VISTA: SUB-REPORTE AUXILIARES
 // ============================================================================
 function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
   const group = auxDataConfig[accountCode] || { label: 'Sin registros', records: [] };
   const total = group.records.reduce((a,c)=>a+c.monto, 0);
 
   return (
-    <div className="animate-in fade-in bg-[#f8fafc] min-h-screen p-4 pb-20">
-      <header className="bg-white border-b border-slate-200 p-4 mb-6 flex justify-between items-center shadow-sm">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase"><ArrowLeft size={16}/> Volver</button>
-        <button onClick={()=>window.print()} className="px-4 py-2 bg-slate-800 text-white rounded text-[10px] font-black uppercase flex items-center gap-2"><Printer size={14}/> PDF</button>
+    <div className="min-h-screen bg-[#f8fafc] print:bg-white pb-20">
+      <PrintStyles />
+      <header className="no-print bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-500 uppercase hover:text-slate-900"><ArrowLeft size={16}/> Volver</button>
+        <div className="flex gap-2">
+          <button onClick={()=>window.print()} className="px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-black uppercase"><Printer size={14}/></button>
+          <button onClick={()=>handleExportExcel(`table-aux-${accountCode}`, `Auxiliar_${accountCode}`, `Auxiliar`)} className="px-3 py-1.5 bg-emerald-700 text-white rounded text-[10px] font-black uppercase"><Download size={14}/></button>
+        </div>
       </header>
-      <main className="max-w-5xl mx-auto">
+      <main className="p-4 md:p-8 max-w-5xl mx-auto">
         <HeaderMembretado isExport={true} />
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-xl mb-6 flex justify-between items-center">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-6 flex justify-between items-center">
           <div><h2 className="text-2xl font-black text-slate-900 uppercase">Detalle Auxiliar</h2><p className="text-slate-400 font-bold uppercase text-xs">Cuenta: {accountCode} - {group.label}</p></div>
           <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase">Saldo Neto USD</p><p className="text-3xl font-mono font-black text-slate-900">{total.toLocaleString('es-VE')}</p></div>
         </div>
-        <table id="table-aux" className="w-full text-left bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-          <thead className="bg-slate-800 text-white text-[9px] font-black uppercase">
+        <table id={`table-aux-${accountCode}`} className="w-full text-left bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+          <thead className="bg-slate-100 text-slate-500 text-[9px] font-black uppercase border-b border-slate-300">
             <tr><th className="p-4">Código</th><th className="p-4">Descripción</th><th className="p-4">Operación</th><th className="p-4 text-right">Monto USD</th></tr>
           </thead>
           <tbody>
             {group.records.map((r,i)=>(
-              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="p-3 text-[11px] font-bold text-slate-500">{r.cod}</td><td className="p-3 text-[11px] font-black text-slate-800">{r.nombre}</td><td className="p-3 text-[11px] text-slate-600">{r.operacion}</td><td className="p-3 text-right font-mono text-[11px] font-black">{r.monto.toLocaleString('es-VE')}</td>
               </tr>
             ))}
@@ -466,7 +677,7 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 }
 
 // ============================================================================
-// 8. DASHBOARD PRINCIPAL (TEMA CLARO CON RELIEVE 3D)
+// 8. DASHBOARD PRINCIPAL (TEMA CLARO 3D RELIEVE)
 // ============================================================================
 function ReportesFinancierosApp() {
   const [view, setView] = useState('dashboard');
@@ -483,17 +694,17 @@ function ReportesFinancierosApp() {
   if (view === 'configuracion') return (
     <div className="min-h-screen bg-[#f1f5f9] p-8">
       <div className="max-w-3xl mx-auto bg-white rounded-3xl p-10 border border-slate-200 shadow-2xl">
-        <button onClick={()=>setView('dashboard')} className="flex items-center gap-2 font-black text-[10px] uppercase text-slate-400 mb-8"><ArrowLeft size={16}/> Volver al Panel</button>
+        <button onClick={()=>setView('dashboard')} className="flex items-center gap-2 font-black text-[10px] uppercase text-slate-400 mb-8 hover:text-slate-800"><ArrowLeft size={16}/> Panel</button>
         <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-3"><Database className="text-orange-500"/> Ingesta de Información</h2>
         <div className="space-y-4">
           {[
-            { n:'01', l:'Plan de Cuentas (.txt)', h: (e)=>processPlanCuentas(e.target.files[0]).then(p=>{setPlanCuentas(p); alert("OK")}) },
-            { n:'02', l:'Saldos Iniciales — Balance (.xlsx)', h: (e)=>processSaldosBalance(e.target.files[0], planCuentas).then(d=>setDbData(prev=>[...prev, ...d])) },
-            { n:'03', l:'Estado de Resultados (.xlsx)', h: (e)=>processFiles(e.target.files).then(d=>setDbData(prev=>[...prev, ...d])), m:true },
-            { n:'04', l:'Auxiliares CxC / CxP (.xlsx)', h: (e)=>processAuxFile(e.target.files).then(a=>setAuxDataConfig(a)), m:true }
+            { n:'01', l:'Plan de Cuentas (.txt)', h: (e)=>processPlanCuentas(e.target.files[0]).then(p=>{setPlanCuentas(p); alert("Plan de Cuentas Listo")}) },
+            { n:'02', l:'Saldos Iniciales — Balance (.xlsx)', h: (e)=>processSaldosBalance(e.target.files[0], planCuentas).then(d=>{setDbData(prev=>[...prev, ...d]); alert("Saldos Cargados (Sin CxC/CxP)")}) },
+            { n:'03', l:'Estado de Resultados (.xlsx)', h: (e)=>processFiles(e.target.files).then(d=>{setDbData(prev=>[...prev, ...d]); alert("Mes cargado")}), m:true },
+            { n:'04', l:'Auxiliares CxC / CxP (.xlsx)', h: (e)=>processAuxFile(e.target.files).then(a=>{setAuxDataConfig(a); alert("Auxiliares listos")}), m:true }
           ].map(s => (
-            <label key={s.n} className="flex items-center gap-5 p-5 rounded-2xl border-2 border-slate-100 cursor-pointer hover:border-orange-500/40 hover:bg-orange-50/30 transition-all group shadow-sm active:scale-[0.98]">
-              <span className="text-2xl font-black font-mono text-slate-200 group-hover:text-orange-500 transition-colors">{s.n}</span>
+            <label key={s.n} className="flex items-center gap-5 p-5 rounded-2xl border-2 border-slate-100 cursor-pointer hover:border-orange-500/40 hover:bg-orange-50/30 transition-all group shadow-sm">
+              <span className="text-2xl font-black font-mono text-slate-200 group-hover:text-orange-500">{s.n}</span>
               <span className="flex-1 font-bold text-xs uppercase tracking-wider text-slate-600">{s.l}</span>
               <Upload size={20} className="text-slate-300 group-hover:text-orange-500"/>
               <input type="file" multiple={s.m} className="hidden" onChange={s.h}/>
@@ -507,6 +718,7 @@ function ReportesFinancierosApp() {
 
   if (view === 'resultado') return <EstadoResultadoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
   if (view === 'balance')   return <BalanceGeneralView onBack={()=>setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig}/>;
+  if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] relative overflow-hidden">
@@ -516,18 +728,17 @@ function ReportesFinancierosApp() {
           <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3 uppercase"><Activity size={32} className="text-orange-500"/> Jiret G&B <span className="text-slate-400 font-normal">Finance</span></h1>
           <p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase mt-1">Servicios Administrativos Contables</p>
         </div>
-        <button onClick={()=>setView('configuracion')} className="bg-white border-2 border-slate-100 hover:border-orange-500 hover:text-orange-600 px-6 py-3 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all flex items-center gap-2"><Database size={16}/> Configuración</button>
+        <button onClick={()=>setView('configuracion')} className="bg-white border-2 border-slate-100 hover:border-orange-500 hover:text-orange-600 px-6 py-3 rounded-2xl font-black uppercase text-[10px] shadow-sm transition-all flex items-center gap-2"><Database size={16}/> Ingesta de Datos</button>
       </header>
 
       <main className="relative z-10 max-w-7xl mx-auto px-10 py-20">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {[
             { id:'resultado', t:'Estado de Resultados', d:'Rentabilidad Mensual', i:<LineChart size={32}/> },
-            { id:'balance', t:'Balance General', d:'Situación Financiera', i:<Scale size={32}/> },
-            { id:'comparativo', t:'Análisis Variación', d:'Mes vs Mes', i:<GitCompare size={32}/> },
-            { id:'config', t:'Base de Datos', d:'Ingesta de Archivos', i:<Database size={32}/>, act:()=>setView('configuracion') }
+            { id:'balance', t:'Balance General', d:'Situación Acumulada', i:<Scale size={32}/> },
+            { id:'comparativo', t:'Análisis Variación', d:'Mes vs Mes', i:<GitCompare size={32}/> }
           ].map(m => (
-            <button key={m.id} onClick={m.act || (()=>setView(m.id))} className="group relative bg-white rounded-[2rem] p-10 text-left border-b-8 border-slate-200 shadow-[0_15px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_25px_50px_rgba(0,0,0,0.1)] hover:-translate-y-3 hover:border-orange-500 transition-all duration-300">
+            <button key={m.id} onClick={()=>setView(m.id)} className="group relative bg-white rounded-[2rem] p-10 text-left border-b-8 border-slate-200 shadow-[0_15px_30px_rgba(0,0,0,0.05)] hover:shadow-[0_25px_50px_rgba(0,0,0,0.1)] hover:-translate-y-3 hover:border-orange-500 transition-all duration-300">
               <div className="bg-slate-50 w-20 h-20 rounded-3xl flex items-center justify-center mb-8 border border-slate-100 shadow-[inset_0_4px_8px_rgba(0,0,0,0.05)] group-hover:bg-orange-50 group-hover:border-orange-200 text-slate-600 group-hover:text-orange-500 transition-colors">
                 {m.i}
               </div>
@@ -537,7 +748,6 @@ function ReportesFinancierosApp() {
             </button>
           ))}
         </div>
-        <p className="text-center text-slate-300 font-black text-[10px] uppercase tracking-[0.5em] mt-32">Supply ERP · High Impact Accounting v4.0</p>
       </main>
     </div>
   );
