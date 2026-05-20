@@ -692,6 +692,21 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 
   const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+  const isCxC = mapInfo.type.includes('cxc');
+
+  // Agrupar por cliente/proveedor
+  const byClient = useMemo(() => {
+    const map = {};
+    filteredData.forEach(item => {
+      if (!map[item.nombre]) map[item.nombre] = { cod: item.cod, records: [], subtotal: 0 };
+      map[item.nombre].records.push(item);
+      map[item.nombre].subtotal += item.monto;
+    });
+    return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
+  }, [filteredData]);
+
+  const [expanded, setExpanded] = useState({});
+  const toggleClient = (name) => setExpanded(p => ({...p, [name]: !p[name]}));
 
   return (
     <div className="animate-in fade-in duration-300">
@@ -699,57 +714,91 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
       <div className="flex items-center justify-between mb-6 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div>
           <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-3">
-            {mapInfo.type.includes('cxc') ? <Users className="text-blue-500"/> : <Briefcase className="text-red-500"/>}
+            {isCxC ? <Users className="text-blue-500"/> : <Briefcase className="text-red-500"/>}
             Auxiliar Detallado
           </h2>
           <p className="text-xs font-bold text-slate-400 uppercase mt-1">
-            {accountCode.includes('.') ? `Cuenta: ${accountCode} - ${mapInfo.label}` : 'Reporte Consolidado'}
+            {accountCode.includes('.') ? `Cuenta: ${accountCode} — ${mapInfo.label}` : 'Reporte Consolidado'}
           </p>
+          <p className="text-[10px] text-slate-300 mt-0.5">{byClient.length} {isCxC ? 'clientes' : 'proveedores'} · {filteredData.length} documentos</p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Saldo en Cuenta</p>
-          <p className={`text-2xl font-mono font-black ${mapInfo.type.includes('cxc') ? 'text-blue-600' : 'text-red-600'}`}>USD {fmtCur(total)}</p>
+          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Saldo Total</p>
+          <p className={`text-2xl font-mono font-black ${isCxC ? 'text-blue-600' : 'text-red-600'}`}>USD {fmtCur(total)}</p>
         </div>
       </div>
-      <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-        <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse" style={{minWidth:'900px'}}>
-          <thead className="bg-slate-800 text-[9px] uppercase font-black text-slate-300">
-            <tr>
-              <th className="px-3 py-4">Código</th>
-              <th className="px-3 py-4">Descripción</th>
-              <th className="px-3 py-4">Operación</th>
-              <th className="px-3 py-4">Emisión</th>
-              <th className="px-3 py-4">Vencimiento</th>
-              <th className="px-3 py-4 text-right">Días</th>
-              <th className="px-3 py-4">No. Documento</th>
-              <th className="px-3 py-4">Descripción de Operación</th>
-              <th className="px-3 py-4 text-right">Monto USD</th>
-              <th className="px-3 py-4">Cuenta Contable</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.length === 0 ? (
-              <tr><td colSpan={10} className="text-center py-8 text-slate-400 font-bold">Sin transacciones registradas en este auxiliar.</td></tr>
-            ) : (
-              filteredData.map((item, i) => (
-                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                  <td className="px-3 py-2.5 text-[11px] font-bold text-slate-500 whitespace-nowrap">{item.cod}</td>
-                  <td className="px-3 py-2.5 text-[11px] font-black text-slate-800 max-w-[140px] truncate">{item.nombre}</td>
-                  <td className="px-3 py-2.5 text-[11px] text-slate-600 whitespace-nowrap">{item.operacion || '-'}</td>
-                  <td className="px-3 py-2.5 text-[11px] text-slate-500 whitespace-nowrap font-mono">{item.emision}</td>
-                  <td className="px-3 py-2.5 text-[11px] text-slate-500 whitespace-nowrap font-mono">{item.vence}</td>
-                  <td className={`px-3 py-2.5 text-right text-[11px] font-mono whitespace-nowrap ${Number(item.dias) < 0 ? 'text-red-500 font-bold' : 'text-slate-500'}`}>{item.dias ?? '-'}</td>
-                  <td className="px-3 py-2.5 text-[11px] text-slate-600 font-mono whitespace-nowrap">{item.doc}</td>
-                  <td className="px-3 py-2.5 text-[11px] text-slate-500 max-w-[180px] truncate" title={item.descripcion}>{item.descripcion || '-'}</td>
-                  <td className={`px-3 py-2.5 text-right text-[12px] font-mono font-bold whitespace-nowrap ${item.monto < 0 ? 'text-red-500' : 'text-slate-900'}`}>{fmtCur(item.monto)}</td>
-                  <td className="px-3 py-2.5 text-[10px] text-slate-400 font-mono max-w-[140px] truncate" title={item.cuentaContable}>{item.cuentaContable || '-'}</td>
-                </tr>
-              ))
+
+      {/* Por cliente colapsable */}
+      <div className="space-y-2">
+        {byClient.length === 0 ? (
+          <div className="bg-white rounded-xl p-8 text-center text-slate-400 font-bold border border-slate-100">Sin transacciones registradas.</div>
+        ) : byClient.map(([nombre, group]) => (
+          <div key={nombre} className="bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+            {/* Cabecera cliente — siempre visible */}
+            <button onClick={() => toggleClient(nombre)}
+              className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors text-left gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={`inline-flex items-center justify-center w-5 h-5 border rounded text-[11px] flex-shrink-0 ${expanded[nombre] ? 'border-blue-400 text-blue-600 bg-blue-50' : 'border-slate-300 text-slate-400 bg-white'}`}>
+                  {expanded[nombre] ? '−' : '+'}
+                </span>
+                <span className="text-[10px] font-black text-slate-400 flex-shrink-0">{group.cod}</span>
+                <span className="font-black text-[12px] text-slate-900 uppercase truncate">{nombre}</span>
+              </div>
+              <div className="flex items-center gap-6 flex-shrink-0 text-right">
+                <span className="text-[10px] text-slate-400">{group.records.length} doc.</span>
+                <span className={`font-mono font-black text-sm ${group.subtotal < 0 ? 'text-red-500' : isCxC ? 'text-blue-700' : 'text-red-700'}`}>
+                  USD {fmtCur(group.subtotal)}
+                </span>
+              </div>
+            </button>
+            {/* Detalle — expandible */}
+            {expanded[nombre] && (
+              <div className="border-t border-slate-100">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50 text-[9px] uppercase font-black text-slate-400">
+                    <tr>
+                      <th className="px-4 py-2">Operación</th>
+                      <th className="px-4 py-2">Emisión</th>
+                      <th className="px-4 py-2">Vencimiento</th>
+                      <th className="px-4 py-2 text-right">Días</th>
+                      <th className="px-4 py-2">No. Documento</th>
+                      <th className="px-4 py-2">Descripción</th>
+                      <th className="px-4 py-2 text-right">Monto USD</th>
+                      <th className="px-4 py-2">Cuenta Contable</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.records.map((item, i) => (
+                      <tr key={i} className="border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
+                        <td className="px-4 py-2 text-[11px] text-slate-600">{item.operacion||'-'}</td>
+                        <td className="px-4 py-2 text-[11px] font-mono text-slate-500">{item.emision}</td>
+                        <td className="px-4 py-2 text-[11px] font-mono text-slate-500">{item.vence}</td>
+                        <td className={`px-4 py-2 text-right text-[11px] font-mono font-bold ${Number(item.dias)<0?'text-red-500':Number(item.dias)===0?'text-amber-500':'text-slate-500'}`}>{item.dias??'-'}</td>
+                        <td className="px-4 py-2 text-[11px] font-mono text-slate-600">{item.doc}</td>
+                        <td className="px-4 py-2 text-[11px] text-slate-500 max-w-[200px] truncate" title={item.descripcion}>{item.descripcion||'-'}</td>
+                        <td className={`px-4 py-2 text-right text-[12px] font-mono font-bold ${item.monto<0?'text-red-500':'text-slate-900'}`}>{fmtCur(item.monto)}</td>
+                        <td className="px-4 py-2 text-[10px] text-slate-400 font-mono truncate max-w-[160px]" title={item.cuentaContable}>{item.cuentaContable||'-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-black text-[10px]">
+                      <td colSpan={6} className="px-4 py-2 text-slate-600 uppercase tracking-wider">Subtotal {nombre}</td>
+                      <td className={`px-4 py-2 text-right font-mono text-sm ${group.subtotal<0?'text-red-600':isCxC?'text-blue-700':'text-red-700'}`}>USD {fmtCur(group.subtotal)}</td>
+                      <td/>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
-          </tbody>
-        </table>
-        </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Total general */}
+      <div className={`mt-4 rounded-2xl p-5 flex justify-between items-center border-2 ${isCxC?'bg-blue-900 border-blue-500':'bg-red-900 border-red-500'}`}>
+        <span className="text-white font-black uppercase tracking-widest text-sm">TOTAL {mapInfo.label}</span>
+        <span className="font-mono font-black text-xl text-white">USD {fmtCur(total)}</span>
       </div>
     </div>
   );
@@ -1090,19 +1139,34 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
         bs: total * tasa
       });
     });
-    // ── Inyectar Activos Fijos desde activosFijosData ─────────────────────────
+    // ── Inyectar Activos Fijos: costo bruto y depreciación acumulada separados ─
     if (activosFijosData?.records?.length) {
-      const ctaMap = {};
+      // Costo bruto por cuenta (usa Bs histórico del Excel, no tasa actual)
+      const costoMap = {};
+      const depMap = {};
       activosFijosData.records.forEach(r => {
         const cta = r.cuenta && r.cuenta !== '-' ? r.cuenta : 'ACTIVOS FIJOS';
-        if (!ctaMap[cta]) ctaMap[cta] = 0;
-        ctaMap[cta] += r.valorNeto;
+        if (!costoMap[cta]) costoMap[cta] = { usd: 0, bs: 0 };
+        costoMap[cta].usd += r.costoUSD;
+        costoMap[cta].bs  += r.costoBS; // BS histórico del Excel — no cambia con tasa
+        if (!depMap[cta]) depMap[cta] = { usd: 0, bs: 0 };
+        depMap[cta].usd += r.depAcum;
+        depMap[cta].bs  += r.depAcum * (r.tasa || tasa);
       });
-      Object.entries(ctaMap).forEach(([cta, neto]) => {
-        if (neto !== 0) auxEntries.push({
+      // Inyectar costo bruto
+      Object.entries(costoMap).forEach(([cta, v]) => {
+        if (v.usd !== 0) auxEntries.push({
           name: cta,
           path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS',
-          usd: neto, bs: neto * tasa
+          usd: v.usd, bs: v.bs
+        });
+      });
+      // Inyectar depreciación acumulada (valor negativo — contra-activo)
+      Object.entries(depMap).forEach(([cta, v]) => {
+        if (v.usd !== 0) auxEntries.push({
+          name: `DEP. ACUM. — ${cta}`,
+          path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS',
+          usd: -v.usd, bs: -v.bs
         });
       });
     }
@@ -1606,53 +1670,48 @@ function InversionesView({ onBack, activosFijosData }) {
                   <div><p className="text-slate-500 font-bold uppercase text-[8px]">Dep/Mes</p><p className="font-mono font-black text-orange-400">{fmt(gMensual)}</p></div>
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" style={{minWidth:'1600px'}}>
+              <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-200">
                     <tr>
-                      <th className="px-3 py-2.5 w-10 text-center">Cant</th>
-                      <th className="px-3 py-2.5 w-44">Mobiliario y Equipo</th>
-                      <th className="px-3 py-2.5 w-20">Sede</th>
-                      <th className="px-3 py-2.5 w-36">Cuenta</th>
-                      <th className="px-3 py-2.5 w-20">Depreciación</th>
-                      <th className="px-3 py-2.5 w-22 text-right">Dep. Acum</th>
-                      <th className="px-3 py-2.5 w-22">F. Adquisición</th>
-                      <th className="px-3 py-2.5 w-14 text-center">V.U. Asig</th>
-                      <th className="px-3 py-2.5 w-14 text-center">V.U. Trans</th>
-                      <th className="px-3 py-2.5 w-26 text-right">Costo Adq. USD</th>
-                      <th className="px-3 py-2.5 w-26 text-right">Costo Adq. Bs.</th>
-                      <th className="px-3 py-2.5 w-26 text-right">Dep. Acum USD</th>
-                      <th className="px-3 py-2.5 w-26 text-right">Valor Neto</th>
-                      <th className="px-3 py-2.5 w-22 text-right">Dep. Mensual</th>
-                      <th className="px-3 py-2.5 w-14 text-center">Tasa</th>
+                      <th className="px-3 py-2.5">Cant · Descripción · Sede</th>
+                      <th className="px-3 py-2.5">Método · F.Adq · V.U.Asig/Trans</th>
+                      <th className="px-3 py-2.5 text-right">Costo USD</th>
+                      <th className="px-3 py-2.5 text-right">Costo Bs. (hist.)</th>
+                      <th className="px-3 py-2.5 text-right">Dep. Acum USD</th>
+                      <th className="px-3 py-2.5 text-right">Valor Neto</th>
+                      <th className="px-3 py-2.5 text-right">Dep/Mes</th>
+                      <th className="px-3 py-2.5 text-center">Tasa</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((a,i)=>(
-                      <tr key={i} className="border-b border-slate-100 hover:bg-orange-50/30 transition-colors">
-                        <td className="px-3 py-2 text-[11px] font-mono text-center text-slate-500">{a.cant}</td>
-                        <td className="px-3 py-2 text-[11px] font-bold text-slate-800 truncate max-w-[176px]" title={a.descripcion}>{a.descripcion}</td>
-                        <td className="px-3 py-2 text-[10px] text-slate-500 truncate">{a.sede}</td>
-                        <td className="px-3 py-2 text-[10px] text-slate-600 font-bold truncate max-w-[144px]" title={a.cuenta}>{a.cuenta}</td>
-                        <td className="px-3 py-2 text-[10px] text-slate-500 truncate">{a.depreciacion}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-red-500">({fmt(a.depreciacionAcum)})</td>
-                        <td className="px-3 py-2 text-[11px] font-mono text-slate-500">{a.fechaAdq}</td>
-                        <td className="px-3 py-2 text-center text-[11px] font-mono text-slate-500">{a.vidaUtilAsig}</td>
-                        <td className="px-3 py-2 text-center text-[11px] font-mono text-slate-500">{a.vidaUtilTrans}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-700">{fmt(a.costoUSD)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-500">{fmt(a.costoBS)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-red-500">({fmt(a.depAcum)})</td>
-                        <td className="px-3 py-2 text-right font-mono text-[12px] font-black text-orange-600">{fmt(a.valorNeto)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-emerald-600">{fmt(a.depreMensual)}</td>
+                      <tr key={i} className="border-b border-slate-100 hover:bg-orange-50/30 transition-colors align-top">
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1.5 items-start">
+                            <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">{a.cant}×</span>
+                            <div>
+                              <p className="text-[11px] font-bold text-slate-800 leading-tight">{a.descripcion}</p>
+                              <p className="text-[9px] text-slate-400 mt-0.5">{a.sede} · <span className="font-mono text-slate-500">{a.cuenta}</span></p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <p className="text-[10px] text-slate-500">{a.depreciacion}</p>
+                          <p className="text-[9px] font-mono text-slate-400 mt-0.5">{a.fechaAdq} · {a.vidaUtilAsig}/{a.vidaUtilTrans} m</p>
+                          <p className="text-[9px] text-red-400 font-mono">Dep.Acum: ({fmt(a.depreciacionAcum)})</p>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-700 whitespace-nowrap">{fmt(a.costoUSD)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-500 whitespace-nowrap">{fmt(a.costoBS)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[11px] text-red-500 whitespace-nowrap">({fmt(a.depAcum)})</td>
+                        <td className="px-3 py-2 text-right font-mono text-[12px] font-black text-orange-600 whitespace-nowrap">{fmt(a.valorNeto)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[11px] text-emerald-600 whitespace-nowrap">{fmt(a.depreMensual)}</td>
                         <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">{a.tasa}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-100 font-black text-[10px] border-t-2 border-slate-300">
-                      <td colSpan={5} className="px-3 py-2.5 text-slate-700 uppercase tracking-wider">Subtotal {cuenta}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-red-600">({fmt(items.reduce((s,r)=>s+r.depreciacionAcum,0))})</td>
-                      <td colSpan={3}/>
+                      <td colSpan={2} className="px-3 py-2.5 text-slate-700 uppercase tracking-wider">Subtotal {cuenta}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-slate-800">{fmt(gCosto)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-slate-600">{fmt(gCostoBS)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-red-600">({fmt(gDepAcum)})</td>
@@ -1662,7 +1721,6 @@ function InversionesView({ onBack, activosFijosData }) {
                     </tr>
                   </tfoot>
                 </table>
-              </div>
             </div>
           );
         })}
