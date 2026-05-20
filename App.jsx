@@ -1036,67 +1036,77 @@ function InversionesView({ onBack, activosFijosData }) {
         </div>
 
         {Object.entries(grupos).map(([cuenta,items])=>{
+          const gCostoUSD=items.reduce((s,r)=>s+r.costoUSD,0);
           const gCostoBS=items.reduce((s,r)=>s+r.costoBS,0);
           const gDepAcumBs=items.reduce((s,r)=>s+getDepAcumActualBs(r),0);
           const gNetoBs=items.reduce((s,r)=>s+getValorNetoActualBs(r),0);
           const gMensualBs=items.reduce((s,r)=>s+getDepMensualBs(r),0);
           return (
-            <div key={cuenta} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200 mb-5">
-              <div className="bg-[#111111] px-6 py-3 flex flex-wrap justify-between items-center gap-3">
-                <div><p className="text-[8px] font-black uppercase tracking-widest text-slate-500">Cuenta Contable</p><span className="text-orange-400 font-black text-xs uppercase tracking-widest">{cuenta}</span></div>
-                <div className="flex gap-5 text-right text-[10px]">
-                  <div><p className="text-slate-500 font-bold uppercase text-[8px]">Costo Bs</p><p className="font-mono font-black text-white">{fmt(gCostoBS)}</p></div>
-                  <div><p className="text-slate-500 font-bold uppercase text-[8px]">Dep. Acum Bs</p><p className="font-mono font-black text-red-400">({fmt(gDepAcumBs)})</p></div>
-                  <div><p className="text-slate-500 font-bold uppercase text-[8px]">Valor Neto Bs</p><p className="font-mono font-black text-emerald-400">{fmt(gNetoBs)}</p></div>
-                  <div><p className="text-slate-500 font-bold uppercase text-[8px]">Dep/Mes Bs</p><p className="font-mono font-black text-orange-400">{fmt(gMensualBs)}</p></div>
+            <div key={cuenta} className="bg-white rounded-xl shadow-md overflow-hidden border border-slate-200 mb-4">
+              <div className="bg-slate-800 px-4 py-2.5 flex flex-wrap justify-between items-center gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"/>
+                  <span className="text-orange-300 font-black text-[11px] tracking-wide truncate">{cuenta}</span>
+                  <span className="text-slate-500 text-[10px]">· {items.length} activo{items.length!==1?'s':''}</span>
+                </div>
+                <div className="flex gap-4 text-right text-[10px] flex-shrink-0">
+                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Costo USD</p><p className="font-mono font-black text-blue-400">USD {fmt(gCostoUSD)}</p></div>
+                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Costo Bs</p><p className="font-mono font-black text-white">Bs {fmt(gCostoBS)}</p></div>
+                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Dep.Acum Bs</p><p className="font-mono font-black text-red-400">(Bs {fmt(gDepAcumBs)})</p></div>
+                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Val.Neto Bs</p><p className="font-mono font-black text-emerald-400">Bs {fmt(gNetoBs)}</p></div>
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" style={{minWidth:'1100px'}}>
-                  <thead className="bg-slate-50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-200">
-                    <tr>
-                      <th className="px-3 py-3">Cant · Descripción</th>
-                      <th className="px-3 py-3">Sede · Rubro</th>
-                      <th className="px-3 py-3">Depreciación · F.Adq · V.U.</th>
-                      <th className="px-3 py-3 text-right text-slate-500">Tasa Hist.</th>
-                      <th className="px-3 py-3 text-right bg-slate-100">Costo Bs. (hist.)</th>
-                      <th className="px-3 py-3 text-right bg-red-50 text-red-500">Dep. Acum Bs</th>
-                      <th className="px-3 py-3 text-right bg-orange-50 text-orange-600">Valor Neto Bs</th>
-                      <th className="px-3 py-3 text-right bg-emerald-50 text-emerald-600">Dep. Mensual Bs</th>
+                <table className="w-full text-left border-collapse" style={{minWidth:'1600px'}}>
+                  <thead>
+                    <tr className="bg-slate-50 border-b-2 border-slate-200 text-[8px] uppercase font-black">
+                      <th className="px-2 py-2 text-center text-slate-500 w-8">Cant</th>
+                      <th className="px-2 py-2 text-slate-700 w-44">Descripción</th>
+                      <th className="px-2 py-2 text-center text-slate-500 w-10">Sede</th>
+                      <th className="px-2 py-2 text-slate-500 w-44">Cuenta</th>
+                      <th className="px-2 py-2 text-violet-500 w-40">Depreciación (Gasto)</th>
+                      <th className="px-2 py-2 text-indigo-500 w-44">Dep. Acum (Cuenta)</th>
+                      <th className="px-2 py-2 text-slate-500 w-20">F. Adq.</th>
+                      <th className="px-2 py-2 text-center text-slate-500 w-12">V.U. Asig</th>
+                      <th className="px-2 py-2 text-center text-slate-500 w-12">V.U. Trans</th>
+                      <th className="px-2 py-2 text-right text-blue-600 w-28 bg-blue-50">Costo Adq. USD</th>
+                      <th className="px-2 py-2 text-right text-slate-600 w-28 bg-slate-100">Costo Adq. Bs.</th>
+                      <th className="px-2 py-2 text-right text-red-500 w-28 bg-red-50">DEP.ACUM Bs.</th>
+                      <th className="px-2 py-2 text-right text-orange-600 w-28 bg-orange-50">Val. Neto Bs.</th>
+                      <th className="px-2 py-2 text-right text-emerald-600 w-24 bg-emerald-50">Dep. Mensual Bs.</th>
+                      <th className="px-2 py-2 text-right text-slate-400 w-14">Tasa</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((a,i)=>(
-                      <tr key={i} className="border-b border-slate-100 hover:bg-orange-50/30 transition-colors align-top">
-                        <td className="px-3 py-2.5">
-                          <div className="flex gap-1.5 items-start">
-                            <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">{a.cant}×</span>
-                            <p className="text-[11px] font-bold text-slate-800 leading-tight">{a.descripcion}</p>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-[10px] text-slate-500">{a.sede}</p>
-                          <span className="text-[9px] bg-slate-100 rounded px-1 font-bold text-slate-600">{getRubro(a)}</span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <p className="text-[10px] font-bold text-slate-500">{a.depreciacion}</p>
-                          <p className="text-[9px] font-mono text-slate-400">{a.fechaAdq} · {a.vidaUtilAsig}/{a.vidaUtilTrans} m</p>
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-slate-400 whitespace-nowrap">{getTasaHist(a).toFixed(2)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-slate-800 bg-slate-50/50 whitespace-nowrap">{fmt(a.costoBS)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-red-600 bg-red-50/30 whitespace-nowrap">({fmt(getDepAcumActualBs(a))})</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[12px] font-black text-orange-600 bg-orange-50/50 whitespace-nowrap">{fmt(getValorNetoActualBs(a))}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">{fmt(getDepMensualBs(a))}</td>
+                      <tr key={i} className={`border-b border-slate-100 hover:bg-orange-50/20 transition-colors ${i%2===0?'bg-white':'bg-slate-50/40'}`}>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.cant}</td>
+                        <td className="px-2 py-1.5 font-bold text-[10px] text-slate-800 max-w-[176px] truncate" title={a.descripcion}>{a.descripcion}</td>
+                        <td className="px-2 py-1.5 text-center text-[10px] text-slate-500 font-bold">{a.sede}</td>
+                        <td className="px-2 py-1.5 font-mono text-[9px] text-slate-600 truncate max-w-[176px]" title={a.cuenta}>{a.cuenta||'-'}</td>
+                        <td className="px-2 py-1.5 font-mono text-[9px] text-violet-500 truncate max-w-[160px]" title={a.depreciacion}>{a.depreciacion||'-'}</td>
+                        <td className="px-2 py-1.5 font-mono text-[9px] text-indigo-400 truncate max-w-[176px]" title={a.depreciacionAcum}>{a.depreciacionAcum||'-'}</td>
+                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{a.fechaAdq||'-'}</td>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilAsig||'-'}</td>
+                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/40 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">Bs. {fmt(getDepAcumActualBs(a))}</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">Bs. {fmt(getValorNetoActualBs(a))}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">Bs. {fmt(getDepMensualBs(a))}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">{(a.tasa||0).toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-[#111111] text-white font-black text-[10px] border-t-2 border-orange-500">
-                      <td colSpan={4} className="px-3 py-3 uppercase tracking-wider text-orange-400">Subtotal {cuenta} — {items.length} activos</td>
-                      <td className="px-3 py-3 text-right font-mono">{fmt(gCostoBS)}</td>
-                      <td className="px-3 py-3 text-right font-mono text-red-400">({fmt(gDepAcumBs)})</td>
-                      <td className="px-3 py-3 text-right font-mono text-orange-400">{fmt(gNetoBs)}</td>
-                      <td className="px-3 py-3 text-right font-mono text-emerald-400">{fmt(gMensualBs)}</td>
+                    <tr className="bg-slate-800 text-white font-black text-[9px] border-t-2 border-orange-500">
+                      <td colSpan={9} className="px-3 py-2 text-orange-300 uppercase tracking-widest">Subtotal {cuenta}</td>
+                      <td className="px-2 py-2 text-right font-mono text-blue-300 whitespace-nowrap">USD {fmt(gCostoUSD)}</td>
+                      <td className="px-2 py-2 text-right font-mono whitespace-nowrap">Bs. {fmt(gCostoBS)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-red-300 whitespace-nowrap">Bs. {fmt(gDepAcumBs)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-orange-300 whitespace-nowrap">Bs. {fmt(gNetoBs)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-emerald-300 whitespace-nowrap">Bs. {fmt(gMensualBs)}</td>
+                      <td/>
                     </tr>
                   </tfoot>
                 </table>
@@ -1237,55 +1247,106 @@ function ReportesFinancierosApp() {
     </div>
   );
 
-  // ── DASHBOARD PRINCIPAL ──────────────────────────────────────────────────────
+  // ── DASHBOARD PRINCIPAL — diseño SaaS light ────────────────────────────────
+  const [clock, setClock] = useState('');
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const ss = String(now.getSeconds()).padStart(2,'0');
+      const dias = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
+      const meses = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+      setClock(`${hh}:${mm}:${ss} · ${dias[now.getDay()]} ${now.getDate()} ${meses[now.getMonth()]}. ${now.getFullYear()}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const modules = [
-    { id:'resultado',   title:'Estado de Resultados',   desc:'P&L mensual y acumulado por cuentas',        icon:<LineChart size={30}/>,  onClick:()=>dbData.length>0?setView('resultado'):alert('Carga datos en Configuración.') },
-    { id:'balance',     title:'Balance General',         desc:'Situación financiera multimoneda USD / Bs',  icon:<Scale size={30}/>,      onClick:()=>dbData.length>0?setView('balance'):alert('Carga datos en Configuración.') },
-    { id:'comparativo', title:'Análisis de Variaciones', desc:'Comparativo mes a mes de resultados',        icon:<GitCompare size={30}/>, onClick:()=>dbData.length>=2?setView('comparativo'):alert('Necesitas al menos 2 meses.') },
-    { id:'inversiones', title:'Activos Fijos',           desc:'Registro y depreciación de activos fijos',   icon:<Landmark size={30}/>,   onClick:()=>setView('inversiones') },
-    { id:'diario',      title:'Libro Diario',            desc:'Asientos y movimientos contables',           icon:<BookOpen size={30}/>,   disabled:true },
-    { id:'config',      title:'Configuración',           desc:`Plan: ${hasPlan?'✓':'—'} · Meses: ${loadedMonths.length} · Aux: ${hasAuxData?'✓':'—'}`, icon:<Database size={30}/>, onClick:()=>setView('configuracion') },
+    { id:'resultado',   title:'Estado de Resultados',   desc:'P&L mensual y acumulado por cuentas',
+      iconBg:'bg-slate-800', icon:<LineChart size={22} className="text-white"/>,
+      preview: <svg viewBox="0 0 120 40" className="w-full h-10 mt-3 opacity-70"><polyline points="0,38 20,28 40,32 60,18 80,22 100,10 120,14" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinejoin="round"/><polyline points="0,38 20,34 40,30 60,24 80,20 100,16 120,12" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinejoin="round" strokeDasharray="3 2"/></svg>,
+      onClick:()=>dbData.length>0?setView('resultado'):alert('Carga datos en Configuración.') },
+    { id:'balance',     title:'Balance General',         desc:'Situación financiera multimoneda USD / Bs.',
+      iconBg:'bg-blue-600', icon:<Scale size={22} className="text-white"/>,
+      preview: <svg viewBox="0 0 120 40" className="w-full h-10 mt-3 opacity-70">{[10,25,20,35,28,40,32,38].map((h,i)=><rect key={i} x={i*15+2} y={40-h} width="11" height={h} fill="#f97316" rx="2"/>)}</svg>,
+      onClick:()=>dbData.length>0?setView('balance'):alert('Carga datos en Configuración.') },
+    { id:'comparativo', title:'Análisis de Variaciones', desc:'Comparativo mes a mes de resultados',
+      iconBg:'bg-purple-600', icon:<GitCompare size={22} className="text-white"/>,
+      preview: <svg viewBox="0 0 120 40" className="w-full h-10 mt-3 opacity-70">{[20,15,22,18,24,16,20,14].map((h,i)=>[<rect key={`a${i}`} x={i*15+1} y={40-h} width="6" height={h} fill="#f97316" rx="1"/>,<rect key={`b${i}`} x={i*15+8} y={40-h*0.7} width="6" height={h*0.7} fill="#94a3b8" rx="1"/>])}</svg>,
+      onClick:()=>dbData.length>=2?setView('comparativo'):alert('Necesitas al menos 2 meses.') },
+    { id:'inversiones', title:'Activos Fijos',           desc:'Registro y depreciación de activos fijos',
+      iconBg:'bg-emerald-600', icon:<Landmark size={22} className="text-white"/>,
+      preview: <div className="mt-3 flex gap-1 items-end h-10">{[60,80,70,90,75,85].map((h,i)=><div key={i} className="flex-1 rounded-t" style={{height:`${h}%`,background: i===3?'#f97316':'#e2e8f0'}}/>)}</div>,
+      onClick:()=>setView('inversiones') },
+    { id:'diario',      title:'Libro Diario',            desc:'Asientos y movimientos contables',
+      iconBg:'bg-amber-500', icon:<BookOpen size={22} className="text-white"/>,
+      preview: <div className="mt-3 space-y-1.5 opacity-50">{['Asiento de nómina','Factura de compra','Factura de compra'].map((t,i)=><div key={i} className="flex items-center gap-2"><div className="w-3 h-3 rounded border-2 border-green-500 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-green-500 rounded-sm"/></div><span className="text-[9px] text-slate-500">{t}</span></div>)}</div>,
+      disabled:true },
+    { id:'config',      title:'Configuración',           desc:'Plan · Meses · Auxiliares · Activos',
+      iconBg:'bg-slate-500', icon:<Database size={22} className="text-white"/>,
+      preview: <div className="mt-3 text-[10px] text-slate-500 space-y-0.5"><p>Plan: {hasPlan?<span className="text-emerald-600 font-bold">Cargado</span>:'—'} <span className="mx-1">|</span> Meses: {loadedMonths.length}</p><p>CxC: {(auxDataConfig?.cxc_general?.length||0)} reg. <span className="mx-1">|</span> CxP: {(auxDataConfig?.cxp_general?.length||0)} reg.</p><p>Activos: {afCount} <span className="mx-1">|</span> Base: {dbData.length}</p></div>,
+      onClick:()=>setView('configuracion') },
   ];
 
   return (
-    <div className="min-h-screen bg-[#111111]">
-      <header className="px-8 py-5 bg-[#111111] border-b-4 border-orange-500 shadow-2xl">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
+    <div className="min-h-screen" style={{background:'#f3f2ef', backgroundImage:'radial-gradient(circle, #c8c8c8 1px, transparent 1px)', backgroundSize:'22px 22px'}}>
+      {/* Header SaaS */}
+      <header className="bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-orange-500 rounded-xl flex items-center justify-center shadow-md flex-shrink-0">
+            <LineChart size={18} className="text-white"/>
+          </div>
           <div>
-            <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase">JIRET G&B <span className="text-orange-500">Finance</span></h1>
-            <p className="text-slate-500 text-[11px] font-bold tracking-[0.3em] uppercase mt-0.5">Servicios Jiret G&B, C.A. · RIF: J-412309374</p>
+            <p className="font-black text-sm text-slate-900 leading-none">JIRET G&B <span className="text-orange-500">FINANCE</span></p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Servicios Jiret G&B, C.A. · RIF: J-412309374</p>
           </div>
-          <div className="flex items-center gap-3">
-            {loadedMonths.length > 0 && <span className="bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl">{loadedMonths.length} {loadedMonths.length===1?'MES':'MESES'} EN MEMORIA</span>}
-            <button onClick={()=>setView('configuracion')} className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white px-4 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all border border-slate-700"><Database size={14}/> CONFIG.</button>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-1.5 text-slate-400 text-[10px] font-mono bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
+            <span>{clock}</span>
           </div>
+          {loadedMonths.length > 0 && (
+            <span className="bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg">
+              {loadedMonths.length} {loadedMonths.length===1?'MES':'MESES'} EN MEMORIA
+            </span>
+          )}
+          <button onClick={()=>setView('configuracion')} className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg font-black uppercase text-[10px] tracking-widest transition-all border border-slate-200"><Database size={13}/> CONFIG.</button>
         </div>
       </header>
-      <main className="max-w-6xl mx-auto px-6 py-12">
-        <h2 className="text-white font-black text-3xl tracking-[0.3em] uppercase mb-2 text-center">Panel Principal</h2>
-        <div className="w-12 h-1 bg-orange-500 mx-auto mb-10 rounded-full"/>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-          {modules.slice(0,4).map(m=>(
-            <button key={m.id} onClick={m.onClick} disabled={m.disabled}
-              className={`bg-white p-7 rounded-2xl text-left border-t-4 border-orange-500 transition-all duration-200 shadow-md group ${m.disabled?'opacity-40 cursor-not-allowed':'hover:shadow-2xl hover:-translate-y-1 cursor-pointer'}`}>
-              <div className="text-orange-500 mb-4 group-hover:scale-110 transition-transform">{m.icon}</div>
-              <h3 className="font-black text-slate-900 text-sm uppercase tracking-tight mb-1">{m.title}</h3>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider leading-tight">{m.desc}</p>
-            </button>
-          ))}
+
+      <main className="max-w-6xl mx-auto px-6 py-10">
+        <div className="text-center mb-8">
+          <h2 className="font-black text-2xl text-slate-800 uppercase tracking-[0.25em] mb-2">Panel Principal Financiero</h2>
+          <div className="w-14 h-0.5 bg-orange-500 mx-auto rounded-full"/>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {modules.slice(4).map(m=>(
-            <button key={m.id} onClick={m.onClick} disabled={m.disabled}
-              className={`bg-white p-7 rounded-2xl text-left border-t-4 border-slate-300 transition-all duration-200 shadow-md group ${m.disabled?'opacity-40 cursor-not-allowed':'hover:shadow-2xl hover:-translate-y-1 cursor-pointer hover:border-orange-500'}`}>
-              <div className="text-orange-500 mb-4 group-hover:scale-110 transition-transform">{m.icon}</div>
-              <h3 className="font-black text-slate-900 text-sm uppercase tracking-tight mb-1">{m.title}</h3>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider leading-tight">{m.desc}</p>
-            </button>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {modules.map(m=>(
+            <div key={m.id} className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col transition-all duration-200 ${m.disabled?'opacity-50':'hover:shadow-lg hover:-translate-y-0.5'}`}>
+              <div className="p-6 flex-1">
+                <div className="flex items-start justify-between mb-3">
+                  <div className={`w-11 h-11 ${m.iconBg||'bg-slate-800'} rounded-xl flex items-center justify-center shadow-sm`}>{m.icon}</div>
+                </div>
+                <h3 className="font-black text-[13px] text-slate-900 uppercase tracking-tight mb-1">{m.title}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-tight">{m.desc}</p>
+                <div className="mt-1">{m.preview}</div>
+              </div>
+              <div className="px-6 pb-5">
+                <button
+                  onClick={m.disabled ? undefined : m.onClick}
+                  disabled={m.disabled}
+                  className={`w-full py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${m.disabled?'bg-slate-100 text-slate-400 cursor-not-allowed':'bg-orange-500 hover:bg-orange-600 text-white shadow-md hover:shadow-lg'}`}>
+                  {m.disabled?'PRÓXIMAMENTE':'IR A MÓDULO →'}
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       </main>
-      <footer className="text-center pb-8"><p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest">Módulo de Reportes Financieros · Jiret G&B Finance V2.0</p></footer>
+      <footer className="text-center pb-6"><p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Módulo de Reportes Financieros · Jiret G&B Finance V2.0</p></footer>
     </div>
   );
 }
