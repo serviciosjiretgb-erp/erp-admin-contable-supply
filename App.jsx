@@ -247,17 +247,22 @@ const processAuxExcel = async (files) => {
 //           DEPRE. MENSUAL | Tasa
 const processActivosFijosExcel = async (files) => {
   const XL = await loadSheetJS();
+
   const nk = (k) => String(k || '').trim().toLowerCase()
-    .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-    .replace(/ñ/g,'n').replace(/\./g,'').replace(/\s+/g,' ');
+    .replace(/[áà]/g,'a').replace(/[éè]/g,'e').replace(/[íì]/g,'i')
+    .replace(/[óò]/g,'o').replace(/[úù]/g,'u').replace(/ñ/g,'n')
+    .replace(/\./g,'').replace(/\s+/g,' ').trim();
+
   const parseVal = (v) => {
     if (v === null || v === undefined || v === '') return 0;
     if (typeof v === 'number') return v;
     let s = String(v).replace(/\$|Bs\.|USD/ig, '').replace(/\s/g,'').trim();
+    if (s.startsWith('(') && s.endsWith(')')) s = '-' + s.slice(1,-1);
     if (s.includes(',') && s.includes('.')) s = s.replace(/\./g,'').replace(/,/g,'.');
-    else if (s.includes(',')) s = s.replace(/,/g,'.');
+    else if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g,'.');
     return isNaN(parseFloat(s)) ? 0 : parseFloat(s);
   };
+
   const fmtXLDate = (v) => {
     if (!v) return '';
     if (typeof v === 'number' && v > 40000 && v < 80000) {
@@ -266,35 +271,89 @@ const processActivosFijosExcel = async (files) => {
     }
     return String(v);
   };
+
+  const SKIP_WORDS = ['cant','mobiliario','sede','cuenta','costo','valor','tasa','vida','depreciacion'];
+
   const records = [];
   for (const file of Array.from(files)) {
     const buffer = await file.arrayBuffer();
-    const wb = XL.read(buffer, { type: 'array' });
+    const wb = XL.read(buffer, { type: 'array', cellDates: false });
     for (const sheetName of wb.SheetNames) {
-      const rows = XL.utils.sheet_to_json(wb.Sheets[sheetName], { defval: null });
-      rows.forEach(rawRow => {
-        const row = {};
-        for (const k in rawRow) { row[nk(k)] = rawRow[k]; }
-        const desc = String(row['mobiliario y equipo'] || row['descripcion'] || row['activo'] || '').trim();
-        if (!desc || desc === '-') return;
+      const rawRows = XL.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null });
+      if (!rawRows.length) continue;
+
+      // Localizar fila de encabezados (busca fila con "mobiliario" o "cant"+"costo")
+      let hIdx = 0;
+      for (let ri = 0; ri < Math.min(10, rawRows.length); ri++) {
+        const joined = rawRows[ri].map(c => nk(String(c || ''))).join(' ');
+        if (joined.includes('mobiliario') || (joined.includes('cant') && joined.includes('costo'))) {
+          hIdx = ri; break;
+        }
+      }
+
+      const hRow = rawRows[hIdx].map(c => nk(String(c || '')));
+
+      // Busca índice por nombres alternativos
+      const ci = (...names) => {
+        for (const n of names) {
+          const idx = hRow.findIndex(h => h === n || h.includes(n));
+          if (idx !== -1) return idx;
+        }
+        return -1;
+      };
+
+      const iCant    = ci('cant','cantidad');
+      const iDesc    = ci('mobiliario y equipo','mobiliario','descripcion','activo','bien');
+      const iSede    = ci('sede');
+      const iCuenta  = ci('cuenta');
+      // DEPRECIACION (método, texto) es la primera col con "depreciacion" que NO tiene "acum"
+      const iDeprMet = hRow.findIndex(h => h.includes('depreciacion') && !h.includes('acum'));
+      // DEPRECIACION ACUM es la col con "depreciacion" Y "acum"
+      const iDepAcum1 = hRow.findIndex(h => h.includes('depreciacion') && h.includes('acum'));
+      const iFecha   = ci('fecha de adquisicion','fecha adquisicion','fecha');
+      const iVUA     = ci('vida util asignada','vida util asig','vida util');
+      const iVUT     = ci('vida util transcurrida','vida util trans','vida transcurrida');
+      const iCUSD    = ci('costo adquisicion usd','costo usd','costo adquisicion');
+      const iCBS     = ci('costo adquisicion bs','costo bs');
+      // DEP.ACUM (col 12) = última col con "dep" y "acum" (distinta de iDepAcum1)
+      const allDepAcum = hRow.reduce((acc, h, idx) => {
+        if ((h === 'depacum' || (h.includes('dep') && h.includes('acum'))) && idx !== iDepAcum1) acc.push(idx);
+        return acc;
+      }, []);
+      const iDepAcum2 = allDepAcum.length ? allDepAcum[allDepAcum.length - 1] : iDepAcum1;
+      const iNeto    = ci('valor neto libros','valor neto');
+      const iMes     = ci('depre mensual','dep mensual','depreciacion mensual','depre  mensual');
+      const iTasa    = ci('tasa');
+
+      const g = (row, idx) => idx >= 0 && idx < row.length ? row[idx] : null;
+
+      for (let ri = hIdx + 1; ri < rawRows.length; ri++) {
+        const row = rawRows[ri];
+        if (!row || row.every(c => c === null || c === '')) continue;
+        const descRaw = String(g(row, iDesc) || '').trim();
+        if (!descRaw) continue;
+        const descNk = nk(descRaw);
+        if (SKIP_WORDS.filter(w => descNk.includes(w)).length >= 3) continue;
+        if (/^(total|subtotal|gran total)/i.test(descRaw)) continue;
+
         records.push({
-          cant:          parseVal(row['cant'] || row['cantidad'] || 1),
-          descripcion:   desc,
-          sede:          String(row['sede'] || '-').trim(),
-          cuenta:        String(row['cuenta'] || '-').trim(),
-          depreciacion:  String(row['depreciacion'] || '-').trim(),
-          depreciacionAcum: parseVal(row['depreciacion acum'] || row['depreciacion acumulada']),
-          fechaAdq:      fmtXLDate(row['fecha de adquisicion'] || row['fecha adquisicion']),
-          vidaUtilAsig:  parseVal(row['vida util asignada'] || row['vida util']),
-          vidaUtilTrans: parseVal(row['vida util transcurrida'] || row['vida transcurrida']),
-          costoUSD:      parseVal(row['costo adquisicion usd'] || row['costo usd'] || row['costo adquisicion']),
-          costoBS:       parseVal(row['costo adquisicion bs'] || row['costo bs']),
-          depAcum:       parseVal(row['depacum'] || row['dep acum'] || row['depreciacion acum']),
-          valorNeto:     parseVal(row['valor neto libros'] || row['valor neto']),
-          depreMensual:  parseVal(row['depre mensual'] || row['depreciacion mensual'] || row['dep mensual']),
-          tasa:          parseVal(row['tasa']),
+          cant:            parseVal(g(row, iCant)) || 1,
+          descripcion:     descRaw,
+          sede:            String(g(row, iSede) || '-').trim(),
+          cuenta:          String(g(row, iCuenta) || '-').trim(),
+          depreciacion:    String(g(row, iDeprMet) || '-').trim(),
+          depreciacionAcum: parseVal(g(row, iDepAcum1)),
+          fechaAdq:        fmtXLDate(g(row, iFecha)),
+          vidaUtilAsig:    parseVal(g(row, iVUA)),
+          vidaUtilTrans:   parseVal(g(row, iVUT)),
+          costoUSD:        parseVal(g(row, iCUSD)),
+          costoBS:         parseVal(g(row, iCBS)),
+          depAcum:         parseVal(g(row, iDepAcum2)),
+          valorNeto:       parseVal(g(row, iNeto)),
+          depreMensual:    parseVal(g(row, iMes)),
+          tasa:            parseVal(g(row, iTasa)),
         });
-      });
+      }
     }
   }
   return { records };
@@ -436,24 +495,49 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
   }
 
   const isHigh = highlightedAccounts?.has(node.n);
+  // Nodos con nombre numérico (ej: 4.1.01.01.001-INGRESOS...) también pueden tener hijos
   return (
-    <tr className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${isHigh ? 'bg-orange-50 border-l-4 border-orange-500' : 'bg-white border-l-4 border-transparent'}`}>
-      <td style={indent} className="py-2.5 px-4 font-bold text-[11px] text-slate-700 uppercase">
-        <div className="flex items-center gap-2">
-          {toggleHighlight && <button onClick={(e)=>{e.stopPropagation(); toggleHighlight(node.n)}} className="no-print focus:outline-none flex-shrink-0"><Star size={14} fill={isHigh?"#f97316":"none"} color={isHigh?"#f97316":"#cbd5e1"}/></button>}
-          <span className="truncate max-w-[300px]">{node.n}</span>
-          {hasMapping && (
-            <button onClick={(e)=>{e.stopPropagation(); onShowReport(auxType)}}
-              className="no-print ml-1 px-2.5 py-0.5 bg-orange-500 text-white text-[9px] rounded font-black hover:bg-orange-600 shadow-sm transition-colors whitespace-nowrap flex-shrink-0">
-              VER AUX
-            </button>
-          )}
-        </div>
-      </td>
-      <td className="py-2.5 px-4 text-right font-mono text-[11px] text-slate-600">{fmt(Math.abs(node.u))}</td>
-      <td className="py-2.5 px-4 text-right font-mono text-[11px] hidden sm:table-cell text-slate-600">{fmt(Math.abs(node.b))}</td>
-      <td className="py-2.5 px-4 text-right font-mono text-[11px] text-slate-400">{(Math.abs(node.u)/Math.abs(totalBaseUSD||1)*100).toFixed(2)}%</td>
-    </tr>
+    <>
+      <tr
+        onClick={() => !isLeaf && setIsOpen(!isOpen)}
+        className={`border-b border-slate-50 transition-all ${!isLeaf ? 'cursor-pointer' : ''} ${isHigh ? 'bg-orange-50 border-l-4 border-orange-500' : 'bg-white border-l-4 border-transparent'} hover:bg-slate-50`}
+      >
+        <td style={indent} className="py-2.5 px-4 font-bold text-[11px] text-slate-700 uppercase">
+          <div className="flex items-center gap-2">
+            {!isLeaf && (
+              <span className="no-print w-5 h-5 border border-slate-300 rounded bg-white text-center leading-[18px] text-[12px] text-slate-500 shadow-sm select-none flex-shrink-0">
+                {isOpen ? '−' : '+'}
+              </span>
+            )}
+            {toggleHighlight && <button onClick={(e)=>{e.stopPropagation(); toggleHighlight(node.n)}} className="no-print focus:outline-none flex-shrink-0"><Star size={14} fill={isHigh?"#f97316":"none"} color={isHigh?"#f97316":"#cbd5e1"}/></button>}
+            <span className="truncate max-w-[280px]">{node.n}</span>
+            {hasMapping && (
+              <button onClick={(e)=>{e.stopPropagation(); onShowReport(auxType)}}
+                className="no-print ml-1 px-2.5 py-0.5 bg-orange-500 text-white text-[9px] rounded font-black hover:bg-orange-600 shadow-sm transition-colors whitespace-nowrap flex-shrink-0">
+                VER AUX
+              </button>
+            )}
+          </div>
+        </td>
+        <td className="py-2.5 px-4 text-right font-mono text-[11px] text-slate-600">{fmt(Math.abs(node.u))}</td>
+        <td className="py-2.5 px-4 text-right font-mono text-[11px] hidden sm:table-cell text-slate-600">{fmt(Math.abs(node.b))}</td>
+        <td className="py-2.5 px-4 text-right font-mono text-[11px] text-slate-400">{(Math.abs(node.u)/Math.abs(totalBaseUSD||1)*100).toFixed(2)}%</td>
+      </tr>
+      {/* Hijos de nodos con código numérico (sub-transacciones / sub-cuentas) */}
+      {!isLeaf && isOpen && node.c.map((child, i) => (
+        <ExpandableRow key={i} node={child} level={level+1} totalBaseUSD={totalBaseUSD}
+          highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}
+          onShowReport={onShowReport} isBalance={isBalance}/>
+      ))}
+      {!isLeaf && isOpen && (
+        <tr className="bg-slate-100/60 font-black text-[10px] border-t border-slate-200">
+          <td style={{ paddingLeft: level * 18 + 28 }} className="py-2 px-4 uppercase text-slate-500 tracking-wider">TOTAL {node.n}</td>
+          <td className="py-2 px-4 text-right font-mono text-slate-900">{fmt(Math.abs(node.u))}</td>
+          <td className="py-2 px-4 text-right font-mono hidden sm:table-cell text-slate-900">{fmt(Math.abs(node.b))}</td>
+          <td className="py-2 px-4 text-right font-mono text-slate-400">{(Math.abs(node.u)/Math.abs(totalBaseUSD||1)*100).toFixed(2)}%</td>
+        </tr>
+      )}
+    </>
   );
 };
 
@@ -1047,31 +1131,33 @@ function InversionesView({ onBack, activosFijosData }) {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse" style={{minWidth:'1400px'}}>
+                  <table className="w-full text-left border-collapse" style={{minWidth:'1600px'}}>
                     <thead className="bg-slate-50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-200">
                       <tr>
                         <th className="px-3 py-3 w-10 text-center">Cant</th>
-                        <th className="px-3 py-3 w-52">Mobiliario y Equipo</th>
+                        <th className="px-3 py-3 w-48">Mobiliario y Equipo</th>
                         <th className="px-3 py-3 w-24">Sede</th>
+                        <th className="px-3 py-3 w-40">Cuenta</th>
                         <th className="px-3 py-3 w-20">Depreciación</th>
                         <th className="px-3 py-3 w-24 text-right">Dep. Acum</th>
                         <th className="px-3 py-3 w-24">F. Adquisición</th>
-                        <th className="px-3 py-3 w-16 text-center">V.U. Asig</th>
-                        <th className="px-3 py-3 w-16 text-center">V.U. Trans</th>
-                        <th className="px-3 py-3 w-28 text-right">Costo USD</th>
-                        <th className="px-3 py-3 w-28 text-right">Costo Bs.</th>
+                        <th className="px-3 py-3 w-14 text-center">V.U. Asig</th>
+                        <th className="px-3 py-3 w-14 text-center">V.U. Trans</th>
+                        <th className="px-3 py-3 w-28 text-right">Costo Adq. USD</th>
+                        <th className="px-3 py-3 w-28 text-right">Costo Adq. Bs.</th>
                         <th className="px-3 py-3 w-28 text-right">Dep. Acum USD</th>
                         <th className="px-3 py-3 w-28 text-right">Valor Neto</th>
                         <th className="px-3 py-3 w-24 text-right">Dep. Mensual</th>
-                        <th className="px-3 py-3 w-16 text-center">Tasa</th>
+                        <th className="px-3 py-3 w-14 text-center">Tasa</th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((a, i) => (
                         <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors print:border-b-slate-200">
                           <td className="px-3 py-2.5 text-[11px] font-mono text-center text-slate-500">{a.cant}</td>
-                          <td className="px-3 py-2.5 text-[11px] font-bold text-slate-800 truncate max-w-[208px]" title={a.descripcion}>{a.descripcion}</td>
+                          <td className="px-3 py-2.5 text-[11px] font-bold text-slate-800 truncate max-w-[192px]" title={a.descripcion}>{a.descripcion}</td>
                           <td className="px-3 py-2.5 text-[10px] text-slate-500 truncate">{a.sede}</td>
+                          <td className="px-3 py-2.5 text-[10px] text-slate-600 font-bold truncate max-w-[160px]" title={a.cuenta}>{a.cuenta}</td>
                           <td className="px-3 py-2.5 text-[10px] text-slate-500 truncate">{a.depreciacion}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-[11px] text-red-400">({fmt(a.depreciacionAcum)})</td>
                           <td className="px-3 py-2.5 text-[11px] font-mono text-slate-500">{a.fechaAdq}</td>
@@ -1088,11 +1174,11 @@ function InversionesView({ onBack, activosFijosData }) {
                     </tbody>
                     <tfoot>
                       <tr className="bg-slate-100 font-black text-[10px] border-t-2 border-slate-200">
-                        <td colSpan={4} className="px-3 py-3 text-slate-700 uppercase tracking-wider">SUBTOTAL {cuenta}</td>
-                        <td className="px-3 py-3 text-right font-mono text-red-500">({fmt(gDepAcum)})</td>
+                        <td colSpan={5} className="px-3 py-3 text-slate-700 uppercase tracking-wider">SUBTOTAL {cuenta}</td>
+                        <td className="px-3 py-3 text-right font-mono text-red-500">({fmt(items.reduce((s,r)=>s+r.depreciacionAcum,0))})</td>
                         <td colSpan={3}/>
                         <td className="px-3 py-3 text-right font-mono text-slate-800">{fmt(gCosto)}</td>
-                        <td/>
+                        <td className="px-3 py-3 text-right font-mono text-slate-600">{fmt(items.reduce((s,r)=>s+r.costoBS,0))}</td>
                         <td className="px-3 py-3 text-right font-mono text-red-500">({fmt(gDepAcum)})</td>
                         <td className="px-3 py-3 text-right font-mono text-emerald-700">{fmt(gNeto)}</td>
                         <td className="px-3 py-3 text-right font-mono text-orange-500">{fmt(gMensual)}</td>
@@ -1109,8 +1195,9 @@ function InversionesView({ onBack, activosFijosData }) {
         {/* Total General */}
         <div className="mt-6 bg-slate-900 rounded-2xl px-8 py-5 flex flex-wrap justify-between items-center gap-4 text-white print:bg-slate-200 print:text-black">
           <p className="font-black text-sm uppercase tracking-widest">TOTAL GENERAL — {filtered.length} activos</p>
-          <div className="flex gap-10 text-right">
+          <div className="flex gap-8 text-right flex-wrap">
             <div><p className="text-[9px] text-slate-400 font-bold uppercase">Costo USD</p><p className="font-mono font-black text-lg">{fmt(totalCosto)}</p></div>
+            <div><p className="text-[9px] text-slate-400 font-bold uppercase">Costo Bs.</p><p className="font-mono font-black text-lg text-slate-300">{fmt(filtered.reduce((s,r)=>s+r.costoBS,0))}</p></div>
             <div><p className="text-[9px] text-slate-400 font-bold uppercase">Dep. Acum</p><p className="font-mono font-black text-lg text-red-400">({fmt(totalDepAcum)})</p></div>
             <div><p className="text-[9px] text-slate-400 font-bold uppercase">Valor Neto</p><p className="font-mono font-black text-lg text-emerald-400">{fmt(totalNeto)}</p></div>
             <div><p className="text-[9px] text-slate-400 font-bold uppercase">Dep/Mes</p><p className="font-mono font-black text-lg text-orange-400">{fmt(totalMensual)}</p></div>
