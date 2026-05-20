@@ -1247,7 +1247,7 @@ function ReportesFinancierosApp() {
   const handleUploadActivosFijos = async (e) => { if (!e.target.files.length) return; try { const d=await processActivosFijosExcel(e.target.files); setActivosFijosData(d); alert(`✅ Activos Fijos: ${d.records.length} registros cargados.`); } catch(err){alert("Error: "+err.message);} e.target.value=''; };
   const handleUploadResultados = async (e) => { if (!e.target.files.length) return; try { const newData=await processFiles(e.target.files); setDbData(prev=>{const nm=[...new Set(newData.map(d=>d.month))];return [...prev.filter(d=>!nm.includes(d.month)),...newData];}); alert("✅ Resultados cargados."); } catch(err){alert("Error.");} };
   const handleUploadPlan = async (e) => { if (!e.target.files.length) return; try { const plan=await processPlanCuentas(e.target.files[0]); setPlanCuentas(plan); alert("✅ Plan de cuentas cargado."); } catch(err){alert("Error.");} };
-  const handleUploadSaldos = async (e) => { if (!e.target.files.length) return; if (Object.keys(planCuentas).length===0){alert("⚠️ Carga el Plan de Cuentas primero.");return;} try { const d=await processSaldosBalance(e.target.files[0],planCuentas); setDbData(prev=>[...prev,...d]); alert("✅ Saldos cargados."); } catch(err){alert("Error.");} };
+  const handleUploadSaldos = async (e) => { if (!e.target.files.length) return; try { const d=await processSaldosBalance(e.target.files[0],planCuentas); setDbData(prev=>[...prev,...d]); alert("✅ Saldos cargados."); } catch(err){alert("Error.");} };
   const handleUploadAuxiliar = async (e) => {
     if (!e.target.files.length) return;
     try {
@@ -1287,6 +1287,23 @@ function ReportesFinancierosApp() {
   const hasAuxData = Object.keys(auxDataConfig).length > 0;
   const auxTotal = (auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_general?.length||0);
   const afCount = activosFijosData?.records?.length || 0;
+
+  // ── Clock (hook declarado antes de cualquier return condicional) ────────────
+  const [clock, setClock] = useState('');
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const ss = String(now.getSeconds()).padStart(2,'0');
+      const dias = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
+      const meses = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+      setClock(`${hh}:${mm}:${ss} · ${dias[now.getDay()]} ${now.getDate()} ${meses[now.getMonth()]}. ${now.getFullYear()}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData}/>;
   if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
@@ -1348,22 +1365,6 @@ function ReportesFinancierosApp() {
   );
 
   // ── DASHBOARD PRINCIPAL — diseño SaaS light ────────────────────────────────
-  const [clock, setClock] = useState('');
-  useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      const hh = String(now.getHours()).padStart(2,'0');
-      const mm = String(now.getMinutes()).padStart(2,'0');
-      const ss = String(now.getSeconds()).padStart(2,'0');
-      const dias = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
-      const meses = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-      setClock(`${hh}:${mm}:${ss} · ${dias[now.getDay()]} ${now.getDate()} ${meses[now.getMonth()]}. ${now.getFullYear()}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   const modules = [
     { id:'resultado',   title:'Estado de Resultados',   desc:'P&L mensual y acumulado por cuentas',
       iconBg:'bg-slate-800', icon:<LineChart size={22} className="text-white"/>,
