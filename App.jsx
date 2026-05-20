@@ -86,18 +86,10 @@ const processPlanCuentas = async (file) => {
   return plan;
 };
 
-// Saldos Iniciales desde Excel — columnas 'Cuenta Contable' y 'SALDO USD'
+// Saldos Iniciales desde Excel (.xlsx) — columnas 'Cuenta Contable' y 'SALDO USD'
 const processSaldosBalance = async (file, planCuentas) => {
+  const ext = file.name.split('.').pop().toLowerCase();
   const XL = await loadSheetJS();
-  const buffer = await file.arrayBuffer();
-  const wb = XL.read(buffer, { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rawData = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
-  if (rawData.length < 2) return [];
-  const headerRow = rawData[0].map(h => String(h||'').toUpperCase().trim());
-  const idxCuenta = headerRow.findIndex(h => h.includes('CUENTA CONTABLE'));
-  const idxSaldoUSD = headerRow.findIndex(h => h.includes('SALDO USD'));
-  if (idxCuenta === -1 || idxSaldoUSD === -1) { alert("Error: El Excel debe tener columnas 'Cuenta Contable' y 'SALDO USD'"); return []; }
   const parseVal = (v) => {
     if (!v || String(v).trim() === '-') return 0;
     let s = String(v).replace(/\$|USD|Bs\./ig, '').trim();
@@ -105,6 +97,34 @@ const processSaldosBalance = async (file, planCuentas) => {
     else if (s.includes(',')) s = s.replace(/,/g, '.');
     const n = parseFloat(s); return isNaN(n) ? 0 : n;
   };
+  let rawData = [];
+  if (ext === 'txt' || ext === 'csv') {
+    // Legado: TXT/CSV con tabs
+    const text = await file.text();
+    const lines = text.split(/\r?\n/);
+    if (lines.length < 2) return [];
+    let balanceData = [];
+    lines.slice(1).forEach(line => {
+      const cols = line.split('\t');
+      if (cols.length < 2) return;
+      const accountName = cols[0].trim();
+      if (!accountName) return;
+      const path = planCuentas[accountName] || (accountName.includes('BANCO') || accountName.includes('CAJA') ? 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE' : 'ACTIVOS>OTROS');
+      const valUSD = parseVal(cols[1]);
+      if (valUSD !== 0) balanceData.push({ month: 'Saldos Iniciales', path, name: accountName, usd: valUSD, bs: 0 });
+    });
+    return balanceData;
+  }
+  // Excel (.xlsx / .xls)
+  const buffer = await file.arrayBuffer();
+  const wb = XL.read(buffer, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  rawData = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (rawData.length < 2) return [];
+  const headerRow = rawData[0].map(h => String(h||'').toUpperCase().trim());
+  const idxCuenta   = headerRow.findIndex(h => h.includes('CUENTA CONTABLE') || h === 'CUENTA');
+  const idxSaldoUSD = headerRow.findIndex(h => h.includes('SALDO USD') || (h.includes('USD') && !h.includes('BS')));
+  if (idxCuenta === -1 || idxSaldoUSD === -1) { alert("El Excel debe tener columnas 'Cuenta Contable' y 'SALDO USD'"); return []; }
   let balanceData = [];
   for (let i = 1; i < rawData.length; i++) {
     const row = rawData[i];
@@ -297,7 +317,8 @@ const processActivosFijosExcel = async (files) => {
         records.push({
           cant:parseVal(g(row,iCant))||1, descripcion:descRaw, sede:String(g(row,iSede)||'-').trim(),
           cuenta:String(g(row,iCuenta)||'-').trim(), depreciacion:String(g(row,iDeprMet)||'-').trim(),
-          depreciacionAcum:parseVal(g(row,iDepAcum1)), fechaAdq:fmtXLDate(g(row,iFecha)),
+          depreciacionAcum:String(g(row,iDepAcum1)||"-").trim(),
+          fechaAdq:fmtXLDate(g(row,iFecha)),
           vidaUtilAsig:parseVal(g(row,iVUA)), vidaUtilTrans:parseVal(g(row,iVUT)),
           costoUSD:parseVal(g(row,iCUSD)), costoBS:parseVal(g(row,iCBS)), depAcum:parseVal(g(row,iDA2)),
           valorNeto:parseVal(g(row,iNeto)), depreMensual:parseVal(g(row,iMes)), tasa:parseVal(g(row,iTasa)),
@@ -1004,11 +1025,12 @@ function InversionesView({ onBack, activosFijosData }) {
           <div className="w-16 h-1 bg-orange-500 mb-4 rounded-full"/>
           <h2 className="text-lg font-black text-slate-800 uppercase tracking-widest mb-2">Registro de Activos Fijos</h2>
           <p className="text-[9px] font-bold text-orange-500 uppercase tracking-widest mb-5">Valores en Bolívares · Tasa Histórica · Al corte de: {mesCorte} 2026{extraMeses>0?` (+${extraMeses} mes${extraMeses>1?'es':''} desde Abril)`:''}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl">
-            {[{label:'Costo Histórico Bs',val:fmt(totalCostoBs),color:'text-slate-800',bg:'bg-slate-50'},
-              {label:`Dep. Acum. Bs al ${mesCorte}`,val:`(${fmt(totalDepAcumBs)})`,color:'text-red-600',bg:'bg-red-50'},
-              {label:'Valor Neto Bs',val:fmt(totalNetoBs),color:'text-orange-600',bg:'bg-orange-50'},
-              {label:'Dep. Mensual Bs',val:fmt(totalMensualBs),color:'text-emerald-600',bg:'bg-emerald-50'},
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 w-full max-w-5xl">
+            {[{label:'Costo Adq. USD',val:`USD ${fmt(filteredValid.reduce((s,r)=>s+r.costoUSD,0))}`,color:'text-blue-700',bg:'bg-blue-50'},
+              {label:'Costo Histórico Bs',val:`Bs ${fmt(totalCostoBs)}`,color:'text-slate-700',bg:'bg-slate-50'},
+              {label:`Dep. Acum. Bs al ${mesCorte}`,val:`(Bs ${fmt(totalDepAcumBs)})`,color:'text-red-600',bg:'bg-red-50'},
+              {label:'Valor Neto Bs',val:`Bs ${fmt(totalNetoBs)}`,color:'text-orange-600',bg:'bg-orange-50'},
+              {label:'Dep. Mensual Bs',val:`Bs ${fmt(totalMensualBs)}`,color:'text-emerald-600',bg:'bg-emerald-50'},
             ].map(k=>(<div key={k.label} className={`${k.bg} rounded-xl p-4 border border-slate-200`}><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p><p className={`text-base font-black font-mono ${k.color} truncate`}>{k.val}</p></div>))}
           </div>
         </div>
@@ -1136,6 +1158,18 @@ function ReportesFinancierosApp() {
   };
 
   const handleSimulatePDFs = () => { setAuxDataConfig(DEFAULT_AUX_DATA); alert("✅ Datos demo cargados."); };
+
+  // Limpiar slot individual
+  const clearSlot = (slot) => {
+    const msgs = {
+      '01': () => { if(window.confirm("¿Limpiar Plan de Cuentas?")) { setPlanCuentas({}); alert("Plan de Cuentas eliminado."); }},
+      '02': () => { if(window.confirm("¿Limpiar Saldos Iniciales?")) { setDbData(prev=>prev.filter(d=>d.month!=='Saldos Iniciales')); alert("Saldos Iniciales eliminados."); }},
+      '03': () => { if(window.confirm("¿Limpiar todos los meses de Resultados?")) { setDbData(prev=>prev.filter(d=>d.month==='Saldos Iniciales')); alert("Resultados eliminados."); }},
+      '04': () => { if(window.confirm("¿Limpiar todos los Auxiliares CxC/CxP?")) { setAuxDataConfig({}); alert("Auxiliares eliminados."); }},
+      '05': () => { if(window.confirm("¿Limpiar datos de Activos Fijos?")) { setActivosFijosData({records:[]}); alert("Activos Fijos eliminados."); }},
+    };
+    msgs[slot] && msgs[slot]();
+  };
   const handleDeleteMonth = (m) => { if(window.confirm(`¿Eliminar ${m}?`)) setDbData(prev=>prev.filter(d=>d.month!==m)); };
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
@@ -1167,18 +1201,21 @@ function ReportesFinancierosApp() {
         <div className="bg-[#1a1a1a] rounded-3xl p-8 border border-slate-700 space-y-4">
           <h2 className="text-white font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
           {[
-            {num:'01',label:hasPlan?'✓ Plan de Cuentas Cargado':'Plan de Cuentas (.txt)',active:true,accept:'.txt',handler:handleUploadPlan},
-            {num:'02',label:'Saldos Iniciales — Balance (.xlsx)',active:hasPlan,accept:'.xlsx,.xls',handler:handleUploadSaldos},
-            {num:'03',label:'Estado de Resultados (.xlsx / .csv)',active:true,accept:'.xlsx,.xls,.xlsm,.txt,.csv',handler:handleUploadResultados,multiple:true},
-            {num:'04',label:auxTotal>0?`✓ Auxiliares cargados (${auxTotal} reg.)`:'Auxiliares CxC + CxP (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadAuxiliar,multiple:true},
-            {num:'05',label:afCount>0?`✓ Activos Fijos (${afCount} reg.)`:'Activos Fijos (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true},
+            {num:'01',label:hasPlan?`✓ Plan Cuentas (${Object.keys(planCuentas).length} ctas)`:'Plan de Cuentas (.txt)',active:true,accept:'.txt',handler:handleUploadPlan,hasClear:hasPlan},
+            {num:'02',label:'Saldos Iniciales (.xlsx / .txt)',active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>d.month==='Saldos Iniciales')},
+            {num:'03',label:loadedMonths.length>0?`✓ Resultados (${loadedMonths.length} mes${loadedMonths.length!==1?'es':''})`:'Estado de Resultados (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt,.csv',handler:handleUploadResultados,multiple:true,hasClear:loadedMonths.length>0},
+            {num:'04',label:auxTotal>0?`✓ Auxiliares cargados (${auxTotal} reg.)`:'Auxiliares CxC + CxP (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadAuxiliar,multiple:true,hasClear:hasAuxData},
+            {num:'05',label:afCount>0?`✓ Activos Fijos (${afCount} reg.)`:'Activos Fijos (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
           ].map(step=>(
-            <label key={step.num} className={`flex items-center gap-4 p-4 rounded-2xl border cursor-pointer transition-all ${step.active?'border-orange-500/50 text-orange-300 bg-orange-500/5 hover:bg-orange-500/10 hover:border-orange-500':'border-slate-700 text-slate-600 opacity-40 cursor-not-allowed'}`}>
+            <div key={step.num} className="flex items-center gap-2">
+            <label key={step.num} className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${step.active?'border-orange-500/50 text-orange-300 bg-orange-500/5 hover:bg-orange-500/10 hover:border-orange-500':'border-slate-700 text-slate-600 opacity-40 cursor-not-allowed'}`}>
               <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
               <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
               <Upload size={16} className="opacity-50"/>
               <input type="file" accept={step.accept} multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
             </label>
+              {step.hasClear && <button onClick={(e)=>{e.stopPropagation();clearSlot(step.num);}} title="Eliminar datos" className="flex-shrink-0 p-1.5 bg-red-950/60 hover:bg-red-600 text-red-500 hover:text-white rounded-lg border border-red-900/40 transition-colors"><Trash2 size={12}/></button>}
+            </div>
           ))}
           <div className="pt-2 border-t border-slate-700">
             <button onClick={handleSimulatePDFs} className="w-full flex items-center justify-center gap-2 bg-[#222] hover:bg-[#333] text-slate-400 hover:text-white border border-slate-600 px-4 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors"><FileOutput size={12}/> Cargar datos demo Abr 2026</button>
