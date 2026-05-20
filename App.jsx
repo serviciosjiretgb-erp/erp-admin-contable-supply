@@ -649,6 +649,21 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 
   if (isLeaf || isAccountNode) {
     const isHighlighted = highlightedAccounts.has(node.n);
+    // Sub-transacción (hija de una cuenta): estilo diferenciado visualmente
+    const isSubItem = level > 0 && isLeaf && !isAccountNode;
+    if (isSubItem) {
+      return (
+        <tr className="border-b border-slate-100 bg-slate-50/60 hover:bg-blue-50/40 transition-colors">
+          <td style={{ paddingLeft: `${level * 18 + 32}px` }} className="py-1.5 px-3 text-[10px] text-slate-500 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0"/>
+            <span className="truncate max-w-[380px]">{node.n}</span>
+          </td>
+          <td className="py-1.5 px-3 text-right font-mono text-[11px] text-slate-600">{fmtCur(Math.abs(node.u))}</td>
+          <td className="py-1.5 px-3 text-right font-mono text-[11px] text-slate-500 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>
+          <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-400">{pct}</td>
+        </tr>
+      );
+    }
     return (
       <>
         <tr onClick={() => !isLeaf && setIsOpen(!isOpen)} className={`border-b border-gray-200 cursor-pointer transition-colors ${isHighlighted ? 'bg-amber-100/80 hover:bg-amber-200 border-l-4 border-amber-500' : 'bg-white hover:bg-slate-50 border-l-4 border-slate-400'}`}>
@@ -673,6 +688,14 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
         {isOpen && node.c && node.c.map((child, i) => (
           <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance}/>
         ))}
+        {!isLeaf && isOpen && (
+          <tr className="bg-slate-200/60 font-black text-[10px] border-t border-slate-200">
+            <td style={{ paddingLeft: level * 18 + 24 }} className="py-1.5 px-3 uppercase text-slate-500 tracking-wider">TOTAL {node.n}</td>
+            <td className="py-1.5 px-3 text-right font-mono text-slate-700">{fmtCur(Math.abs(node.u))}</td>
+            <td className="py-1.5 px-3 text-right font-mono text-slate-700 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>
+            <td className="py-1.5 px-3 text-right font-mono text-slate-500">{pct}</td>
+          </tr>
+        )}
       </>
     );
   }
@@ -1139,34 +1162,38 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
         bs: total * tasa
       });
     });
-    // ── Inyectar Activos Fijos: costo bruto y depreciación acumulada separados ─
+    // ── Inyectar Activos Fijos con cuentas contables de dep. acumulada ─────────
     if (activosFijosData?.records?.length) {
-      // Costo bruto por cuenta (usa Bs histórico del Excel, no tasa actual)
-      const costoMap = {};
-      const depMap = {};
+      // Calcular meses adicionales según mes seleccionado vs base Abril
+      const MORD = {'Saldos Iniciales':0,Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
+      const costoMap = {};   // asset account → { usd, bs }
+      const depAccMap = {};  // dep account → { usd }  (bs histórico no aplica para depreciación)
       activosFijosData.records.forEach(r => {
-        const cta = r.cuenta && r.cuenta !== '-' ? r.cuenta : 'ACTIVOS FIJOS';
-        if (!costoMap[cta]) costoMap[cta] = { usd: 0, bs: 0 };
-        costoMap[cta].usd += r.costoUSD;
-        costoMap[cta].bs  += r.costoBS; // BS histórico del Excel — no cambia con tasa
-        if (!depMap[cta]) depMap[cta] = { usd: 0, bs: 0 };
-        depMap[cta].usd += r.depAcum;
-        depMap[cta].bs  += r.depAcum * (r.tasa || tasa);
+        const assetCta = r.cuenta && r.cuenta !== '-' ? r.cuenta : 'ACTIVOS FIJOS';
+        if (!costoMap[assetCta]) costoMap[assetCta] = { usd: 0, bs: 0 };
+        costoMap[assetCta].usd += r.costoUSD;
+        costoMap[assetCta].bs  += r.costoBS; // Bs histórico — no cambia con tasa
+        // Depreciación acumulada: usa cuenta contable correcta por rubro
+        const ctaUp = assetCta.toUpperCase();
+        let depCta = 'DEP. ACUMULADA ACTIVOS FIJOS';
+        for (const [kw, ccode] of Object.entries(DEP_ACUM_ACCOUNT_MAP)) {
+          if (ctaUp.includes(kw)) { depCta = ccode; break; }
+        }
+        const depActual = r.depAcum + extraM * r.depreMensual;
+        if (!depAccMap[depCta]) depAccMap[depCta] = 0;
+        depAccMap[depCta] += depActual;
       });
-      // Inyectar costo bruto
       Object.entries(costoMap).forEach(([cta, v]) => {
         if (v.usd !== 0) auxEntries.push({
-          name: cta,
-          path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS',
+          name: cta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS',
           usd: v.usd, bs: v.bs
         });
       });
-      // Inyectar depreciación acumulada (valor negativo — contra-activo)
-      Object.entries(depMap).forEach(([cta, v]) => {
-        if (v.usd !== 0) auxEntries.push({
-          name: `DEP. ACUM. — ${cta}`,
-          path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS',
-          usd: -v.usd, bs: -v.bs
+      Object.entries(depAccMap).forEach(([depCta, depUSD]) => {
+        if (depUSD !== 0) auxEntries.push({
+          name: depCta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS',
+          usd: -depUSD, bs: -depUSD * tasa
         });
       });
     }
@@ -1565,20 +1592,56 @@ function ReportesFinancierosApp() {
 // ============================================================================
 // 9. VISTA: ACTIVOS FIJOS / INVERSIONES (desde Excel auxiliar)
 // ============================================================================
+// Mapeo: keyword en cuenta → cuenta contable de depreciación acumulada
+const DEP_ACUM_ACCOUNT_MAP = {
+  'MOBILIARIO':       '1.1.06.01.013-DEP. ACUMULADA MOBILIARIO',
+  'MAQUINARIA':       '1.1.06.01.004-DEP. ACUMULADA MAQUINARIA Y EQUIPOS',
+  'PLANTA ELECTRICA': '1.1.06.01.017-DEP. ACUMULADA PLANTA ELECTRICA',
+  'GALPON':           '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
+  'INMUEBLE':         '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
+  'VEHICULO':         '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
+};
+// Derivo RUBRO de cuenta o descripcion
+const getRubro = (r) => {
+  const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
+  if (s.includes('VEHICUL') || s.includes('CAMION') || s.includes('CARRO')) return 'VEHÍCULOS';
+  if (s.includes('PLANTA ELECTR') || s.includes('GENERATOR') || s.includes('PLANTA ELEC')) return 'PLANTA ELÉCTRICA';
+  if (s.includes('GALPON') || s.includes('INMUEBLE') || s.includes('LOCAL') || s.includes('MEJORA')) return 'GALPON / INMUEBLE';
+  if (s.includes('MAQUINAR') || s.includes('EQUIPO')) return 'MAQUINARIA Y EQUIPOS';
+  if (s.includes('MOBIL') || s.includes('ESCRITORIO') || s.includes('SILLA') || s.includes('MUEBLE')) return 'MOBILIARIO';
+  return 'OTROS';
+};
+// Depreciación acumulada actualizada al mes seleccionado
+const MONTH_NUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+const BASE_MONTH = 4; // Abril = base del Excel
+
 function InversionesView({ onBack, activosFijosData }) {
   const records = activosFijosData?.records || [];
   const [search, setSearch] = useState('');
   const [filterSede, setFilterSede] = useState('all');
-  const [filterCuenta, setFilterCuenta] = useState('all');
+  const [filterRubro, setFilterRubro] = useState('all');
+  const [filterFechaAnio, setFilterFechaAnio] = useState('all');
+  const [mesCorte, setMesCorte] = useState('Abril');
   const sedes = useMemo(()=>['all',...new Set(records.map(r=>r.sede).filter(s=>s&&s!=='-'))],[records]);
-  const cuentas = useMemo(()=>['all',...new Set(records.map(r=>r.cuenta).filter(c=>c&&c!=='-'))],[records]);
+  const rubros = useMemo(()=>['all',...new Set(records.map(getRubro))],[records]);
+  const anios = useMemo(()=>{
+    const set=new Set();
+    records.forEach(r=>{if(r.fechaAdq){const y=r.fechaAdq.split('/')[2];if(y)set.add(y);}});
+    return ['all',...[...set].sort()];
+  },[records]);
+  const mesesCorte = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  // Meses adicionales desde Abril para actualizar depreciación
+  const extraMeses = Math.max(0, (MONTH_NUM[mesCorte]||4) - BASE_MONTH);
+  const getDepAcumActual = (r) => r.depAcum + extraMeses * r.depreMensual;
+  const getValorNetoActual = (r) => r.costoUSD - getDepAcumActual(r);
   const filtered = useMemo(()=>{
     let r=records;
     if (filterSede!=='all') r=r.filter(x=>x.sede===filterSede);
-    if (filterCuenta!=='all') r=r.filter(x=>x.cuenta===filterCuenta);
+    if (filterRubro!=='all') r=r.filter(x=>getRubro(x)===filterRubro);
+    if (filterFechaAnio!=='all') r=r.filter(x=>x.fechaAdq&&x.fechaAdq.split('/')[2]===filterFechaAnio);
     if (search.trim()){const q=search.toLowerCase();r=r.filter(x=>x.descripcion.toLowerCase().includes(q)||x.cuenta.toLowerCase().includes(q)||x.sede.toLowerCase().includes(q));}
     return r;
-  },[records,search,filterSede,filterCuenta]);
+  },[records,search,filterSede,filterRubro,filterFechaAnio]);
   const grupos = useMemo(()=>{
     const m={};
     filtered.forEach(r=>{const g=r.cuenta&&r.cuenta!=='-'?r.cuenta:'SIN CUENTA';if(!m[g])m[g]=[];m[g].push(r);});
@@ -1586,8 +1649,8 @@ function InversionesView({ onBack, activosFijosData }) {
   },[filtered]);
   const fmt=v=>new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
   const totalCosto=filtered.reduce((s,r)=>s+r.costoUSD,0);
-  const totalDepAcum=filtered.reduce((s,r)=>s+r.depAcum,0);
-  const totalNeto=filtered.reduce((s,r)=>s+r.valorNeto,0);
+  const totalDepAcum=filtered.reduce((s,r)=>s+getDepAcumActual(r),0);
+  const totalNeto=filtered.reduce((s,r)=>s+getValorNetoActual(r),0);
   const totalMensual=filtered.reduce((s,r)=>s+r.depreMensual,0);
 
   if (!records.length) return (
@@ -1616,14 +1679,23 @@ function InversionesView({ onBack, activosFijosData }) {
           <div className="relative">
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar activo..."
-              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-orange-400 w-40"/>
+              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-orange-400 w-36"/>
           </div>
+          <select value={filterRubro} onChange={e=>setFilterRubro(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">
+            {rubros.map(s=><option key={s} value={s}>{s==='all'?'Todos los rubros':s}</option>)}
+          </select>
           <select value={filterSede} onChange={e=>setFilterSede(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">
             {sedes.map(s=><option key={s} value={s}>{s==='all'?'Todas las sedes':s}</option>)}
           </select>
-          <select value={filterCuenta} onChange={e=>setFilterCuenta(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">
-            {cuentas.map(c=><option key={c} value={c}>{c==='all'?'Todas las cuentas':c}</option>)}
+          <select value={filterFechaAnio} onChange={e=>setFilterFechaAnio(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">
+            {anios.map(a=><option key={a} value={a}>{a==='all'?'Todos los años':a}</option>)}
           </select>
+          <div className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1">
+            <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest whitespace-nowrap">Corte:</span>
+            <select value={mesCorte} onChange={e=>setMesCorte(e.target.value)} className="bg-transparent text-orange-700 text-xs font-black outline-none cursor-pointer">
+              {mesesCorte.map(m=><option key={m}>{m}</option>)}
+            </select>
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={()=>window.print()} className="px-4 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 hover:bg-slate-800">PDF</button>
@@ -1636,9 +1708,10 @@ function InversionesView({ onBack, activosFijosData }) {
           <h1 className="text-2xl font-black text-slate-900 uppercase mb-1 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
           <div className="w-16 h-1 bg-orange-500 mb-4 rounded-full"/>
           <h2 className="text-lg font-black text-slate-800 uppercase tracking-widest mb-5">Registro de Activos Fijos</h2>
+          <p className="text-[9px] font-bold text-orange-500 uppercase tracking-widest mb-3">Al corte de: {mesCorte} 2026 {extraMeses > 0 ? `(+${extraMeses} mes${extraMeses>1?'es':''} de depreciación desde Abril)`:''}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl">
             {[{label:'Costo Adq. USD',val:`${fmt(totalCosto)}`,color:'text-slate-800',bg:'bg-slate-50'},
-              {label:'Dep. Acum. USD',val:`(${fmt(totalDepAcum)})`,color:'text-red-600',bg:'bg-red-50'},
+              {label:`Dep. Acum. al ${mesCorte}`,val:`(${fmt(totalDepAcum)})`,color:'text-red-600',bg:'bg-red-50'},
               {label:'Valor Neto USD',val:`${fmt(totalNeto)}`,color:'text-orange-600',bg:'bg-orange-50'},
               {label:'Dep. Mensual',val:`${fmt(totalMensual)}`,color:'text-emerald-600',bg:'bg-emerald-50'},
             ].map(k=>(
@@ -1696,14 +1769,14 @@ function InversionesView({ onBack, activosFijosData }) {
                           </div>
                         </td>
                         <td className="px-3 py-2">
-                          <p className="text-[10px] text-slate-500">{a.depreciacion}</p>
+                          <p className="text-[10px] text-slate-500 font-bold">{a.depreciacion}</p>
                           <p className="text-[9px] font-mono text-slate-400 mt-0.5">{a.fechaAdq} · {a.vidaUtilAsig}/{a.vidaUtilTrans} m</p>
-                          <p className="text-[9px] text-red-400 font-mono">Dep.Acum: ({fmt(a.depreciacionAcum)})</p>
+                          <p className="text-[9px] text-slate-400 mt-0.5 truncate" title={getRubro(a)}><span className="bg-slate-100 rounded px-1 font-bold">{getRubro(a)}</span></p>
                         </td>
                         <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-700 whitespace-nowrap">{fmt(a.costoUSD)}</td>
                         <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-500 whitespace-nowrap">{fmt(a.costoBS)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-red-500 whitespace-nowrap">({fmt(a.depAcum)})</td>
-                        <td className="px-3 py-2 text-right font-mono text-[12px] font-black text-orange-600 whitespace-nowrap">{fmt(a.valorNeto)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[11px] text-red-500 whitespace-nowrap">({fmt(getDepAcumActual(a))})</td>
+                        <td className="px-3 py-2 text-right font-mono text-[12px] font-black text-orange-600 whitespace-nowrap">{fmt(getValorNetoActual(a))}</td>
                         <td className="px-3 py-2 text-right font-mono text-[11px] text-emerald-600 whitespace-nowrap">{fmt(a.depreMensual)}</td>
                         <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">{a.tasa}</td>
                       </tr>
@@ -1714,8 +1787,8 @@ function InversionesView({ onBack, activosFijosData }) {
                       <td colSpan={2} className="px-3 py-2.5 text-slate-700 uppercase tracking-wider">Subtotal {cuenta}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-slate-800">{fmt(gCosto)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-slate-600">{fmt(gCostoBS)}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-red-600">({fmt(gDepAcum)})</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-orange-700">{fmt(gNeto)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-red-600">({fmt(items.reduce((s,r)=>s+getDepAcumActual(r),0))})</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-orange-700">{fmt(items.reduce((s,r)=>s+getValorNetoActual(r),0))}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-emerald-600">{fmt(gMensual)}</td>
                       <td/>
                     </tr>
