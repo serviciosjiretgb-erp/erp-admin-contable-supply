@@ -425,15 +425,27 @@ const processActivosFijosExcel = async (files) => {
   return {records};
 };
 
-const handleExportActivosFijosExcel = (records,fileName) => {
-  if (!window.XLSX){alert("Cargando librería Excel...");return;}
-  const headers=['Cant','MOBILIARIO Y EQUIPO','SEDE','CUENTA','DEPRECIACION','DEPRECIACION ACUM','FECHA DE ADQUISICION','VIDA UTIL ASIGNADA','VIDA UTIL TRANSCURRIDA','COSTO ADQUISICION USD','COSTO ADQUISICION BS','DEP.ACUM','VALOR NETO LIBROS','DEPRE. MENSUAL','Tasa'];
-  const rows=records.map(r=>[r.cant,r.descripcion,r.sede,r.cuenta,r.depreciacion,r.depreciacionAcum,r.fechaAdq,r.vidaUtilAsig,r.vidaUtilTrans,r.costoUSD,r.costoBS,r.depAcum,r.valorNeto,r.depreMensual,r.tasa]);
-  const ws=window.XLSX.utils.aoa_to_sheet([["SERVICIOS JIRET G&B, C.A."],["RIF: J-412309374"],["REGISTRO DE ACTIVOS FIJOS"],[`Fecha: ${new Date().toLocaleDateString()}`],[],headers,...rows]);
-  ws['!cols']=[5,36,14,18,14,14,16,12,12,16,16,14,14,13,8].map(w=>({wch:w}));
-  const wb=window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb,ws,"Activos Fijos");
-  window.XLSX.writeFile(wb,`${fileName}.xlsx`);
+const handleExportActivosFijosExcel = async (records, fileName) => {
+  try {
+    const XL = await loadSheetJS();
+    const headers = ['Cant','MOBILIARIO Y EQUIPO','SEDE','FECHA DE ADQUISICION',
+      'VIDA UTIL ASIGNADA','VIDA UTIL TRANSCURRIDA','COSTO ADQUISICION USD',
+      'COSTO ADQUISICION BS','DEP.ACUM','VALOR NETO LIBROS','DEPRE. MENSUAL','Tasa'];
+    const rows = records.map(r => [
+      r.cant, r.descripcion, r.sede, r.fechaAdq,
+      r.vidaUtilAsig, r.vidaUtilTrans, r.costoUSD,
+      r.costoBS, r.depAcum, r.valorNeto, r.depreMensual, r.tasa
+    ]);
+    const ws = XL.utils.aoa_to_sheet([
+      ["SERVICIOS JIRET G&B, C.A."], ["RIF: J-412309374"],
+      ["REGISTRO DE ACTIVOS FIJOS"], [`Fecha: ${new Date().toLocaleDateString()}`],
+      [], headers, ...rows
+    ]);
+    ws['!cols'] = [5,36,14,16,12,12,16,16,14,14,13,8].map(w=>({wch:w}));
+    const wb = XL.utils.book_new();
+    XL.utils.book_append_sheet(wb, ws, "Activos Fijos");
+    XL.writeFile(wb, `${fileName}.xlsx`);
+  } catch(e) { console.error('Export error:', e); }
 };
 
 // ============================================================================
@@ -1051,158 +1063,283 @@ const getRubro = (r) => {
 const MONTH_NUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
 const BASE_MONTH = 4;
 
-function InversionesView({ onBack, activosFijosData }) {
+function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const records = activosFijosData?.records || [];
   const [search, setSearch] = useState('');
   const [filterSede, setFilterSede] = useState('all');
   const [filterRubro, setFilterRubro] = useState('all');
-  const [filterFechaAnio, setFilterFechaAnio] = useState('all');
   const [mesCorte, setMesCorte] = useState('Abril');
+  const [editIdx, setEditIdx] = useState(null); // index in records for edit modal
+  const [editData, setEditData] = useState(null);
+
   const sedes = useMemo(()=>['all',...new Set(records.map(r=>r.sede).filter(s=>s&&s!=='-'))],[records]);
   const rubros = useMemo(()=>['all',...new Set(records.map(getRubro))],[records]);
-  const anios = useMemo(()=>{ const set=new Set(); records.forEach(r=>{if(r.fechaAdq){const y=r.fechaAdq.split('/')[2];if(y)set.add(y);}}); return ['all',...[...set].sort()]; },[records]);
   const mesesCorte = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const extraMeses = Math.max(0, (MONTH_NUM[mesCorte]||4) - BASE_MONTH);
 
-  // Lógica en Bs con tasa histórica (inmune a tasa del día)
   const getTasaHist = (r) => r.tasa || (r.costoUSD ? r.costoBS / r.costoUSD : 1);
-  const getDepAcumActualBs = (r) => (r.depAcum + extraMeses * r.depreMensual) * getTasaHist(r);
-  const getValorNetoActualBs = (r) => r.costoBS - getDepAcumActualBs(r);
-  const getDepMensualBs = (r) => r.depreMensual * getTasaHist(r);
+  const getDepAcumActual = (r) => r.depAcum + extraMeses * r.depreMensual;
+  const getValorNetoActual = (r) => r.valorNeto - extraMeses * r.depreMensual;
 
-  const INVALID_CUENTAS = new Set(['CUENTA','CUENTA CONTABLE','MOBILIARIO Y EQUIPO','-','']);
-  const filtered = useMemo(()=>{
-    let r=records;
-    if (filterSede!=='all') r=r.filter(x=>x.sede===filterSede);
-    if (filterRubro!=='all') r=r.filter(x=>getRubro(x)===filterRubro);
-    if (filterFechaAnio!=='all') r=r.filter(x=>x.fechaAdq&&x.fechaAdq.split('/')[2]===filterFechaAnio);
-    if (search.trim()){const q=search.toLowerCase();r=r.filter(x=>x.descripcion.toLowerCase().includes(q)||x.cuenta.toLowerCase().includes(q));}
-    return r;
-  },[records,search,filterSede,filterRubro,filterFechaAnio]);
-  const filteredValid = useMemo(()=>filtered.filter(r=>{ const c=(r.cuenta||'').toUpperCase().trim(); return !INVALID_CUENTAS.has(c)&&r.costoUSD>0; }),[filtered]);
-  const grupos = useMemo(()=>{ const m={}; filteredValid.forEach(r=>{const g=r.cuenta&&r.cuenta!=='-'?r.cuenta:'SIN CUENTA';if(!m[g])m[g]=[];m[g].push(r);}); return m; },[filteredValid]);
-  const fmt=v=>new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
-  const totalCostoBs=filteredValid.reduce((s,r)=>s+r.costoBS,0);
-  const totalDepAcumBs=filteredValid.reduce((s,r)=>s+getDepAcumActualBs(r),0);
-  const totalNetoBs=filteredValid.reduce((s,r)=>s+getValorNetoActualBs(r),0);
-  const totalMensualBs=filteredValid.reduce((s,r)=>s+getDepMensualBs(r),0);
+  const INVALID = new Set(['CUENTA','CUENTA CONTABLE','MOBILIARIO Y EQUIPO','-','']);
+  const filteredValid = useMemo(()=>{
+    let rs = records.filter(r => r.costoUSD > 0 && !INVALID.has((r.cuenta||'').toUpperCase().trim()));
+    if (filterSede !== 'all') rs = rs.filter(r => r.sede === filterSede);
+    if (filterRubro !== 'all') rs = rs.filter(r => getRubro(r) === filterRubro);
+    if (search.trim()) { const q = search.toLowerCase(); rs = rs.filter(r => r.descripcion.toLowerCase().includes(q) || r.sede.toLowerCase().includes(q)); }
+    return rs;
+  }, [records, search, filterSede, filterRubro]);
+
+  // Group by RUBRO
+  const grupos = useMemo(() => {
+    const m = {};
+    filteredValid.forEach(r => {
+      const g = getRubro(r);
+      if (!m[g]) m[g] = [];
+      m[g].push(r);
+    });
+    return m;
+  }, [filteredValid]);
+
+  const fmt = v => new Intl.NumberFormat('es-VE', {minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+
+  const totalCostoUSD = filteredValid.reduce((s,r)=>s+r.costoUSD,0);
+  const totalCostoBS  = filteredValid.reduce((s,r)=>s+r.costoBS,0);
+  const totalDepAcum  = filteredValid.reduce((s,r)=>s+getDepAcumActual(r),0);
+  const totalNeto     = filteredValid.reduce((s,r)=>s+getValorNetoActual(r),0);
+  const totalMensual  = filteredValid.reduce((s,r)=>s+r.depreMensual,0);
+
+  // Edit handlers
+  const openEdit = (r, globalIdx) => { setEditIdx(globalIdx); setEditData({...r}); };
+  const saveEdit = () => {
+    if (editIdx === null || !editData) return;
+    const newRecords = [...records];
+    newRecords[editIdx] = {...editData,
+      costoUSD: parseFloat(editData.costoUSD)||0,
+      costoBS:  parseFloat(editData.costoBS)||0,
+      depAcum:  parseFloat(editData.depAcum)||0,
+      valorNeto:parseFloat(editData.valorNeto)||0,
+      depreMensual:parseFloat(editData.depreMensual)||0,
+      tasa:     parseFloat(editData.tasa)||0,
+      vidaUtilAsig: parseFloat(editData.vidaUtilAsig)||0,
+      vidaUtilTrans:parseFloat(editData.vidaUtilTrans)||0,
+    };
+    setActivosFijosData({ records: newRecords });
+    setEditIdx(null); setEditData(null);
+  };
+  const cancelEdit = () => { setEditIdx(null); setEditData(null); };
+
+  const RUBRO_COLORS = {
+    'VEHÍCULOS':         {bg:'bg-blue-600',  text:'text-blue-600',  light:'bg-blue-50'},
+    'MOBILIARIO':        {bg:'bg-amber-600',  text:'text-amber-600', light:'bg-amber-50'},
+    'MAQUINARIA Y EQUIPOS':{bg:'bg-purple-600',text:'text-purple-600',light:'bg-purple-50'},
+    'GALPON / INMUEBLE': {bg:'bg-emerald-700',text:'text-emerald-700',light:'bg-emerald-50'},
+    'PLANTA ELÉCTRICA':  {bg:'bg-rose-600',   text:'text-rose-600',  light:'bg-rose-50'},
+    'OTROS':             {bg:'bg-slate-600',  text:'text-slate-600', light:'bg-slate-50'},
+  };
 
   if (!records.length) return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
-      <header className="bg-white border-b-2 border-orange-500 p-4"><button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button></header>
-      <div className="max-w-xl mx-auto mt-24 text-center p-8"><Landmark size={48} className="text-orange-300 mx-auto mb-4"/><h2 className="text-xl font-black text-slate-700 uppercase mb-2">Sin datos de Activos Fijos</h2><p className="text-slate-400 text-sm font-bold">Ve a <span className="text-orange-500">Configuración → 05</span> y carga tu auxiliar Excel.</p></div>
+      <header className="bg-white border-b border-slate-200 px-4 py-3 shadow-sm">
+        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver</button>
+      </header>
+      <div className="max-w-xl mx-auto mt-24 text-center p-8">
+        <Landmark size={48} className="text-orange-300 mx-auto mb-4"/>
+        <h2 className="text-xl font-black text-slate-700 uppercase mb-2">Sin datos de Activos Fijos</h2>
+        <p className="text-slate-400 text-sm">Ve a <span className="text-orange-500 font-bold">Configuración → 05</span> y carga tu auxiliar Excel.</p>
+      </div>
     </div>
   );
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      {/* ── MODAL DE EDICIÓN ─────────────────────────────────────────────── */}
+      {editData && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={cancelEdit}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={e=>e.stopPropagation()}>
+            <div className="bg-slate-800 px-6 py-4 flex justify-between items-center">
+              <div>
+                <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Editar Activo</p>
+                <p className="text-white font-black text-sm truncate">{editData.descripcion}</p>
+              </div>
+              <button onClick={cancelEdit} className="text-slate-400 hover:text-white text-xl leading-none">✕</button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+              {[
+                {label:'Descripción (MOBILIARIO Y EQUIPO)', key:'descripcion', type:'text', full:true},
+                {label:'Sede', key:'sede', type:'text'},
+                {label:'Fecha de Adquisición', key:'fechaAdq', type:'text'},
+                {label:'Vida Útil Asignada (meses)', key:'vidaUtilAsig', type:'number'},
+                {label:'Vida Útil Transcurrida (meses)', key:'vidaUtilTrans', type:'number'},
+                {label:'Costo Adq. USD', key:'costoUSD', type:'number'},
+                {label:'Costo Adq. Bs.', key:'costoBS', type:'number'},
+                {label:'DEP.ACUM (Bs. base)', key:'depAcum', type:'number'},
+                {label:'Valor Neto Libros (Bs.)', key:'valorNeto', type:'number'},
+                {label:'Dep. Mensual (Bs.)', key:'depreMensual', type:'number'},
+                {label:'Tasa histórica', key:'tasa', type:'number'},
+              ].map(f=>(
+                <div key={f.key} className={f.full ? 'col-span-2' : ''}>
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-1">{f.label}</label>
+                  <input
+                    type={f.type}
+                    value={editData[f.key]||''}
+                    onChange={e=>setEditData(p=>({...p,[f.key]:e.target.value}))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-orange-400 bg-slate-50"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-200">
+              <button onClick={cancelEdit} className="px-5 py-2 rounded-lg text-xs font-black uppercase text-slate-500 hover:bg-slate-100 border border-slate-200">Cancelar</button>
+              <button onClick={saveEdit} className="px-6 py-2 rounded-lg text-xs font-black uppercase bg-orange-500 hover:bg-orange-600 text-white shadow-md">Guardar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── HEADER ──────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-slate-200 px-4 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button>
-          <span className="font-black text-xs text-slate-700 uppercase tracking-widest flex items-center gap-2"><Landmark size={14} className="text-orange-500"/> Activos Fijos (Bs)</span>
+          <span className="text-slate-300">|</span>
+          <span className="font-black text-xs text-slate-700 uppercase flex items-center gap-1.5"><Landmark size={13} className="text-orange-500"/> Activos Fijos</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative"><Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none w-36"/></div>
-          <select value={filterRubro} onChange={e=>setFilterRubro(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{rubros.map(s=><option key={s} value={s}>{s==='all'?'Todos los rubros':s}</option>)}</select>
-          <select value={filterSede} onChange={e=>setFilterSede(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{sedes.map(s=><option key={s} value={s}>{s==='all'?'Todas las sedes':s}</option>)}</select>
-          <select value={filterFechaAnio} onChange={e=>setFilterFechaAnio(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{anios.map(a=><option key={a} value={a}>{a==='all'?'Todos los años':a}</option>)}</select>
+          <div className="relative"><Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar activo..." className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none w-36"/>
+          </div>
+          <select value={filterRubro} onChange={e=>setFilterRubro(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">
+            {rubros.map(s=><option key={s} value={s}>{s==='all'?'Todos los rubros':s}</option>)}
+          </select>
+          <select value={filterSede} onChange={e=>setFilterSede(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">
+            {sedes.map(s=><option key={s} value={s}>{s==='all'?'Todas las sedes':s}</option>)}
+          </select>
           <div className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1">
-            <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest whitespace-nowrap">Corte:</span>
-            <select value={mesCorte} onChange={e=>setMesCorte(e.target.value)} className="bg-transparent text-orange-700 text-xs font-black outline-none cursor-pointer">{mesesCorte.map(m=><option key={m}>{m}</option>)}</select>
+            <span className="text-[9px] font-black text-orange-500 uppercase whitespace-nowrap">Corte:</span>
+            <select value={mesCorte} onChange={e=>setMesCorte(e.target.value)} className="bg-transparent text-orange-700 text-xs font-black outline-none cursor-pointer">
+              {mesesCorte.map(m=><option key={m}>{m}</option>)}
+            </select>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={()=>window.print()} className="px-4 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase hover:bg-slate-800">PDF</button>
-          <button onClick={()=>handleExportActivosFijosExcel(filteredValid,'Activos_Fijos')} className="px-4 py-1.5 bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase hover:bg-emerald-600">Excel</button>
-        </div>
+        <button onClick={()=>handleExportActivosFijosExcel(filteredValid,'Activos_Fijos')} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-emerald-700 flex items-center gap-1.5">
+          <FileSpreadsheet size={13}/> Excel
+        </button>
       </header>
 
-      <main className="p-4 md:p-8 max-w-[1600px] mx-auto pb-16">
-        <div className="bg-white px-8 py-8 border-t-4 border-orange-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <h1 className="text-2xl font-black text-slate-900 uppercase mb-1 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
-          <div className="w-16 h-1 bg-orange-500 mb-4 rounded-full"/>
-          <h2 className="text-lg font-black text-slate-800 uppercase tracking-widest mb-2">Registro de Activos Fijos</h2>
-          <p className="text-[9px] font-bold text-orange-500 uppercase tracking-widest mb-5">Valores en Bolívares · Tasa Histórica · Al corte de: {mesCorte} 2026{extraMeses>0?` (+${extraMeses} mes${extraMeses>1?'es':''} desde Abril)`:''}</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 w-full max-w-5xl">
-            {[{label:'Costo Adq. USD',val:`USD ${fmt(filteredValid.reduce((s,r)=>s+r.costoUSD,0))}`,color:'text-blue-700',bg:'bg-blue-50'},
-              {label:'Costo Histórico Bs',val:`Bs ${fmt(totalCostoBs)}`,color:'text-slate-700',bg:'bg-slate-50'},
-              {label:`Dep. Acum. Bs al ${mesCorte}`,val:`(Bs ${fmt(totalDepAcumBs)})`,color:'text-red-600',bg:'bg-red-50'},
-              {label:'Valor Neto Bs',val:`Bs ${fmt(totalNetoBs)}`,color:'text-orange-600',bg:'bg-orange-50'},
-              {label:'Dep. Mensual Bs',val:`Bs ${fmt(totalMensualBs)}`,color:'text-emerald-600',bg:'bg-emerald-50'},
-            ].map(k=>(<div key={k.label} className={`${k.bg} rounded-xl p-4 border border-slate-200`}><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p><p className={`text-base font-black font-mono ${k.color} truncate`}>{k.val}</p></div>))}
-          </div>
+      <main className="p-4 md:p-6 max-w-[1700px] mx-auto pb-16">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+          {[
+            {label:'Costo Adq. USD', val:`USD ${fmt(totalCostoUSD)}`, color:'text-blue-700', bg:'bg-blue-50 border-blue-200'},
+            {label:'Costo Histórico Bs.', val:`Bs. ${fmt(totalCostoBS)}`, color:'text-slate-700', bg:'bg-white border-slate-200'},
+            {label:`Dep. Acum Bs. (${mesCorte})`, val:`Bs. ${fmt(totalDepAcum)}`, color:'text-red-600', bg:'bg-red-50 border-red-200'},
+            {label:'Valor Neto Bs.', val:`Bs. ${fmt(totalNeto)}`, color:'text-orange-600', bg:'bg-orange-50 border-orange-200'},
+            {label:'Dep. Mensual Bs.', val:`Bs. ${fmt(totalMensual)}`, color:'text-emerald-600', bg:'bg-emerald-50 border-emerald-200'},
+          ].map(k=>(
+            <div key={k.label} className={`rounded-xl p-4 border ${k.bg} shadow-sm`}>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p>
+              <p className={`text-sm font-black font-mono ${k.color}`}>{k.val}</p>
+            </div>
+          ))}
         </div>
 
-        {/* Tabla panorámica única — vista completa sin agrupación */}
-        {filteredValid.length === 0 ? (
-          <div className="bg-white rounded-xl p-12 text-center border border-slate-200 shadow-sm">
-            <Landmark size={40} className="text-slate-300 mx-auto mb-3"/>
-            <p className="text-slate-400 font-black text-xs uppercase">Sin activos que coincidan con los filtros</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-md overflow-hidden border border-slate-200 mb-4">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse" style={{minWidth:'1200px'}}>
-                <thead>
-                  <tr className="bg-slate-800 text-[8px] uppercase font-black border-b-2 border-orange-400">
-                    <th className="px-2 py-2.5 text-center text-slate-400 w-8">Cant</th>
-                    <th className="px-2 py-2.5 text-slate-200 w-52">Descripción</th>
-                    <th className="px-2 py-2.5 text-center text-slate-400 w-10">Sede</th>
-                    <th className="px-2 py-2.5 text-slate-400 w-28">F. Adq.</th>
-                    <th className="px-2 py-2.5 text-center text-slate-400 w-14">V.U. Asig</th>
-                    <th className="px-2 py-2.5 text-center text-slate-400 w-14">V.U. Trans</th>
-                    <th className="px-2 py-2.5 text-right text-blue-300 w-28 bg-blue-900/30">Costo Adq. USD</th>
-                    <th className="px-2 py-2.5 text-right text-slate-300 w-28 bg-slate-700/40">Costo Adq. Bs.</th>
-                    <th className="px-2 py-2.5 text-right text-red-300 w-28 bg-red-900/20">DEP.ACUM Bs.</th>
-                    <th className="px-2 py-2.5 text-right text-orange-300 w-28 bg-orange-900/20">Val. Neto Bs.</th>
-                    <th className="px-2 py-2.5 text-right text-emerald-300 w-24 bg-emerald-900/20">Dep. Mensual Bs.</th>
-                    <th className="px-2 py-2.5 text-right text-slate-400 w-14">Tasa</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredValid.map((a,i)=>(
-                    <tr key={i} className={`border-b border-slate-100 hover:bg-orange-50/20 transition-colors ${i%2===0?'bg-white':'bg-slate-50/40'}`}>
-                      <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.cant}</td>
-                      <td className="px-2 py-1.5 font-bold text-[10px] text-slate-800 max-w-[208px] truncate" title={a.descripcion}>{a.descripcion}</td>
-                      <td className="px-2 py-1.5 text-center text-[10px] font-bold text-slate-500">{a.sede}</td>
-                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{a.fechaAdq||'-'}</td>
-                      <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilAsig||'-'}</td>
-                      <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/50 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">Bs. {fmt(getDepAcumActualBs(a))}</td>
-                      <td className="px-2 py-1.5 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">Bs. {fmt(getValorNetoActualBs(a))}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">Bs. {fmt(getDepMensualBs(a))}</td>
-                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">{(a.tasa||0).toFixed(2)}</td>
+        {/* Grupos por Rubro */}
+        {Object.entries(grupos).map(([rubro, items])=>{
+          const colors = RUBRO_COLORS[rubro] || RUBRO_COLORS['OTROS'];
+          const gCostoUSD = items.reduce((s,r)=>s+r.costoUSD,0);
+          const gCostoBS  = items.reduce((s,r)=>s+r.costoBS,0);
+          const gDepAcum  = items.reduce((s,r)=>s+getDepAcumActual(r),0);
+          const gNeto     = items.reduce((s,r)=>s+getValorNetoActual(r),0);
+          const gMensual  = items.reduce((s,r)=>s+r.depreMensual,0);
+          return (
+            <div key={rubro} className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
+              {/* Cabecera de rubro */}
+              <div className="flex items-center justify-between px-5 py-3 bg-slate-50 border-b border-slate-200">
+                <div className="flex items-center gap-3">
+                  <span className={`${colors.bg} text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full`}>{rubro}</span>
+                  <span className="text-slate-400 text-[10px]">{items.length} activo{items.length!==1?'s':''}</span>
+                </div>
+                <div className="flex gap-5 text-right text-[10px]">
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Costo USD</p><p className={`font-mono font-black ${colors.text}`}>USD {fmt(gCostoUSD)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Costo Bs.</p><p className="font-mono font-black text-slate-700">Bs. {fmt(gCostoBS)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Dep. Acum</p><p className="font-mono font-black text-red-600">Bs. {fmt(gDepAcum)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Val. Neto</p><p className="font-mono font-black text-orange-600">Bs. {fmt(gNeto)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Dep/Mes</p><p className="font-mono font-black text-emerald-600">Bs. {fmt(gMensual)}</p></div>
+                </div>
+              </div>
+              {/* Tabla con 12 columnas */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" style={{minWidth:'1300px'}}>
+                  <thead>
+                    <tr className="text-[8px] uppercase font-black border-b border-slate-100 bg-slate-50">
+                      <th className="px-2 py-2 text-center text-slate-400 w-8">Cant</th>
+                      <th className="px-3 py-2 text-slate-600 w-48">Mobiliario y Equipo</th>
+                      <th className="px-2 py-2 text-center text-slate-400 w-12">Sede</th>
+                      <th className="px-2 py-2 text-slate-400 w-20">F. Adquisición</th>
+                      <th className="px-2 py-2 text-center text-slate-400 w-14">V.U. Asig</th>
+                      <th className="px-2 py-2 text-center text-slate-400 w-14">V.U. Trans</th>
+                      <th className="px-2 py-2 text-right text-blue-600 w-28 bg-blue-50/60">Costo Adq. USD</th>
+                      <th className="px-2 py-2 text-right text-slate-500 w-28 bg-slate-100">Costo Adq. Bs.</th>
+                      <th className="px-2 py-2 text-right text-red-500 w-28 bg-red-50">DEP.ACUM Bs.</th>
+                      <th className="px-2 py-2 text-right text-orange-600 w-28 bg-orange-50">Val. Neto Bs.</th>
+                      <th className="px-2 py-2 text-right text-emerald-600 w-24 bg-emerald-50">Dep. Mensual Bs.</th>
+                      <th className="px-2 py-2 text-right text-slate-400 w-14">Tasa</th>
+                      <th className="px-2 py-2 text-center w-10"></th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-800 text-white font-black text-[9px] border-t-2 border-orange-400">
-                    <td colSpan={6} className="px-3 py-2.5 text-orange-300 uppercase tracking-widest">
-                      TOTAL — {filteredValid.length} activos{extraMeses>0?` · Corte ${mesCorte} (+${extraMeses} mes${extraMeses>1?'es':''})`:` · Corte ${mesCorte}`}
-                    </td>
-                    <td className="px-2 py-2.5 text-right font-mono text-blue-300 whitespace-nowrap">USD {fmt(filteredValid.reduce((s,r)=>s+r.costoUSD,0))}</td>
-                    <td className="px-2 py-2.5 text-right font-mono whitespace-nowrap">Bs. {fmt(totalCostoBs)}</td>
-                    <td className="px-2 py-2.5 text-right font-mono text-red-300 whitespace-nowrap">Bs. {fmt(totalDepAcumBs)}</td>
-                    <td className="px-2 py-2.5 text-right font-mono text-orange-300 whitespace-nowrap">Bs. {fmt(totalNetoBs)}</td>
-                    <td className="px-2 py-2.5 text-right font-mono text-emerald-300 whitespace-nowrap">Bs. {fmt(totalMensualBs)}</td>
-                    <td/>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {items.map((a, i) => {
+                      const globalIdx = records.indexOf(a);
+                      return (
+                        <tr key={i} className={`border-b border-slate-100 hover:bg-orange-50/30 transition-colors ${i%2===0?'bg-white':'bg-slate-50/30'}`}>
+                          <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.cant}</td>
+                          <td className="px-3 py-2 font-bold text-[10px] text-slate-800 max-w-[192px] truncate" title={a.descripcion}>{a.descripcion}</td>
+                          <td className="px-2 py-2 text-center text-[10px] font-bold text-slate-500">{a.sede}</td>
+                          <td className="px-2 py-2 font-mono text-[10px] text-slate-500 whitespace-nowrap">{a.fechaAdq||'-'}</td>
+                          <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilAsig||'-'}</td>
+                          <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
+                          <td className="px-2 py-2 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/40 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">Bs. {fmt(getDepAcumActual(a))}</td>
+                          <td className="px-2 py-2 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">Bs. {fmt(getValorNetoActual(a))}</td>
+                          <td className="px-2 py-2 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">Bs. {fmt(a.depreMensual)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">{(a.tasa||0).toFixed(2)}</td>
+                          <td className="px-2 py-2 text-center">
+                            <button onClick={()=>openEdit(a, globalIdx)}
+                              className="p-1 rounded hover:bg-orange-100 text-slate-400 hover:text-orange-600 transition-colors" title="Editar">
+                              ✏️
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-black text-[9px] border-t-2 border-slate-300">
+                      <td colSpan={6} className="px-3 py-2.5 text-slate-600 uppercase tracking-wider">Subtotal {rubro}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-blue-700 whitespace-nowrap">USD {fmt(gCostoUSD)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">Bs. {fmt(gCostoBS)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-red-600 whitespace-nowrap">Bs. {fmt(gDepAcum)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-orange-700 whitespace-nowrap">Bs. {fmt(gNeto)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-emerald-600 whitespace-nowrap">Bs. {fmt(gMensual)}</td>
+                      <td colSpan={2}/>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })}
 
-
-        <div className="bg-[#111111] rounded-2xl p-6 flex flex-wrap justify-between items-center gap-4 border-2 border-orange-500 shadow-xl">
+        {/* Total general */}
+        <div className="bg-slate-800 rounded-xl p-5 flex flex-wrap justify-between items-center gap-4 border border-slate-700 shadow-md">
           <span className="text-white font-black uppercase tracking-widest text-sm">TOTAL ACTIVOS FIJOS — {filteredValid.length} activos</span>
-          <div className="flex gap-8 text-right flex-wrap">
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo Bs</p><p className="font-mono font-black text-lg text-white">{fmt(totalCostoBs)}</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep. Acum Bs</p><p className="font-mono font-black text-lg text-red-400">({fmt(totalDepAcumBs)})</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Valor Neto Bs</p><p className="font-mono font-black text-lg text-orange-400">{fmt(totalNetoBs)}</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep/Mes Bs</p><p className="font-mono font-black text-lg text-emerald-400">{fmt(totalMensualBs)}</p></div>
+          <div className="flex gap-6 text-right flex-wrap">
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo USD</p><p className="font-mono font-black text-blue-400">USD {fmt(totalCostoUSD)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo Bs.</p><p className="font-mono font-black text-white">Bs. {fmt(totalCostoBS)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep. Acum Bs.</p><p className="font-mono font-black text-red-400">Bs. {fmt(totalDepAcum)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Valor Neto Bs.</p><p className="font-mono font-black text-orange-400">Bs. {fmt(totalNeto)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep/Mes Bs.</p><p className="font-mono font-black text-emerald-400">Bs. {fmt(totalMensual)}</p></div>
           </div>
         </div>
       </main>
@@ -1289,7 +1426,7 @@ function ReportesFinancierosApp() {
   if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData}/>;
   if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
   if (view === 'balance')     return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData}/>;
-  if (view === 'inversiones') return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={activosFijosData}/>;
+  if (view === 'inversiones') return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={activosFijosData} setActivosFijosData={setActivosFijosData}/>;
 
   if (view === 'configuracion') return (
     <div className="min-h-screen bg-[#111111]">
