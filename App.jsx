@@ -86,54 +86,144 @@ const processPlanCuentas = async (file) => {
   return plan;
 };
 
-// Saldos Iniciales desde Excel (.xlsx) — columnas 'Cuenta Contable' y 'SALDO USD'
+// ─────────────────────────────────────────────────────────────────────────────
+// Saldos Iniciales — parser jerárquico para TXT y Excel
+// Soporta la estructura estándar venezolana con pathStack/smartPop (igual que
+// el Estado de Resultados), con ambas columnas USD y Bs.
+// TXT columnas: [Nombre]\t[USD]\t[Bs.] — las líneas "Total X" hacen pop del stack
+// XLSX columnas detectadas dinámicamente: 'Cuenta Contable', 'USD', 'Bs.'
+// ─────────────────────────────────────────────────────────────────────────────
 const processSaldosBalance = async (file, planCuentas) => {
   const ext = file.name.split('.').pop().toLowerCase();
-  const XL = await loadSheetJS();
+
   const parseVal = (v) => {
-    if (!v || String(v).trim() === '-') return 0;
-    let s = String(v).replace(/\$|USD|Bs\./ig, '').trim();
+    if (v === null || v === undefined) return null;
+    const s0 = String(v).trim();
+    if (!s0 || s0 === '-' || s0 === 'USD -' || s0 === 'Bs. -' || s0 === 'USD-' || s0 === '0,00') {
+      // "0,00" is a real zero; "-" means missing
+      if (s0 === '0,00' || s0 === '0.00') return 0;
+      if (s0 === '-') return null; // truly absent
+    }
+    let s = s0.replace(/USD|Bs\.|Bs|BsF|\$/ig, '').trim();
+    if (!s || s === '-') return null;
+    // Handle Venezuelan format: 1.234.567,89 → 1234567.89
     if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(/,/g, '.');
-    else if (s.includes(',')) s = s.replace(/,/g, '.');
-    const n = parseFloat(s); return isNaN(n) ? 0 : n;
+    else if (s.includes(',') && !s.includes('.')) s = s.replace(/,/g, '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
   };
-  let rawData = [];
+
+  const smartPop = (stack, totalName) => {
+    const what = totalName.replace(/^Total\s+/i, '').trim().toUpperCase();
+    let idx = stack.length - 1;
+    while (idx >= 0) {
+      if (stack[idx].trim().toUpperCase() === what) { stack.splice(idx); break; }
+      idx--;
+    }
+  };
+
+  // ── FORMATO TXT / CSV ──────────────────────────────────────────────────────
   if (ext === 'txt' || ext === 'csv') {
-    // Legado: TXT/CSV con tabs
     const text = await file.text();
     const lines = text.split(/\r?\n/);
-    if (lines.length < 2) return [];
+    let pathStack = [];
     let balanceData = [];
-    lines.slice(1).forEach(line => {
-      const cols = line.split('\t');
-      if (cols.length < 2) return;
-      const accountName = cols[0].trim();
-      if (!accountName) return;
-      const path = planCuentas[accountName] || (accountName.includes('BANCO') || accountName.includes('CAJA') ? 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE' : 'ACTIVOS>OTROS');
-      const valUSD = parseVal(cols[1]);
-      if (valUSD !== 0) balanceData.push({ month: 'Saldos Iniciales', path, name: accountName, usd: valUSD, bs: 0 });
-    });
+
+    for (const rawLine of lines) {
+      if (!rawLine.trim()) continue;
+      // Split by tab — col0=name, col1=USD or empty, col2=Bs. or empty
+      const cols = rawLine.split('\t');
+      const name = (cols[0] || '').trim();
+      if (!name) continue;
+
+      // Skip the verification/check line at the bottom
+      if (/ACTIVO.*PASIVO.*PATRIMONIO|ACTIVO-\(PASIVO/i.test(name)) continue;
+
+      // "Total X" → pop pathStack back to X
+      if (/^Total\s+/i.test(name)) { smartPop(pathStack, name); continue; }
+
+      // Try to parse values from columns
+      // Column layout varies: some files put USD in col1, Bs. in col2
+      // Others may put USD in col1 and Bs in col3 (with blank col2)
+      let usdVal = null, bsVal = null;
+      for (let ci = 1; ci < cols.length; ci++) {
+        const c = (cols[ci] || '').trim();
+        if (!c) continue;
+        const cUp = c.toUpperCase();
+        if (cUp.includes('USD') || (!cUp.includes('BS') && ci === 1)) {
+          const v = parseVal(c); if (v !== null) usdVal = v;
+        } else if (cUp.includes('BS') || ci >= 2) {
+          const v = parseVal(c); if (v !== null) bsVal = v;
+        }
+      }
+
+      // Is this an account entry? Heuristic: starts with a digit-code like 1.1.xx
+      const isAccount = /^\d[\d\.]{4,}/.test(name);
+
+      if (isAccount && (usdVal !== null || bsVal !== null)) {
+        balanceData.push({
+          month: 'Saldos Iniciales',
+          path: pathStack.map(p => p.trim()).join('>'),
+          name: name.trim(),
+          usd: usdVal ?? 0,
+          bs:  bsVal  ?? 0,
+        });
+      } else if (!isAccount) {
+        // Section header → push to pathStack (ignore total rows already handled)
+        pathStack.push(name.trim());
+      }
+    }
     return balanceData;
   }
-  // Excel (.xlsx / .xls)
+
+  // ── FORMATO EXCEL (.xlsx / .xls) ──────────────────────────────────────────
+  const XL = await loadSheetJS();
   const buffer = await file.arrayBuffer();
   const wb = XL.read(buffer, { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  rawData = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
-  if (rawData.length < 2) return [];
-  const headerRow = rawData[0].map(h => String(h||'').toUpperCase().trim());
-  const idxCuenta   = headerRow.findIndex(h => h.includes('CUENTA CONTABLE') || h === 'CUENTA');
-  const idxSaldoUSD = headerRow.findIndex(h => h.includes('SALDO USD') || (h.includes('USD') && !h.includes('BS')));
-  if (idxCuenta === -1 || idxSaldoUSD === -1) { alert("El Excel debe tener columnas 'Cuenta Contable' y 'SALDO USD'"); return []; }
-  let balanceData = [];
-  for (let i = 1; i < rawData.length; i++) {
-    const row = rawData[i];
-    if (!row || row.length === 0) continue;
-    const accountName = String(row[idxCuenta] || '').trim();
-    if (!accountName) continue;
-    const path = planCuentas[accountName] || (accountName.includes('BANCO') || accountName.includes('CAJA') ? 'ACTIVOS>ACTIVO CIRCULANTE>DISPONIBLE' : 'ACTIVOS>OTROS');
-    const valUSD = parseVal(row[idxSaldoUSD]);
-    if (valUSD !== 0) balanceData.push({ month: 'Saldos Iniciales', path, name: accountName, usd: valUSD, bs: 0 });
+  const rawData = XL.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (!rawData.length) return [];
+
+  // Try to detect header row and column indices
+  let headerRowIdx = 0;
+  let idxCuenta = -1, idxUSD = -1, idxBs = -1;
+
+  for (let ri = 0; ri < Math.min(5, rawData.length); ri++) {
+    const hr = rawData[ri].map(h => String(h||'').toUpperCase().trim());
+    const cIdx = hr.findIndex(h => h.includes('CUENTA') || h.includes('NOMBRE') || h.includes('DESCRIPCION'));
+    const uIdx = hr.findIndex(h => h.includes('USD') || h.includes('DOLAR'));
+    const bIdx = hr.findIndex(h => h.includes('BS') || h.includes('BOLIVAR'));
+    if (cIdx !== -1 || uIdx !== -1) { headerRowIdx = ri; idxCuenta = cIdx; idxUSD = uIdx; idxBs = bIdx; break; }
+  }
+
+  // If header-less, guess: col0=name, col1=USD, col2=Bs
+  if (idxCuenta === -1) { idxCuenta = 0; idxUSD = 1; idxBs = 2; headerRowIdx = -1; }
+
+  const balanceData = [];
+  // If header found, try hierarchical pathStack approach (same as TXT)
+  let pathStack = [];
+  for (let ri = headerRowIdx + 1; ri < rawData.length; ri++) {
+    const row = rawData[ri];
+    if (!row || row.every(c => c === null || c === '')) continue;
+    const name = String(row[idxCuenta] || '').trim();
+    if (!name) continue;
+    if (/ACTIVO.*PASIVO|ACTIVO-\(/i.test(name)) continue;
+
+    if (/^Total\s+/i.test(name)) { smartPop(pathStack, name); continue; }
+
+    const usdV = idxUSD >= 0 ? parseVal(row[idxUSD]) : null;
+    const bsV  = idxBs  >= 0 ? parseVal(row[idxBs])  : null;
+    const isAccount = /^\d[\d\.]{4,}/.test(name);
+
+    if (isAccount && (usdV !== null || bsV !== null)) {
+      balanceData.push({
+        month: 'Saldos Iniciales',
+        path: pathStack.map(p => p.trim()).join('>') || 'ACTIVOS>OTROS',
+        name, usd: usdV ?? 0, bs: bsV ?? 0,
+      });
+    } else if (!isAccount) {
+      pathStack.push(name.trim());
+    }
   }
   return balanceData;
 };
@@ -765,8 +855,17 @@ const DEP_ACUM_ACCOUNT_MAP = {
 
 function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData }) {
   const availableMonths = useMemo(() => {
-    const balanceRecords = dbData.filter(item => item.path.toUpperCase().includes('ACTIVO') || item.path.toUpperCase().includes('PASIVO') || item.path.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name));
-    return [...new Set(balanceRecords.map(d => d.month))];
+    const balanceRecords = dbData.filter(item =>
+      item.path.toUpperCase().includes('ACTIVO') ||
+      item.path.toUpperCase().includes('PASIVO') ||
+      item.path.toUpperCase().includes('PATRIMONIO') ||
+      /^[123]/.test(item.name)
+    );
+    const months = [...new Set(balanceRecords.map(d => d.month))];
+    // Ensure 'Saldos Iniciales' always appears first if present
+    const siIdx = months.indexOf('Saldos Iniciales');
+    if (siIdx > 0) { months.splice(siIdx, 1); months.unshift('Saldos Iniciales'); }
+    return months;
   }, [dbData]);
   const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || '');
   const [defaultOpen, setDefaultOpen] = useState(false);
@@ -792,8 +891,9 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
         if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
         cur = folder.c;
       });
-      const usdVal = item.usd || (item.bs ? item.bs / tasa : 0);
-      const bsVal  = item.bs  || (item.usd ? item.usd * tasa : 0);
+      // Prefer actual file values; fall back to tasa conversion only if one is missing
+      const usdVal = (item.usd !== undefined && item.usd !== null) ? item.usd : (item.bs ? item.bs / tasa : 0);
+      const bsVal  = (item.bs  !== undefined && item.bs  !== null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
       const leafKey = normKey(item.name);
       let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
       if (!leaf) cur.push({ n: item.name.trim(), u: usdVal, b: bsVal, isLeaf: true });
@@ -912,7 +1012,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
                 <tr>
                   <th className="px-4 py-5 w-[55%]">Estructura</th>
                   <th className="px-3 py-5 text-right text-blue-300">Saldo USD</th>
-                  <th className="px-3 py-5 text-right text-amber-300 hidden sm:table-cell">Equiv. Bs. <span className="text-slate-500 font-normal normal-case">(× {tasa})</span></th>
+                  <th className="px-3 py-5 text-right text-amber-300 hidden sm:table-cell">Saldo Bs. <span className="text-slate-400 font-normal normal-case text-[8px]">(archivo · tasa×{tasa})</span></th>
                   <th className="px-3 py-5 text-right">%</th>
                 </tr>
               </thead>
@@ -1212,7 +1312,7 @@ function ReportesFinancierosApp() {
           <h2 className="text-white font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
           {[
             {num:'01',label:hasPlan?`✓ Plan Cuentas (${Object.keys(planCuentas).length} ctas)`:'Plan de Cuentas (.txt)',active:true,accept:'.txt',handler:handleUploadPlan,hasClear:hasPlan},
-            {num:'02',label:'Saldos Iniciales (.xlsx / .txt)',active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>d.month==='Saldos Iniciales')},
+            {num:'02',label:dbData.some(d=>d.month==='Saldos Iniciales')?'✓ Saldos Iniciales Cargados':'Balance General (.txt / .xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>d.month==='Saldos Iniciales')},
             {num:'03',label:loadedMonths.length>0?`✓ Resultados (${loadedMonths.length} mes${loadedMonths.length!==1?'es':''})`:'Estado de Resultados (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt,.csv',handler:handleUploadResultados,multiple:true,hasClear:loadedMonths.length>0},
             {num:'04',label:auxTotal>0?`✓ Auxiliares cargados (${auxTotal} reg.)`:'Auxiliares CxC + CxP (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadAuxiliar,multiple:true,hasClear:hasAuxData},
             {num:'05',label:afCount>0?`✓ Activos Fijos (${afCount} reg.)`:'Activos Fijos (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
