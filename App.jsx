@@ -1642,16 +1642,22 @@ function InversionesView({ onBack, activosFijosData }) {
     if (search.trim()){const q=search.toLowerCase();r=r.filter(x=>x.descripcion.toLowerCase().includes(q)||x.cuenta.toLowerCase().includes(q)||x.sede.toLowerCase().includes(q));}
     return r;
   },[records,search,filterSede,filterRubro,filterFechaAnio]);
+  // Cuentas inválidas: header row mal parseado
+  const INVALID_CUENTAS = new Set(['CUENTA','CUENTA CONTABLE','MOBILIARIO Y EQUIPO','-','']);
+  const filteredValid = useMemo(()=>filtered.filter(r=>{
+    const c=(r.cuenta||'').toUpperCase().trim();
+    return !INVALID_CUENTAS.has(c) && r.costoUSD > 0;
+  }),[filtered]);
   const grupos = useMemo(()=>{
     const m={};
-    filtered.forEach(r=>{const g=r.cuenta&&r.cuenta!=='-'?r.cuenta:'SIN CUENTA';if(!m[g])m[g]=[];m[g].push(r);});
+    filteredValid.forEach(r=>{const g=r.cuenta&&r.cuenta!=='-'?r.cuenta:'SIN CUENTA';if(!m[g])m[g]=[];m[g].push(r);});
     return m;
-  },[filtered]);
+  },[filteredValid]);
   const fmt=v=>new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
-  const totalCosto=filtered.reduce((s,r)=>s+r.costoUSD,0);
-  const totalDepAcum=filtered.reduce((s,r)=>s+getDepAcumActual(r),0);
-  const totalNeto=filtered.reduce((s,r)=>s+getValorNetoActual(r),0);
-  const totalMensual=filtered.reduce((s,r)=>s+r.depreMensual,0);
+  const totalCosto=filteredValid.reduce((s,r)=>s+r.costoUSD,0);
+  const totalDepAcum=filteredValid.reduce((s,r)=>s+getDepAcumActual(r),0);
+  const totalNeto=filteredValid.reduce((s,r)=>s+getValorNetoActual(r),0);
+  const totalMensual=filteredValid.reduce((s,r)=>s+r.depreMensual,0);
 
   if (!records.length) return (
     <div className="min-h-screen bg-[#f1f5f9]">
@@ -1726,8 +1732,8 @@ function InversionesView({ onBack, activosFijosData }) {
         {Object.entries(grupos).map(([cuenta,items])=>{
           const gCosto=items.reduce((s,r)=>s+r.costoUSD,0);
           const gCostoBS=items.reduce((s,r)=>s+r.costoBS,0);
-          const gDepAcum=items.reduce((s,r)=>s+r.depAcum,0);
-          const gNeto=items.reduce((s,r)=>s+r.valorNeto,0);
+          const gDepAcum=items.reduce((s,r)=>s+getDepAcumActual(r),0);
+          const gNeto=items.reduce((s,r)=>s+getValorNetoActual(r),0);
           const gMensual=items.reduce((s,r)=>s+r.depreMensual,0);
           return (
             <div key={cuenta} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200 mb-5">
@@ -1743,66 +1749,72 @@ function InversionesView({ onBack, activosFijosData }) {
                   <div><p className="text-slate-500 font-bold uppercase text-[8px]">Dep/Mes</p><p className="font-mono font-black text-orange-400">{fmt(gMensual)}</p></div>
                 </div>
               </div>
-              <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" style={{minWidth:'1400px'}}>
                   <thead className="bg-slate-50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-200">
                     <tr>
-                      <th className="px-3 py-2.5">Cant · Descripción · Sede</th>
-                      <th className="px-3 py-2.5">Método · F.Adq · V.U.Asig/Trans</th>
-                      <th className="px-3 py-2.5 text-right">Costo USD</th>
-                      <th className="px-3 py-2.5 text-right">Costo Bs. (hist.)</th>
-                      <th className="px-3 py-2.5 text-right">Dep. Acum USD</th>
-                      <th className="px-3 py-2.5 text-right">Valor Neto</th>
-                      <th className="px-3 py-2.5 text-right">Dep/Mes</th>
-                      <th className="px-3 py-2.5 text-center">Tasa</th>
+                      <th className="px-3 py-3 w-10 text-center">Cant</th>
+                      <th className="px-3 py-3 w-52">Mobiliario y Equipo</th>
+                      <th className="px-3 py-3 w-24">Sede</th>
+                      <th className="px-3 py-3 w-40">Cuenta</th>
+                      <th className="px-3 py-3 w-24">Depreciación</th>
+                      <th className="px-3 py-3 w-24 text-right">Dep. Acum</th>
+                      <th className="px-3 py-3 w-22">F. Adquisición</th>
+                      <th className="px-3 py-3 w-16 text-center">V.U. Asig</th>
+                      <th className="px-3 py-3 w-16 text-center">V.U. Trans</th>
+                      <th className="px-3 py-3 w-28 text-right">Costo Adq. USD</th>
+                      <th className="px-3 py-3 w-28 text-right">Costo Adq. Bs.</th>
+                      <th className="px-3 py-3 w-28 text-right">Dep. Acum USD</th>
+                      <th className="px-3 py-3 w-28 text-right">Valor Neto</th>
+                      <th className="px-3 py-3 w-24 text-right">Dep. Mensual</th>
+                      <th className="px-3 py-3 w-14 text-center">Tasa</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((a,i)=>(
-                      <tr key={i} className="border-b border-slate-100 hover:bg-orange-50/30 transition-colors align-top">
-                        <td className="px-3 py-2">
-                          <div className="flex gap-1.5 items-start">
-                            <span className="text-[10px] font-mono text-slate-400 flex-shrink-0">{a.cant}×</span>
-                            <div>
-                              <p className="text-[11px] font-bold text-slate-800 leading-tight">{a.descripcion}</p>
-                              <p className="text-[9px] text-slate-400 mt-0.5">{a.sede} · <span className="font-mono text-slate-500">{a.cuenta}</span></p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <p className="text-[10px] text-slate-500 font-bold">{a.depreciacion}</p>
-                          <p className="text-[9px] font-mono text-slate-400 mt-0.5">{a.fechaAdq} · {a.vidaUtilAsig}/{a.vidaUtilTrans} m</p>
-                          <p className="text-[9px] text-slate-400 mt-0.5 truncate" title={getRubro(a)}><span className="bg-slate-100 rounded px-1 font-bold">{getRubro(a)}</span></p>
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-700 whitespace-nowrap">{fmt(a.costoUSD)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-500 whitespace-nowrap">{fmt(a.costoBS)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-red-500 whitespace-nowrap">({fmt(getDepAcumActual(a))})</td>
-                        <td className="px-3 py-2 text-right font-mono text-[12px] font-black text-orange-600 whitespace-nowrap">{fmt(getValorNetoActual(a))}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[11px] text-emerald-600 whitespace-nowrap">{fmt(a.depreMensual)}</td>
-                        <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">{a.tasa}</td>
+                      <tr key={i} className="border-b border-slate-100 hover:bg-orange-50/40 transition-colors">
+                        <td className="px-3 py-2.5 text-[11px] font-mono text-center text-slate-500">{a.cant}</td>
+                        <td className="px-3 py-2.5 text-[11px] font-bold text-slate-800 max-w-[208px] truncate" title={a.descripcion}>{a.descripcion}</td>
+                        <td className="px-3 py-2.5 text-[10px] text-slate-500 truncate">{a.sede}</td>
+                        <td className="px-3 py-2.5 text-[10px] font-bold text-slate-600 truncate max-w-[160px]" title={a.cuenta}>{a.cuenta}</td>
+                        <td className="px-3 py-2.5 text-[10px] text-slate-500 truncate">{a.depreciacion}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-slate-500 whitespace-nowrap">{a.depreciacionAcum ? `(${fmt(a.depreciacionAcum)})` : '-'}</td>
+                        <td className="px-3 py-2.5 text-[11px] font-mono text-slate-500 whitespace-nowrap">{a.fechaAdq}</td>
+                        <td className="px-3 py-2.5 text-center text-[11px] font-mono text-slate-400">{a.vidaUtilAsig}</td>
+                        <td className="px-3 py-2.5 text-center text-[11px] font-mono text-slate-400">{a.vidaUtilTrans}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-slate-700 whitespace-nowrap">{fmt(a.costoUSD)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-slate-500 whitespace-nowrap">{fmt(a.costoBS)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-red-500 whitespace-nowrap">({fmt(getDepAcumActual(a))})</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[12px] font-black text-orange-600 whitespace-nowrap">{fmt(getValorNetoActual(a))}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-emerald-600 whitespace-nowrap">{fmt(a.depreMensual)}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">{a.tasa}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-slate-100 font-black text-[10px] border-t-2 border-slate-300">
-                      <td colSpan={2} className="px-3 py-2.5 text-slate-700 uppercase tracking-wider">Subtotal {cuenta}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-slate-800">{fmt(gCosto)}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-slate-600">{fmt(gCostoBS)}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-red-600">({fmt(items.reduce((s,r)=>s+getDepAcumActual(r),0))})</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-orange-700">{fmt(items.reduce((s,r)=>s+getValorNetoActual(r),0))}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-emerald-600">{fmt(gMensual)}</td>
+                    <tr className="bg-[#111111] text-white font-black text-[10px] border-t-2 border-orange-500">
+                      <td colSpan={5} className="px-3 py-3 uppercase tracking-wider text-orange-400">Subtotal {cuenta}</td>
+                      <td/>
+                      <td colSpan={3}/>
+                      <td className="px-3 py-3 text-right font-mono">{fmt(gCosto)}</td>
+                      <td className="px-3 py-3 text-right font-mono text-slate-400">{fmt(gCostoBS)}</td>
+                      <td className="px-3 py-3 text-right font-mono text-red-400">({fmt(items.reduce((s,r)=>s+getDepAcumActual(r),0))})</td>
+                      <td className="px-3 py-3 text-right font-mono text-orange-400">{fmt(items.reduce((s,r)=>s+getValorNetoActual(r),0))}</td>
+                      <td className="px-3 py-3 text-right font-mono text-emerald-400">{fmt(gMensual)}</td>
                       <td/>
                     </tr>
                   </tfoot>
                 </table>
+              </div>
             </div>
           );
         })}
 
         <div className="bg-[#111111] rounded-2xl p-6 flex flex-wrap justify-between items-center gap-4 border-2 border-orange-500 shadow-xl">
-          <span className="text-white font-black uppercase tracking-widest text-sm">TOTAL ACTIVOS FIJOS — {filtered.length} activos</span>
+          <span className="text-white font-black uppercase tracking-widest text-sm">TOTAL ACTIVOS FIJOS — {filteredValid.length} activos</span>
           <div className="flex gap-8 text-right flex-wrap">
             <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo USD</p><p className="font-mono font-black text-lg text-white">{fmt(totalCosto)}</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo Bs.</p><p className="font-mono font-black text-lg text-slate-300">{fmt(filtered.reduce((s,r)=>s+r.costoBS,0))}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo Bs.</p><p className="font-mono font-black text-lg text-slate-300">{fmt(filteredValid.reduce((s,r)=>s+r.costoBS,0))}</p></div>
             <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep. Acum</p><p className="font-mono font-black text-lg text-red-400">({fmt(totalDepAcum)})</p></div>
             <div><p className="text-[8px] text-slate-400 font-bold uppercase">Valor Neto</p><p className="font-mono font-black text-lg text-orange-400">{fmt(totalNeto)}</p></div>
             <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep/Mes</p><p className="font-mono font-black text-lg text-emerald-400">{fmt(totalMensual)}</p></div>
