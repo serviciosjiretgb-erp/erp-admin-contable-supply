@@ -161,16 +161,22 @@ const processSaldosBalance = async (file, planCuentas) => {
       const isAccount = /^\d[\d\.]{4,}/.test(name);
 
       if (isAccount && (usdVal !== null || bsVal !== null)) {
+        // Only include if we have a valid path (not empty)
+        const path = pathStack.map(p => p.trim()).filter(Boolean).join('>');
+        if (!path) continue; // skip orphan accounts with no path context
         balanceData.push({
           month: 'Saldos Iniciales',
-          path: pathStack.map(p => p.trim()).join('>'),
+          path,
           name: name.trim(),
           usd: usdVal ?? 0,
           bs:  bsVal  ?? 0,
         });
       } else if (!isAccount) {
-        // Section header → push to pathStack (ignore total rows already handled)
-        pathStack.push(name.trim());
+        // Section header → push to pathStack, but skip duplicate consecutive names
+        const topName = pathStack.length ? pathStack[pathStack.length-1].toUpperCase() : '';
+        if (name.toUpperCase() !== topName) {
+          pathStack.push(name.trim());
+        }
       }
     }
     return balanceData;
@@ -508,14 +514,13 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
     if (isSubItem) {
       return (
         <tr className="border-b border-slate-100 bg-slate-50/80 hover:bg-slate-100 transition-colors">
-          <td style={{ paddingLeft: `${level * 18 + 32}px` }} className="py-2 px-3 text-[10.5px] text-slate-500 flex items-center gap-2">
-            <CornerDownRight size={12} className="text-slate-300 flex-shrink-0" />
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0"/>
-            <span className="truncate max-w-[380px] font-medium">{node.n}</span>
+          <td style={{ paddingLeft: `${level * 18 + 28}px` }} className="py-1.5 px-3 text-[10px] text-slate-500 flex items-center gap-2">
+            <span className="w-1 h-1 rounded-full bg-slate-300 flex-shrink-0"/>
+            <span className="truncate max-w-[420px] italic">{node.n}</span>
           </td>
-          <td className="py-2 px-3 text-right font-mono text-[10.5px] text-slate-500">{fmtCur(Math.abs(node.u))}</td>
-          <td className="py-2 px-3 text-right font-mono text-[10.5px] text-slate-500 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>
-          <td className="py-2 px-3 text-right font-mono text-[10px] text-slate-400">{pct}</td>
+          <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-500">{fmtCur(Math.abs(node.u))}</td>
+          <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-400 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>
+          <td className="py-1.5 px-3 text-right font-mono text-[9px] text-slate-400">{pct}</td>
         </tr>
       );
     }
@@ -684,8 +689,8 @@ function EstadoResultadoView({ onBack, dbData }) {
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9]">
-      <header className="bg-white border-b-2 border-orange-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-4">
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      <header className="bg-white border-b-2 border-orange-400 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button>
           <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4">
@@ -702,7 +707,7 @@ function EstadoResultadoView({ onBack, dbData }) {
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-8 border-orange-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+        <div className="bg-white px-8 py-10 border-t-4 border-orange-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
           <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
           <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Estado de Resultado {selectedMonth === 'General' ? 'Acumulado' : selectedMonth}</h2>
         </div>
@@ -770,8 +775,8 @@ function AnalisisComparativoView({ onBack, dbData }) {
   const varAbsTotal = total_m1 - total_m2;
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9]">
-      <header className="bg-white border-b-2 border-indigo-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-3">
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      <header className="bg-white border-b-2 border-indigo-400 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-3">
         <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-indigo-600"><ArrowLeft size={16}/> Volver al Panel</button>
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Base:</span>
@@ -781,7 +786,7 @@ function AnalisisComparativoView({ onBack, dbData }) {
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-8 border-indigo-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+        <div className="bg-white px-8 py-10 border-t-4 border-indigo-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
           <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
           <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest mb-2">Análisis Comparativo</h2>
           <p className="font-black uppercase bg-slate-800 text-white px-5 py-2 rounded-full text-[10px]">{month1} vs {month2}</p>
@@ -902,62 +907,55 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
 
     const compute = (nodes) => { let u=0,b=0; nodes.forEach(n=>{if(!n.isLeaf){const t=compute(n.c);n.u=t.u;n.b=t.b;}u+=n.u;b+=n.b;}); return {u,b}; };
 
+    // Para 'Saldos Iniciales' el TXT ya tiene toda la estructura — NO inyectar
+    // Solo inyectar CxC/CxP/AF cuando se trabaja con meses de Estado de Resultados
+    const isSaldosIniciales = selectedMonth === 'Saldos Iniciales';
     const auxEntries = [];
-    // CxC / CxP desde auxiliares
-    Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
-      const records = auxDataConfig?.[info.type] || [];
-      const total = records.reduce((s,r) => s + r.monto, 0);
-      if (total === 0) return;
-      const isCxC = info.type.startsWith('cxc');
-      auxEntries.push({ name: `${code}-${info.label}`, path: isCxC ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR', usd: total, bs: total * tasa });
-    });
 
-    // Activos Fijos — valores en Bs HISTÓRICOS, inmunes a tasa del día
-    if (activosFijosData?.records?.length) {
-      const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
-      const costoMap = {};
-      const depAccMap = {};
-      activosFijosData.records.forEach(r => {
-        const assetCta = r.cuenta && r.cuenta !== '-' ? r.cuenta : 'ACTIVOS FIJOS';
-        if (!costoMap[assetCta]) costoMap[assetCta] = { usd: 0, bs: 0 };
-        costoMap[assetCta].usd += r.costoUSD;
-        costoMap[assetCta].bs  += r.costoBS; // Bs histórico — no cambia con tasa
+    if (!isSaldosIniciales) {
+      // CxC / CxP desde auxiliares (solo para meses de resultados)
+      Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
+        const records = auxDataConfig?.[info.type] || [];
+        const total = records.reduce((s,r) => s + r.monto, 0);
+        if (total === 0) return;
+        const isCxC = info.type.startsWith('cxc');
+        auxEntries.push({ name: `${code}-${info.label}`, path: isCxC ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR', usd: total, bs: total * tasa });
+      });
 
-        const ctaUp = assetCta.toUpperCase();
-        let depCta = 'DEP. ACUMULADA ACTIVOS FIJOS';
-        for (const [kw, ccode] of Object.entries(DEP_ACUM_ACCOUNT_MAP)) {
-          if (ctaUp.includes(kw)) { depCta = ccode; break; }
-        }
-        const depActualUSD = r.depAcum + (extraM * r.depreMensual);
-        // Tasa histórica del activo para calcular Bs de depreciación
-        const tasaHist = r.tasa || (r.costoUSD ? r.costoBS / r.costoUSD : 1);
-        const depActualBS = depActualUSD * tasaHist;
-        if (!depAccMap[depCta]) depAccMap[depCta] = { usd: 0, bs: 0 };
-        depAccMap[depCta].usd += depActualUSD;
-        depAccMap[depCta].bs  += depActualBS;
-      });
-      Object.entries(costoMap).forEach(([cta, v]) => {
-        if (v.usd !== 0) auxEntries.push({ name: cta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS', usd: v.usd, bs: v.bs });
-      });
-      Object.entries(depAccMap).forEach(([depCta, vals]) => {
-        if (vals.usd !== 0) auxEntries.push({ name: depCta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS', usd: -vals.usd, bs: -vals.bs });
+      // Activos Fijos (solo para meses de resultados)
+      if (activosFijosData?.records?.length) {
+        const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
+        const costoMap = {}; const depAccMap = {};
+        activosFijosData.records.forEach(r => {
+          const assetCta = r.cuenta && r.cuenta !== '-' ? r.cuenta : 'ACTIVOS FIJOS';
+          if (!costoMap[assetCta]) costoMap[assetCta] = { usd: 0, bs: 0 };
+          costoMap[assetCta].usd += r.costoUSD; costoMap[assetCta].bs += r.costoBS;
+          const ctaUp = assetCta.toUpperCase();
+          let depCta = 'DEP. ACUMULADA ACTIVOS FIJOS';
+          for (const [kw, ccode] of Object.entries(DEP_ACUM_ACCOUNT_MAP)) { if (ctaUp.includes(kw)) { depCta = ccode; break; } }
+          const depActual = r.depAcum + (extraM * r.depreMensual);
+          const tasaHist = r.tasa || (r.costoUSD ? r.costoBS / r.costoUSD : 1);
+          if (!depAccMap[depCta]) depAccMap[depCta] = { usd: 0, bs: 0 };
+          depAccMap[depCta].usd += depActual; depAccMap[depCta].bs += depActual * tasaHist;
+        });
+        Object.entries(costoMap).forEach(([cta, v]) => { if (v.usd !== 0) auxEntries.push({ name: cta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS', usd: v.usd, bs: v.bs }); });
+        Object.entries(depAccMap).forEach(([depCta, vals]) => { if (vals.usd !== 0) auxEntries.push({ name: depCta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS', usd: -vals.usd, bs: -vals.bs }); });
+      }
+
+      auxEntries.forEach(item => {
+        const pathArray = item.path.split('>'); let cur = root;
+        pathArray.forEach(folderName => {
+          const key = normKey(folderName);
+          let folder = cur.find(n => normKey(n.n) === key);
+          if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+          cur = folder.c;
+        });
+        const leafKey = normKey(item.name);
+        const existIdx = cur.findIndex(n => normKey(n.n) === leafKey && n.isLeaf);
+        if (existIdx !== -1) cur.splice(existIdx, 1);
+        cur.push({ n: item.name.trim(), u: item.usd, b: item.bs, isLeaf: true });
       });
     }
-
-    auxEntries.forEach(item => {
-      const pathArray = item.path.split('>');
-      let cur = root;
-      pathArray.forEach(folderName => {
-        const key = normKey(folderName);
-        let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
-        cur = folder.c;
-      });
-      const leafKey = normKey(item.name);
-      const existIdx = cur.findIndex(n => normKey(n.n) === leafKey && n.isLeaf);
-      if (existIdx !== -1) cur.splice(existIdx, 1);
-      cur.push({ n: item.name.trim(), u: item.usd, b: item.bs, isLeaf: true });
-    });
 
     compute(root);
     const sectionOrder = (name) => { const n=name.toUpperCase(); if(n.includes('ACTIVO')||n.startsWith('1'))return 1; if(n.includes('PASIVO')||n.startsWith('2'))return 2; if(n.includes('PATRIMONIO')||n.startsWith('3'))return 3; return 9; };
@@ -975,8 +973,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
   if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={auxDataConfig} />;
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9]">
-      <header className="bg-white border-b-2 border-blue-500 p-4 flex justify-between items-center sticky top-0 z-30 shadow-md flex-wrap gap-2">
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      <header className="bg-white border-b-2 border-blue-400 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-2">
         <div className="flex items-center gap-4 flex-wrap">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-blue-600"><ArrowLeft size={16}/> Salir al Panel</button>
           {availableMonths.length > 0 && (
@@ -998,7 +996,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-8 border-blue-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+        <div className="bg-white px-8 py-10 border-t-4 border-blue-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
           <h1 className="text-3xl font-black text-slate-900 uppercase mb-2 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
           <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Balance de Situación Financiera</h2>
           <p className="text-blue-600 font-black uppercase bg-blue-50 px-5 py-2 rounded-full text-[10px] border border-blue-100">{selectedMonth ? `Corte: ${selectedMonth}` : 'Sin datos'}</p>
@@ -1090,15 +1088,15 @@ function InversionesView({ onBack, activosFijosData }) {
   const totalMensualBs=filteredValid.reduce((s,r)=>s+getDepMensualBs(r),0);
 
   if (!records.length) return (
-    <div className="min-h-screen bg-[#f1f5f9]">
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
       <header className="bg-white border-b-2 border-orange-500 p-4"><button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button></header>
       <div className="max-w-xl mx-auto mt-24 text-center p-8"><Landmark size={48} className="text-orange-300 mx-auto mb-4"/><h2 className="text-xl font-black text-slate-700 uppercase mb-2">Sin datos de Activos Fijos</h2><p className="text-slate-400 text-sm font-bold">Ve a <span className="text-orange-500">Configuración → 05</span> y carga tu auxiliar Excel.</p></div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9]">
-      <header className="bg-white border-b-2 border-orange-500 p-4 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-30 shadow-md">
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      <header className="bg-white border-b border-slate-200 px-4 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button>
           <span className="font-black text-xs text-slate-700 uppercase tracking-widest flex items-center gap-2"><Landmark size={14} className="text-orange-500"/> Activos Fijos (Bs)</span>
@@ -1120,7 +1118,7 @@ function InversionesView({ onBack, activosFijosData }) {
       </header>
 
       <main className="p-4 md:p-8 max-w-[1600px] mx-auto pb-16">
-        <div className="bg-white px-8 py-8 border-t-8 border-orange-500 shadow-xl flex flex-col items-center text-center mb-6 rounded-b-2xl">
+        <div className="bg-white px-8 py-8 border-t-4 border-orange-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
           <h1 className="text-2xl font-black text-slate-900 uppercase mb-1 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
           <div className="w-16 h-1 bg-orange-500 mb-4 rounded-full"/>
           <h2 className="text-lg font-black text-slate-800 uppercase tracking-widest mb-2">Registro de Activos Fijos</h2>
@@ -1135,85 +1133,68 @@ function InversionesView({ onBack, activosFijosData }) {
           </div>
         </div>
 
-        {Object.entries(grupos).map(([cuenta,items])=>{
-          const gCostoUSD=items.reduce((s,r)=>s+r.costoUSD,0);
-          const gCostoBS=items.reduce((s,r)=>s+r.costoBS,0);
-          const gDepAcumBs=items.reduce((s,r)=>s+getDepAcumActualBs(r),0);
-          const gNetoBs=items.reduce((s,r)=>s+getValorNetoActualBs(r),0);
-          const gMensualBs=items.reduce((s,r)=>s+getDepMensualBs(r),0);
-          return (
-            <div key={cuenta} className="bg-white rounded-xl shadow-md overflow-hidden border border-slate-200 mb-4">
-              <div className="bg-slate-800 px-4 py-2.5 flex flex-wrap justify-between items-center gap-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"/>
-                  <span className="text-orange-300 font-black text-[11px] tracking-wide truncate">{cuenta}</span>
-                  <span className="text-slate-500 text-[10px]">· {items.length} activo{items.length!==1?'s':''}</span>
-                </div>
-                <div className="flex gap-4 text-right text-[10px] flex-shrink-0">
-                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Costo USD</p><p className="font-mono font-black text-blue-400">USD {fmt(gCostoUSD)}</p></div>
-                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Costo Bs</p><p className="font-mono font-black text-white">Bs {fmt(gCostoBS)}</p></div>
-                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Dep.Acum Bs</p><p className="font-mono font-black text-red-400">(Bs {fmt(gDepAcumBs)})</p></div>
-                  <div><p className="text-slate-500 text-[8px] uppercase font-bold">Val.Neto Bs</p><p className="font-mono font-black text-emerald-400">Bs {fmt(gNetoBs)}</p></div>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse" style={{minWidth:'1600px'}}>
-                  <thead>
-                    <tr className="bg-slate-50 border-b-2 border-slate-200 text-[8px] uppercase font-black">
-                      <th className="px-2 py-2 text-center text-slate-500 w-8">Cant</th>
-                      <th className="px-2 py-2 text-slate-700 w-44">Descripción</th>
-                      <th className="px-2 py-2 text-center text-slate-500 w-10">Sede</th>
-                      <th className="px-2 py-2 text-slate-500 w-44">Cuenta</th>
-                      <th className="px-2 py-2 text-violet-500 w-40">Depreciación (Gasto)</th>
-                      <th className="px-2 py-2 text-indigo-500 w-44">Dep. Acum (Cuenta)</th>
-                      <th className="px-2 py-2 text-slate-500 w-20">F. Adq.</th>
-                      <th className="px-2 py-2 text-center text-slate-500 w-12">V.U. Asig</th>
-                      <th className="px-2 py-2 text-center text-slate-500 w-12">V.U. Trans</th>
-                      <th className="px-2 py-2 text-right text-blue-600 w-28 bg-blue-50">Costo Adq. USD</th>
-                      <th className="px-2 py-2 text-right text-slate-600 w-28 bg-slate-100">Costo Adq. Bs.</th>
-                      <th className="px-2 py-2 text-right text-red-500 w-28 bg-red-50">DEP.ACUM Bs.</th>
-                      <th className="px-2 py-2 text-right text-orange-600 w-28 bg-orange-50">Val. Neto Bs.</th>
-                      <th className="px-2 py-2 text-right text-emerald-600 w-24 bg-emerald-50">Dep. Mensual Bs.</th>
-                      <th className="px-2 py-2 text-right text-slate-400 w-14">Tasa</th>
+        {/* Tabla panorámica única — vista completa sin agrupación */}
+        {filteredValid.length === 0 ? (
+          <div className="bg-white rounded-xl p-12 text-center border border-slate-200 shadow-sm">
+            <Landmark size={40} className="text-slate-300 mx-auto mb-3"/>
+            <p className="text-slate-400 font-black text-xs uppercase">Sin activos que coincidan con los filtros</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-md overflow-hidden border border-slate-200 mb-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse" style={{minWidth:'1200px'}}>
+                <thead>
+                  <tr className="bg-slate-800 text-[8px] uppercase font-black border-b-2 border-orange-400">
+                    <th className="px-2 py-2.5 text-center text-slate-400 w-8">Cant</th>
+                    <th className="px-2 py-2.5 text-slate-200 w-52">Descripción</th>
+                    <th className="px-2 py-2.5 text-center text-slate-400 w-10">Sede</th>
+                    <th className="px-2 py-2.5 text-slate-400 w-28">F. Adq.</th>
+                    <th className="px-2 py-2.5 text-center text-slate-400 w-14">V.U. Asig</th>
+                    <th className="px-2 py-2.5 text-center text-slate-400 w-14">V.U. Trans</th>
+                    <th className="px-2 py-2.5 text-right text-blue-300 w-28 bg-blue-900/30">Costo Adq. USD</th>
+                    <th className="px-2 py-2.5 text-right text-slate-300 w-28 bg-slate-700/40">Costo Adq. Bs.</th>
+                    <th className="px-2 py-2.5 text-right text-red-300 w-28 bg-red-900/20">DEP.ACUM Bs.</th>
+                    <th className="px-2 py-2.5 text-right text-orange-300 w-28 bg-orange-900/20">Val. Neto Bs.</th>
+                    <th className="px-2 py-2.5 text-right text-emerald-300 w-24 bg-emerald-900/20">Dep. Mensual Bs.</th>
+                    <th className="px-2 py-2.5 text-right text-slate-400 w-14">Tasa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredValid.map((a,i)=>(
+                    <tr key={i} className={`border-b border-slate-100 hover:bg-orange-50/20 transition-colors ${i%2===0?'bg-white':'bg-slate-50/40'}`}>
+                      <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.cant}</td>
+                      <td className="px-2 py-1.5 font-bold text-[10px] text-slate-800 max-w-[208px] truncate" title={a.descripcion}>{a.descripcion}</td>
+                      <td className="px-2 py-1.5 text-center text-[10px] font-bold text-slate-500">{a.sede}</td>
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{a.fechaAdq||'-'}</td>
+                      <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilAsig||'-'}</td>
+                      <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/50 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">Bs. {fmt(getDepAcumActualBs(a))}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">Bs. {fmt(getValorNetoActualBs(a))}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">Bs. {fmt(getDepMensualBs(a))}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">{(a.tasa||0).toFixed(2)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((a,i)=>(
-                      <tr key={i} className={`border-b border-slate-100 hover:bg-orange-50/20 transition-colors ${i%2===0?'bg-white':'bg-slate-50/40'}`}>
-                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.cant}</td>
-                        <td className="px-2 py-1.5 font-bold text-[10px] text-slate-800 max-w-[176px] truncate" title={a.descripcion}>{a.descripcion}</td>
-                        <td className="px-2 py-1.5 text-center text-[10px] text-slate-500 font-bold">{a.sede}</td>
-                        <td className="px-2 py-1.5 font-mono text-[9px] text-slate-600 truncate max-w-[176px]" title={a.cuenta}>{a.cuenta||'-'}</td>
-                        <td className="px-2 py-1.5 font-mono text-[9px] text-violet-500 truncate max-w-[160px]" title={a.depreciacion}>{a.depreciacion||'-'}</td>
-                        <td className="px-2 py-1.5 font-mono text-[9px] text-indigo-400 truncate max-w-[176px]" title={a.depreciacionAcum}>{a.depreciacionAcum||'-'}</td>
-                        <td className="px-2 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">{a.fechaAdq||'-'}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilAsig||'-'}</td>
-                        <td className="px-2 py-1.5 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/40 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">Bs. {fmt(getDepAcumActualBs(a))}</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">Bs. {fmt(getValorNetoActualBs(a))}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">Bs. {fmt(getDepMensualBs(a))}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">{(a.tasa||0).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-800 text-white font-black text-[9px] border-t-2 border-orange-500">
-                      <td colSpan={9} className="px-3 py-2 text-orange-300 uppercase tracking-widest">Subtotal {cuenta}</td>
-                      <td className="px-2 py-2 text-right font-mono text-blue-300 whitespace-nowrap">USD {fmt(gCostoUSD)}</td>
-                      <td className="px-2 py-2 text-right font-mono whitespace-nowrap">Bs. {fmt(gCostoBS)}</td>
-                      <td className="px-2 py-2 text-right font-mono text-red-300 whitespace-nowrap">Bs. {fmt(gDepAcumBs)}</td>
-                      <td className="px-2 py-2 text-right font-mono text-orange-300 whitespace-nowrap">Bs. {fmt(gNetoBs)}</td>
-                      <td className="px-2 py-2 text-right font-mono text-emerald-300 whitespace-nowrap">Bs. {fmt(gMensualBs)}</td>
-                      <td/>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-800 text-white font-black text-[9px] border-t-2 border-orange-400">
+                    <td colSpan={6} className="px-3 py-2.5 text-orange-300 uppercase tracking-widest">
+                      TOTAL — {filteredValid.length} activos{extraMeses>0?` · Corte ${mesCorte} (+${extraMeses} mes${extraMeses>1?'es':''})`:` · Corte ${mesCorte}`}
+                    </td>
+                    <td className="px-2 py-2.5 text-right font-mono text-blue-300 whitespace-nowrap">USD {fmt(filteredValid.reduce((s,r)=>s+r.costoUSD,0))}</td>
+                    <td className="px-2 py-2.5 text-right font-mono whitespace-nowrap">Bs. {fmt(totalCostoBs)}</td>
+                    <td className="px-2 py-2.5 text-right font-mono text-red-300 whitespace-nowrap">Bs. {fmt(totalDepAcumBs)}</td>
+                    <td className="px-2 py-2.5 text-right font-mono text-orange-300 whitespace-nowrap">Bs. {fmt(totalNetoBs)}</td>
+                    <td className="px-2 py-2.5 text-right font-mono text-emerald-300 whitespace-nowrap">Bs. {fmt(totalMensualBs)}</td>
+                    <td/>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
-          );
-        })}
+          </div>
+        )}
+
 
         <div className="bg-[#111111] rounded-2xl p-6 flex flex-wrap justify-between items-center gap-4 border-2 border-orange-500 shadow-xl">
           <span className="text-white font-black uppercase tracking-widest text-sm">TOTAL ACTIVOS FIJOS — {filteredValid.length} activos</span>
