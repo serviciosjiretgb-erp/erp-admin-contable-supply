@@ -1407,6 +1407,30 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
             <FileSpreadsheet size={13}/> Excel
           </button>
+          <button onClick={() => {
+            const fmtR = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+            const pct = (varAbs, base) => base !== 0 ? (Math.abs(varAbs) / Math.abs(base) * 100).toFixed(2) + '%' : '—';
+            const cols = `<th>Estructura</th><th style="text-align:right">${month1}</th><th style="text-align:right">${month2}</th><th style="text-align:right">Var. Absoluta</th><th style="text-align:right">Var. %</th>`;
+            let rowsHtml = '';
+            tree.forEach(cat => {
+              const sortedAccounts = [...cat.c].sort((a,b) => String(a.n).localeCompare(String(b.n)));
+              const catVarAbs = cat.m2_u - cat.m1_u;
+              rowsHtml += `<tr class="section"><td colspan="5" style="text-align:left;">${cat.n}</td></tr>`;
+              sortedAccounts.forEach(acc => {
+                const varAbs = acc.m2_u - acc.m1_u;
+                rowsHtml += `<tr><td style="text-align:left;padding-left:15px;">${acc.n}</td><td style="text-align:right">${fmtR(acc.m1_u)}</td><td style="text-align:right">${fmtR(acc.m2_u)}</td><td style="text-align:right">${fmtR(varAbs)}</td><td style="text-align:right">${pct(varAbs,acc.m1_u)}</td></tr>`;
+              });
+              rowsHtml += `<tr class="total"><td style="text-align:left;padding-left:15px;">TOTAL ${cat.n}</td><td style="text-align:right">${fmtR(cat.m1_u)}</td><td style="text-align:right">${fmtR(cat.m2_u)}</td><td style="text-align:right">${fmtR(catVarAbs)}</td><td style="text-align:right">${pct(catVarAbs,cat.m1_u)}</td></tr>`;
+            });
+            const varAbsTotal = total_m2 - total_m1;
+            printReport(
+              `<h1>Análisis Comparativo de Variaciones</h1><h2>${month1} vs ${month2}</h2>`,
+              `<table><thead><tr>${cols}</tr></thead><tbody>${rowsHtml}<tr class="grand-total"><td style="text-align:left;">RESULTADO DEL EJERCICIO</td><td style="text-align:right">${fmtR(total_m1)}</td><td style="text-align:right">${fmtR(total_m2)}</td><td style="text-align:right">${fmtR(varAbsTotal)}</td><td style="text-align:right">${pct(varAbsTotal,total_m1)}</td></tr></tbody></table>`
+            );
+          }}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileText size={13}/> PDF
+          </button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
@@ -1653,7 +1677,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       let usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
       let bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
 
-      const isContraAccount = /DEP.*ACUM|ACUMULAD/i.test(item.name) || /P[EÉ]RDIDA/i.test(item.name);
+      // CORRECCIÓN: Forzar negativo SOLO en depreciaciones, ignorando "(UTILIDAD) PÉRDIDA ACUMULADA"
+      const isContraAccount = /DEP.*ACUM/i.test(item.name);
 
       if (isContraAccount) {
         usdV = -Math.abs(usdV);
