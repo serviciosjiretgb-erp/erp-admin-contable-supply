@@ -1597,7 +1597,7 @@ const AF_CATEGORY_MAP_BY_CODE = {
   '1.1.06.01.018': 'PLANTA ELÉCTRICA',
 };
 
-function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData }) {
+function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConfig, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
   const availableMonths = useMemo(() => {
     const balanceRecords = dbData.filter(item =>
       item.path.toUpperCase().includes('ACTIVO') ||
@@ -1606,7 +1606,6 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       /^[123]/.test(item.name)
     );
     const months = [...new Set(balanceRecords.map(d => d.month))];
-    // Ensure 'Saldos Iniciales' always appears first if present
     const siIdx = months.indexOf('Saldos Iniciales');
     if (siIdx > 0) { months.splice(siIdx, 1); months.unshift('Saldos Iniciales'); }
     return months;
@@ -1615,11 +1614,18 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
   const [activeCode, setActiveCode] = useState(null);
-  const [tasa, setTasa] = useState(90);
+  // Tasa por mes: se carga automáticamente al cambiar de mes y se guarda al editar
+  const [tasa, setTasaLocal] = useState(() => tasaByMonth[availableMonths[availableMonths.length-1] || ''] || 90);
+  const handleTasaChange = (v) => { setTasaLocal(v); if(onSaveTasa && selectedMonth) onSaveTasa(selectedMonth, v); };
+  // Sincronizar tasa al cambiar de mes
+  useEffect(() => { if(selectedMonth) setTasaLocal(tasaByMonth[selectedMonth] || 90); }, [selectedMonth]);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
-  const [currency, setCurrency] = useState('both'); // 'usd' | 'bs' | 'both'
-  // Display-friendly month label: rename "Saldos Iniciales" → "Saldos Abril"
+  const [currency, setCurrency] = useState('both');
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Saldos Abril' : m;
+
+  // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy)
+  const currentAux = (auxByMonth && auxByMonth[selectedMonth]) || auxDataConfig || {};
+  const currentAF  = (afByMonth  && afByMonth[selectedMonth])  || activosFijosData || {records:[]};
 
   const MORD = {'Saldos Iniciales':0,Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
 
@@ -1644,7 +1650,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     };
 
     // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
-    const hasAFAuxiliar = !!(activosFijosData?.records?.length);
+    const hasAFAuxiliar = !!(currentAF?.records?.length);
 
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
@@ -1703,7 +1709,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     {
       // CxC y CxP — totalizar SOLO los registros de la cuenta específica
       Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
-        const allRecords = auxDataConfig?.[info.type] || [];
+        const allRecords = currentAux?.[info.type] || [];
         const forThisCode = allRecords.filter(d => (d.cuentaContable||'').trim().startsWith(code));
 
         const isSharedBucket = Object.values(ACCOUNT_MAPS).filter(m => m.type === info.type).length > 1;
@@ -1722,7 +1728,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       });
 
       // Activos Fijos desde auxiliar de inversiones (siempre, es la fuente autoritativa)
-      if (activosFijosData?.records?.length) {
+      if (currentAF?.records?.length) {
         const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
         const getRubroBalance = (r) => {
           const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
@@ -1749,7 +1755,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
           'PLANTA ELÉCTRICA':       '1.1.06.01.017-DEP. ACUMULADA PLANTA ELÉCTRICA',
         };
         const costoByRubro = {}, depBsByRubro = {};
-        activosFijosData.records.forEach(r => {
+        currentAF.records.forEach(r => {
           const rubro = getRubroBalance(r);
           if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
           costoByRubro[rubro].usd += r.costoUSD || 0;
@@ -1841,7 +1847,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     printReport(`<h1>Balance de Situación Financiera</h1><h2>Corte: ${monthLabel(selectedMonth)} | Tasa: ${tasa} Bs/USD</h2>`, content);
   };
 
-  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={auxDataConfig} />;
+  if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={currentAux} />;
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
@@ -1858,7 +1864,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
           )}
           <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tasa Bs/USD:</span>
-            <input type="number" min="1" step="0.01" value={tasa} onChange={e=>setTasa(parseFloat(e.target.value)||1)} className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs rounded-lg p-1.5 w-24 font-black outline-none"/>
+            <input type="number" min="1" step="0.01" value={tasa} onChange={e=>handleTasaChange(parseFloat(e.target.value)||1)} className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs rounded-lg p-1.5 w-24 font-black outline-none"/>
           </div>
           {/* Currency toggle */}
           <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
@@ -2427,63 +2433,97 @@ function ReportesFinancierosApp() {
   const [view, setView] = useState('dashboard');
   const [dbData, setDbData] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]'); } catch(e){return [];} });
   const [planCuentas, setPlanCuentas] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_plan_cuentas')||'{}'); } catch(e){return {};} });
-  const [auxDataConfig, setAuxDataConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_erp_aux_data')||'{}'); } catch(e){return {};} });
-  const [activosFijosData, setActivosFijosData] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_af_data')||'null'); return s||{records:[]}; } catch(e){return {records:[]};} });
+
+  // ── Tasa de cambio por mes ─────────────────────────────────────────────────
+  const [tasaByMonth, setTasaByMonth] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_tasa_by_month')||'{}'); } catch(e){return {};} });
+  const saveTasa = (mes, valor) => setTasaByMonth(prev => { const n={...prev,[mes]:valor}; localStorage.setItem('jiret_tasa_by_month',JSON.stringify(n)); return n; });
+
+  // ── Auxiliares y Activos Fijos por mes ────────────────────────────────────
+  const [auxByMonth, setAuxByMonth] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_aux_by_month')||'{}'); } catch(e){return {};} });
+  const [afByMonth,  setAfByMonth]  = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_af_by_month') ||'{}'); } catch(e){return {};} });
+  // Mes seleccionado en configuración para cargar auxiliares/AF
+  const [configMes, setConfigMes] = useState(() => {
+    const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    return meses[new Date().getMonth()] || 'Abril';
+  });
 
   useEffect(() => { localStorage.setItem('jiret_erp_db_data', JSON.stringify(dbData)); }, [dbData]);
   useEffect(() => { localStorage.setItem('jiret_plan_cuentas', JSON.stringify(planCuentas)); }, [planCuentas]);
-  useEffect(() => { localStorage.setItem('jiret_erp_aux_data', JSON.stringify(auxDataConfig)); }, [auxDataConfig]);
-  useEffect(() => { localStorage.setItem('jiret_af_data', JSON.stringify(activosFijosData)); }, [activosFijosData]);
+  useEffect(() => { localStorage.setItem('jiret_aux_by_month', JSON.stringify(auxByMonth)); }, [auxByMonth]);
+  useEffect(() => { localStorage.setItem('jiret_af_by_month',  JSON.stringify(afByMonth));  }, [afByMonth]);
 
-  const handleUploadActivosFijos = async (e) => { if (!e.target.files.length) return; try { const d=await processActivosFijosExcel(e.target.files); setActivosFijosData(d); alert(`✅ Activos Fijos: ${d.records.length} registros cargados.`); } catch(err){alert("Error: "+err.message);} e.target.value=''; };
+  // Compatibilidad con datos legacy (migra carga única → carga por mes)
+  const [auxDataConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_erp_aux_data')||'{}'); } catch(e){return {};} });
+  const [activosFijosData] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_af_data')||'null'); return s||{records:[]}; } catch(e){return {records:[]};} });
+
+  const getAuxForMonth = (mes) => auxByMonth[mes] || auxDataConfig || {};
+  const getAfForMonth  = (mes) => afByMonth[mes]  || (activosFijosData?.records?.length ? activosFijosData : {records:[]});
+
   const handleUploadResultados = async (e) => { if (!e.target.files.length) return; try { const newData=await processFiles(e.target.files); setDbData(prev=>{const nm=[...new Set(newData.map(d=>d.month))];return [...prev.filter(d=>!nm.includes(d.month)),...newData];}); alert("✅ Resultados cargados."); } catch(err){alert("Error.");} };
   const handleUploadPlan = async (e) => { if (!e.target.files.length) return; try { const plan=await processPlanCuentas(e.target.files[0]); setPlanCuentas(plan); alert("✅ Plan de cuentas cargado."); } catch(err){alert("Error.");} };
-  const handleUploadSaldos = async (e) => { if (!e.target.files.length) return; try { const d=await processSaldosBalance(e.target.files[0],planCuentas); setDbData(prev=>[...prev,...d]); alert(`✅ Saldos cargados (${d.length} cuentas).`); } catch(err){alert("Error: "+err.message);} e.target.value=''; };
+  const handleUploadSaldos = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const d = await processSaldosBalance(e.target.files[0], planCuentas);
+      const months = [...new Set(d.map(x=>x.month))];
+      // Reemplazar solo los meses que trae el archivo nuevo (no borrar otros)
+      setDbData(prev => [...prev.filter(x => !months.includes(x.month)), ...d]);
+      alert(`✅ Balance cargado: ${months.join(', ')} (${d.length} cuentas)`);
+    } catch(err){alert("Error: "+err.message);} e.target.value='';
+  };
 
-  // ── Auxiliar CxC (solo cuentas por cobrar) ──────────────────────────────────
+  // ── Auxiliar CxC por mes ──────────────────────────────────────────────────
   const handleUploadCxC = async (e) => {
     if (!e.target.files.length) return;
     try {
       const parsed = await processAuxFile(e.target.files);
       const tot = parsed.cxc_general.length + parsed.cxc_zuliana.length;
-      setAuxDataConfig(prev => ({
+      setAuxByMonth(prev => ({
         ...prev,
-        cxc_general: parsed.cxc_general,
-        cxc_zuliana: parsed.cxc_zuliana,
+        [configMes]: { ...getAuxForMonth(configMes), cxc_general: parsed.cxc_general, cxc_zuliana: parsed.cxc_zuliana }
       }));
-      alert(`✅ Auxiliar CxC cargado: ${tot} registros`);
+      alert(`✅ CxC ${configMes}: ${tot} registros`);
     } catch(err){ alert("❌ Error CxC: "+err.message); } e.target.value='';
   };
 
-  // ── Auxiliar CxP (solo cuentas por pagar) ──────────────────────────────────
+  // ── Auxiliar CxP por mes ──────────────────────────────────────────────────
   const handleUploadCxP = async (e) => {
     if (!e.target.files.length) return;
     try {
       const parsed = await processAuxFile(e.target.files);
       const tot = parsed.cxp_autototal.length+parsed.cxp_surepack.length+parsed.cxp_pacomela.length+parsed.cxp_yancarlos.length+parsed.cxp_general.length;
-      setAuxDataConfig(prev => ({
+      setAuxByMonth(prev => ({
         ...prev,
-        cxp_autototal: parsed.cxp_autototal,
-        cxp_surepack:  parsed.cxp_surepack,
-        cxp_pacomela:  parsed.cxp_pacomela,
-        cxp_yancarlos: parsed.cxp_yancarlos,
-        cxp_general:   parsed.cxp_general,
+        [configMes]: { ...getAuxForMonth(configMes), cxp_autototal:parsed.cxp_autototal, cxp_surepack:parsed.cxp_surepack, cxp_pacomela:parsed.cxp_pacomela, cxp_yancarlos:parsed.cxp_yancarlos, cxp_general:parsed.cxp_general }
       }));
-      alert(`✅ Auxiliar CxP cargado: ${tot} registros`);
+      alert(`✅ CxP ${configMes}: ${tot} registros`);
     } catch(err){ alert("❌ Error CxP: "+err.message); } e.target.value='';
   };
 
-  const handleSimulatePDFs = () => { setAuxDataConfig(DEFAULT_AUX_DATA); alert("✅ Datos demo cargados."); };
+  // ── Activos Fijos por mes ─────────────────────────────────────────────────
+  const handleUploadActivosFijos = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const d = await processActivosFijosExcel(e.target.files);
+      setAfByMonth(prev => ({ ...prev, [configMes]: d }));
+      alert(`✅ Activos Fijos ${configMes}: ${d.records.length} registros`);
+    } catch(err){alert("Error: "+err.message);} e.target.value='';
+  };
+
+  const handleSimulatePDFs = () => {
+    setAuxByMonth(prev => ({ ...prev, Abril: DEFAULT_AUX_DATA }));
+    alert("✅ Datos demo cargados para Abril.");
+  };
 
   // Limpiar slot individual
   const clearSlot = (slot) => {
     const msgs = {
       '01': () => { if(window.confirm("¿Limpiar Plan de Cuentas?")) { setPlanCuentas({}); alert("Plan de Cuentas eliminado."); }},
-      '02': () => { if(window.confirm("¿Limpiar Saldos de Balance?")) { setDbData(prev=>prev.filter(d=>!['Saldos Iniciales','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].some(m=>d.month===m&&prev.filter(x=>x.month===m&&x.name.match(/^[123]/)).length>0))); alert("Saldos eliminados."); }},
+      '02': () => { if(window.confirm(`¿Limpiar balance de ${configMes}?`)) { setDbData(prev=>prev.filter(d=>d.month!==configMes||!/^[123]/.test(d.name))); alert(`Balance ${configMes} eliminado.`); }},
       '03': () => { if(window.confirm("¿Limpiar todos los meses de Resultados?")) { setDbData([]); alert("Resultados eliminados."); }},
-      '04': () => { if(window.confirm("¿Limpiar Auxiliar CxC?")) { setAuxDataConfig(prev=>({...prev,cxc_general:[],cxc_zuliana:[]})); alert("CxC eliminado."); }},
-      '05': () => { if(window.confirm("¿Limpiar Auxiliar CxP?")) { setAuxDataConfig(prev=>({...prev,cxp_general:[],cxp_autototal:[],cxp_surepack:[],cxp_pacomela:[],cxp_yancarlos:[]})); alert("CxP eliminado."); }},
-      '06': () => { if(window.confirm("¿Limpiar datos de Activos Fijos?")) { setActivosFijosData({records:[]}); alert("Activos Fijos eliminados."); }},
+      '04': () => { if(window.confirm(`¿Limpiar CxC de ${configMes}?`)) { setAuxByMonth(prev=>{const p={...prev};if(p[configMes]){p[configMes]={...p[configMes],cxc_general:[],cxc_zuliana:[]};}return p;}); alert(`CxC ${configMes} eliminado.`); }},
+      '05': () => { if(window.confirm(`¿Limpiar CxP de ${configMes}?`)) { setAuxByMonth(prev=>{const p={...prev};if(p[configMes]){p[configMes]={...p[configMes],cxp_general:[],cxp_autototal:[],cxp_surepack:[],cxp_pacomela:[],cxp_yancarlos:[]};}return p;}); alert(`CxP ${configMes} eliminado.`); }},
+      '06': () => { if(window.confirm(`¿Limpiar Activos Fijos de ${configMes}?`)) { setAfByMonth(prev=>{const p={...prev};delete p[configMes];return p;}); alert(`Activos Fijos ${configMes} eliminados.`); }},
     };
     msgs[slot] && msgs[slot]();
   };
@@ -2491,11 +2531,14 @@ function ReportesFinancierosApp() {
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
   const hasPlan = Object.keys(planCuentas).length > 0;
-  const cxcTotal = (auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxc_zuliana?.length||0);
-  const cxpTotal = (auxDataConfig?.cxp_general?.length||0)+(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_autototal?.length||0)+(auxDataConfig?.cxp_pacomela?.length||0)+(auxDataConfig?.cxp_yancarlos?.length||0);
-  const hasAuxData = Object.keys(auxDataConfig).length > 0;
+  const cxcTotal = (getAuxForMonth(configMes)?.cxc_general?.length||0)+(getAuxForMonth(configMes)?.cxc_zuliana?.length||0);
+  const cxpTotal = (getAuxForMonth(configMes)?.cxp_general?.length||0)+(getAuxForMonth(configMes)?.cxp_surepack?.length||0)+(getAuxForMonth(configMes)?.cxp_autototal?.length||0)+(getAuxForMonth(configMes)?.cxp_pacomela?.length||0)+(getAuxForMonth(configMes)?.cxp_yancarlos?.length||0);
+  const hasAuxData = Object.keys(auxByMonth).length > 0 || Object.keys(auxDataConfig).length > 0;
   const auxTotal = cxcTotal + cxpTotal;
-  const afCount = activosFijosData?.records?.length || 0;
+  const afCount = getAfForMonth(configMes)?.records?.length || 0;
+  // Resumen total por todos los meses para el dashboard
+  const totalAuxMeses = Object.keys(auxByMonth).length;
+  const totalAfMeses  = Object.keys(afByMonth).length;
 
   // ── Clock (hook declarado antes de cualquier return condicional) ────────────
   const [clock, setClock] = useState('');
@@ -2514,24 +2557,30 @@ function ReportesFinancierosApp() {
     return () => clearInterval(id);
   }, []);
 
-  if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
+  if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={getAfForMonth('General') || activosFijosData}/>;
   if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
-  if (view === 'balance')     return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData}/>;
-  if (view === 'inversiones') return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={activosFijosData} setActivosFijosData={setActivosFijosData}/>;
+  if (view === 'balance')     return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxByMonth={auxByMonth} afByMonth={afByMonth} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData} tasaByMonth={tasaByMonth} onSaveTasa={saveTasa}/>;
+  if (view === 'inversiones') return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={getAfForMonth(configMes)} setActivosFijosData={(d)=>setAfByMonth(prev=>({...prev,[configMes]:d}))}/>;
 
   if (view === 'configuracion') return (
     <div className="min-h-screen bg-[#111111]">
       <header className="px-6 py-4 bg-[#111111] border-b-4 border-orange-500 flex items-center gap-4 shadow-lg">
         <button onClick={()=>setView('dashboard')} className="flex items-center gap-2 text-slate-400 hover:text-white font-black text-xs uppercase"><ArrowLeft size={16}/> Panel</button>
         <h1 className="text-white font-black text-lg tracking-widest uppercase flex items-center gap-2">Configuración <span className="text-orange-500 text-sm">/ Ingesta de Datos</span></h1>
+        <div className="ml-auto flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mes de trabajo:</span>
+          <select value={configMes} onChange={e=>setConfigMes(e.target.value)} className="bg-orange-500/20 border border-orange-500/50 text-orange-300 text-xs font-black rounded-lg px-3 py-1.5 outline-none cursor-pointer">
+            {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m=><option key={m}>{m}</option>)}
+          </select>
+        </div>
       </header>
       <main className="max-w-3xl mx-auto p-8 space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            {label:'Plan de Cuentas',  ok:hasPlan,       val:hasPlan?'Cargado':'Pendiente'},
-            {label:'Meses en Memoria', ok:loadedMonths.length>0, val:loadedMonths.length>0?loadedMonths.join(', '):'Ninguno'},
-            {label:'Auxiliar CxC',     ok:cxcTotal>0,    val:cxcTotal>0?`${cxcTotal} reg.`:'Pendiente'},
-            {label:'Auxiliar CxP',     ok:cxpTotal>0,    val:cxpTotal>0?`${cxpTotal} reg.`:'Pendiente'},
+            {label:'Plan de Cuentas',       ok:hasPlan,        val:hasPlan?'Cargado':'Pendiente'},
+            {label:'Meses en Memoria',       ok:loadedMonths.length>0, val:loadedMonths.length>0?loadedMonths.join(', '):'Ninguno'},
+            {label:`CxC — ${configMes}`,     ok:cxcTotal>0,    val:cxcTotal>0?`${cxcTotal} reg.`:'Pendiente'},
+            {label:`CxP — ${configMes}`,     ok:cxpTotal>0,    val:cxpTotal>0?`${cxpTotal} reg.`:'Pendiente'},
           ].map(s=>(
             <div key={s.label} className={`rounded-2xl p-4 border ${s.ok?'bg-emerald-950/40 border-emerald-700':'bg-[#1a1a1a] border-slate-700'}`}>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{s.label}</p>
@@ -2540,14 +2589,28 @@ function ReportesFinancierosApp() {
           ))}
         </div>
         <div className="bg-[#1a1a1a] rounded-3xl p-8 border border-slate-700 space-y-4">
-          <h2 className="text-white font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
+          <h2 className="text-white font-black text-sm uppercase tracking-widest mb-2 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
+          <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-4">Mes activo: <span className="text-orange-400 font-black">{configMes}</span> — Los archivos 02–06 se guardan para este mes</p>
+          {/* Tasa de cambio por mes */}
+          <div className="flex items-center gap-3 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/5">
+            <span className="text-2xl font-black font-mono opacity-30">Bs/$</span>
+            <span className="flex-1 font-black text-xs uppercase tracking-wider text-amber-300">Tasa de Cambio — {configMes}</span>
+            <input
+              type="number" min="1" step="0.01"
+              value={tasaByMonth[configMes] || ''}
+              placeholder="Ej: 90.00"
+              onChange={e => saveTasa(configMes, parseFloat(e.target.value)||1)}
+              className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-sm rounded-lg px-3 py-1.5 w-32 font-black outline-none"
+            />
+            {tasaByMonth[configMes] && <span className="text-[9px] text-emerald-400 font-black">✓ GUARDADA</span>}
+          </div>
           {[
             {num:'01',label:hasPlan?`✓ Plan Cuentas (${Object.keys(planCuentas).length} ctas)`:'Plan de Cuentas (.txt)',active:true,accept:'.txt',handler:handleUploadPlan,hasClear:hasPlan},
-            {num:'02',label:loadedMonths.length>0?`✓ Balance (${loadedMonths.filter(m=>dbData.some(d=>d.month===m&&/^[123]/.test(d.name))).length} mes cargado)`:'Balance General (.txt / .xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>/^[123]/.test(d.name))},
+            {num:'02',label:dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name))?`✓ Balance ${configMes} cargado`:`Balance ${configMes} (.txt / .xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name))},
             {num:'03',label:loadedMonths.length>0?`✓ Resultados (${loadedMonths.length} mes${loadedMonths.length!==1?'es':''})`:'Estado de Resultados (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt,.csv',handler:handleUploadResultados,multiple:true,hasClear:loadedMonths.length>0},
-            {num:'04',label:cxcTotal>0?`✓ CxC cargado (${cxcTotal} reg.)`:'Auxiliar Cuentas por Cobrar (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxC,multiple:true,hasClear:cxcTotal>0,color:'blue'},
-            {num:'05',label:cxpTotal>0?`✓ CxP cargado (${cxpTotal} reg.)`:'Auxiliar Cuentas por Pagar (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxP,multiple:true,hasClear:cxpTotal>0,color:'red'},
-            {num:'06',label:afCount>0?`✓ Activos Fijos (${afCount} reg.)`:'Activos Fijos (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
+            {num:'04',label:cxcTotal>0?`✓ CxC ${configMes} (${cxcTotal} reg.)`:`Auxiliar CxC — ${configMes} (.xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxC,multiple:true,hasClear:cxcTotal>0,color:'blue'},
+            {num:'05',label:cxpTotal>0?`✓ CxP ${configMes} (${cxpTotal} reg.)`:`Auxiliar CxP — ${configMes} (.xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxP,multiple:true,hasClear:cxpTotal>0,color:'red'},
+            {num:'06',label:afCount>0?`✓ Activos Fijos ${configMes} (${afCount} reg.)`:`Activos Fijos — ${configMes} (.xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
           ].map(step=>(
             <div key={step.num} className="flex items-center gap-2">
             <label className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer flex-1 ${
