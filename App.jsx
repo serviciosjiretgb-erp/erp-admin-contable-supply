@@ -279,12 +279,21 @@ const buildLetterheadRows = (title, subtitle) => [
 // openStates: Set of node labels currently open (if undefined = all open)
 const flattenTreeForExcel = (nodes, openStates, level = 0, rows = []) => {
   nodes.forEach(n => {
+    const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
+
     if (!n.isLeaf && n.c?.length) {
-      rows.push({ label: '  '.repeat(level) + n.n, level, isSection: true, u: null, b: null });
-      // If openStates provided, only recurse when node is open
-      const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
-      if (isOpen) flattenTreeForExcel(n.c, openStates, level + 1, rows);
-      rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
+      if (!isAccountNode) {
+        rows.push({ label: '  '.repeat(level) + n.n, level, isSection: true, u: null, b: null });
+        flattenTreeForExcel(n.c, openStates, level + 1, rows);
+        rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
+      } else {
+        rows.push({ label: '  '.repeat(level) + n.n, level, isLeaf: true, u: n.u, b: n.b });
+        const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
+        if (isOpen) {
+          flattenTreeForExcel(n.c, openStates, level + 1, rows);
+          rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
+        }
+      }
     } else {
       rows.push({ label: '  '.repeat(level + 1) + n.n, level, isLeaf: true, u: n.u, b: n.b });
     }
@@ -1217,10 +1226,21 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
             const openStates = getOpenSet();
             const buildRows = (nodes, lvl=0) => nodes.map(n => {
               const indent = '&nbsp;'.repeat(lvl*4);
+              const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
+
               if (!n.isLeaf && n.c?.length) {
-                const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
-                const childRows = isOpen ? buildRows(n.c, lvl+1) : '';
-                return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+                if (!isAccountNode) {
+                  const childRows = buildRows(n.c, lvl+1);
+                  return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+                } else {
+                  const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
+                  let html = `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${baseVentas?((Math.abs(n.u)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr>`;
+                  if (isOpen) {
+                    html += buildRows(n.c, lvl+1);
+                    html += `<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+                  }
+                  return html;
+                }
               }
               return `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${baseVentas?((Math.abs(n.u)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr>`;
             }).join('');
@@ -1740,8 +1760,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     if(n.n.toUpperCase().includes('ACTIV')) { totalActivos+=n.u; totalActivos_bs+=n.b; }
     else { totalPasPat+=n.u; totalPasPat_bs+=n.b; }
   });
-  const balanceDiff    = totalActivos + totalPasPat;
-  const balanceDiff_bs = totalActivos_bs + totalPasPat_bs;
+  const balanceDiff    = totalActivos - totalPasPat;
+  const balanceDiff_bs = totalActivos_bs - totalPasPat_bs;
   const fmtR  = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
   const fmtRs = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const [openNodes, setOpenNodes] = useState(() => new Set());
@@ -1756,11 +1776,24 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     const fmtP = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
     const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
     const cols = ['Cuenta', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[]), '%'].map(c=>`<th>${c}</th>`).join('');
+    const openStates = getOpenSet();
     const buildRows = (nodes, lvl=0) => nodes.map(n => {
       const indent = '&nbsp;'.repeat(lvl*4);
+      const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
+
       if (!n.isLeaf && n.c?.length) {
-        const childRows = buildRows(n.c, lvl+1);
-        return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+        if (!isAccountNode) {
+          const childRows = buildRows(n.c, lvl+1);
+          return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+        } else {
+          const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
+          let html = `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+          if (isOpen) {
+            html += buildRows(n.c, lvl+1);
+            html += `<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+          }
+          return html;
+        }
       }
       return `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
     }).join('');
@@ -2120,6 +2153,34 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
         </div>
         <button onClick={()=>exportActivosFijosExcelGrouped(filteredValid,getRubro,'Activos_Fijos',mesCorte,getDepAcumActual,getValorNetoActual,fmt)} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-emerald-700 flex items-center gap-1.5">
           <FileSpreadsheet size={13}/> Excel
+        </button>
+        <button onClick={() => {
+          const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+          const gruposPDF = {};
+          filteredValid.forEach(r => {
+            const g = getRubro(r);
+            if (!gruposPDF[g]) gruposPDF[g] = [];
+            gruposPDF[g].push(r);
+          });
+          const RUBRO_ORDER = ['MOBILIARIO Y EQUIPO DE OFICINA','EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES','HERRAMIENTAS MENORES','MAQUINARIA Y EQUIPOS','PLANTA ELÉCTRICA','GALPÓN E INMUEBLES','VEHÍCULOS'];
+          const orderedRubros = RUBRO_ORDER.filter(r=>gruposPDF[r]).concat(Object.keys(gruposPDF).filter(r=>!RUBRO_ORDER.includes(r)));
+          let rowsHtml = '';
+          orderedRubros.forEach(rubro => {
+            const items = gruposPDF[rubro];
+            rowsHtml += `<tr class="section"><td colspan="12" style="font-weight:900; background:#f3f3f3; color:#E05A00; text-align:left;">${rubro.toUpperCase()}</td></tr>`;
+            items.forEach(r => {
+              rowsHtml += `<tr><td style="text-align:center">${r.cant}</td><td style="text-align:left">${r.descripcion}</td><td style="text-align:center">${r.sede}</td><td style="text-align:center">${r.fechaAdq||'-'}</td><td style="text-align:center">${r.vidaUtilAsig||'-'}</td><td style="text-align:center">${r.vidaUtilTrans||'-'}</td><td style="text-align:right">${fmtP(r.costoUSD)}</td><td style="text-align:right">${fmtP(r.costoBS)}</td><td style="text-align:right">${fmtP(getDepAcumActual(r))}</td><td style="text-align:right;font-weight:bold">${fmtP(getValorNetoActual(r))}</td><td style="text-align:right">${fmtP(r.depreMensual)}</td><td style="text-align:right">${fmtP(r.tasa)}</td></tr>`;
+            });
+            const sUSD=items.reduce((s,r)=>s+r.costoUSD,0), sBS=items.reduce((s,r)=>s+r.costoBS,0), sDA=items.reduce((s,r)=>s+getDepAcumActual(r),0), sN=items.reduce((s,r)=>s+getValorNetoActual(r),0), sM=items.reduce((s,r)=>s+r.depreMensual,0);
+            rowsHtml += `<tr class="total" style="background:#f7f7f7;font-weight:900;"><td colspan="6" style="text-align:left">SUBTOTAL ${rubro}</td><td style="text-align:right">${fmtP(sUSD)}</td><td style="text-align:right">${fmtP(sBS)}</td><td style="text-align:right">${fmtP(sDA)}</td><td style="text-align:right">${fmtP(sN)}</td><td style="text-align:right">${fmtP(sM)}</td><td></td></tr>`;
+          });
+          const thHtml = ['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum Bs.','Val.Neto Bs.','Dep.Mensual Bs.','Tasa'].map(h=>`<th>${h}</th>`).join('');
+          printReport(
+            `<h1>Registro de Activos Fijos</h1><h2>Corte: ${mesCorte}</h2>`,
+            `<table><thead><tr>${thHtml}</tr></thead><tbody>${rowsHtml}<tr class="grand-total" style="background:#111;color:#fff;font-weight:900;"><td colspan="6" style="text-align:left">TOTAL GENERAL</td><td style="text-align:right;color:#fff">USD ${fmtP(totalCostoUSD)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalCostoBS)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalDepAcum)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalNeto)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalMensual)}</td><td></td></tr></tbody></table>`
+          );
+        }} className="px-4 py-1.5 bg-orange-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-orange-700 flex items-center gap-1.5 shadow-md transition-colors">
+          <FileText size={13}/> PDF
         </button>
         <button onClick={()=>setShowAsiento(v=>!v)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 border transition-colors ${showAsiento?'bg-violet-600 text-white border-violet-700':'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}>
           <BookOpen size={13}/> Asientos Dep.
