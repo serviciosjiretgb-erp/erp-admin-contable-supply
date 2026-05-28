@@ -825,7 +825,9 @@ const DEFAULT_AUX_DATA = {
 // ============================================================================
 // 3. COMPONENTE: ÁRBOL EXPANDIBLE
 // ============================================================================
-const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, currency = 'both', onToggle }) => {
+const toTitleCase = (s) => s.replace(/\b\w/g, c => c.toUpperCase()).replace(/\b(\w)(\w+)/g, (_, a, b) => a.toUpperCase() + b.toLowerCase());
+
+const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, currency = 'both', onToggle, titleCaseLeaves = false }) => {
   const isAccountNode = /^\d\./.test(node.n) || (!node.c || node.c.length === 0);
   const isLeaf = !node.c || node.c.length === 0;
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -840,23 +842,35 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
   const indent = { paddingLeft: `${level * 18 + 10}px` };
   const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
 
+  // Format label: sections/folders always UPPERCASE; leaves TitleCase when flag is set (Estado Resultado)
+  const fmtLabel = (text, isSection) => {
+    if (isSection) return text.toUpperCase();
+    if (titleCaseLeaves) {
+      // Keep account code prefix as-is, apply TitleCase to description part
+      const m = text.match(/^(\d[\d\.]+(?:-|\s))(.*)/);
+      if (m) return m[1] + toTitleCase(m[2]);
+      return toTitleCase(text);
+    }
+    return text.toUpperCase();
+  };
+
   if (!isLeaf && !isAccountNode) {
     const isRoot = level === 0;
     let rootColor = 'text-orange-500'; let borderColor = 'border-orange-500';
     if (isBalance) {
-      if (node.n.includes('ACTIVO')) { rootColor = 'text-blue-500'; borderColor = 'border-blue-500'; }
-      else if (node.n.includes('PASIVO')) { rootColor = 'text-red-500'; borderColor = 'border-red-500'; }
-      else if (node.n.includes('PATRIMONIO')) { rootColor = 'text-purple-500'; borderColor = 'border-purple-500'; }
+      if (node.n.toUpperCase().includes('ACTIVO')) { rootColor = 'text-blue-500'; borderColor = 'border-blue-500'; }
+      else if (node.n.toUpperCase().includes('PASIVO')) { rootColor = 'text-red-500'; borderColor = 'border-red-500'; }
+      else if (node.n.toUpperCase().includes('PATRIMONIO')) { rootColor = 'text-purple-500'; borderColor = 'border-purple-500'; }
     }
     return (
       <>
         <tr className={isRoot ? 'bg-[#111827]' : 'bg-white border-b border-gray-100'}>
-          <td style={indent} className={isRoot ? `py-3 px-3 ${rootColor} font-black text-xs uppercase tracking-[0.2em]` : 'py-2 px-3 font-black text-[11px] text-slate-800 uppercase'}>{node.n}</td>
+          <td style={indent} className={isRoot ? `py-3 px-3 ${rootColor} font-black text-xs uppercase tracking-[0.2em]` : 'py-2 px-3 font-black text-[11px] text-slate-800 uppercase'}>{fmtLabel(node.n, true)}</td>
           <td colSpan={3} />
         </tr>
-        {node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency}/>)}
+        {node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle} titleCaseLeaves={titleCaseLeaves}/>)}
         <tr className={`${isRoot ? `bg-slate-900 text-white border-t-2 ${borderColor}` : 'bg-slate-200 text-slate-800 border-t border-slate-300'} shadow-sm`}>
-          <td style={{ paddingLeft: level * 18 + 28 }} className="py-2.5 px-3 font-black text-[10px] uppercase tracking-wider">TOTAL {node.n}</td>
+          <td style={{ paddingLeft: level * 18 + 28 }} className="py-2.5 px-3 font-black text-[10px] uppercase tracking-wider">TOTAL {fmtLabel(node.n, true)}</td>
           {showUSD && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${isRoot ? rootColor : 'text-slate-900'}`}>{fmtCur(Math.abs(node.u))}</td>}
           {showBS  && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black hidden sm:table-cell ${isRoot ? rootColor : 'text-slate-900'}`}>{fmtCur(Math.abs(node.b))}</td>}
           <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${isRoot ? rootColor : 'text-slate-900'}`}>{pct}</td>
@@ -873,7 +887,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
         <tr className="border-b border-slate-100 bg-slate-50/80 hover:bg-slate-100 transition-colors">
           <td style={{ paddingLeft: `${level * 18 + 28}px` }} className="py-1.5 px-3 text-[10px] text-slate-500 flex items-center gap-2">
             <span className="w-1 h-1 rounded-full bg-slate-300 flex-shrink-0"/>
-            <span className="truncate max-w-[420px] italic">{node.n}</span>
+            <span className="truncate max-w-[420px] italic">{fmtLabel(node.n, false)}</span>
           </td>
           {showUSD && <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-500">{fmtCur(Math.abs(node.u))}</td>}
           <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-400 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>
@@ -888,7 +902,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
           <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-slate-900 uppercase select-none flex items-center flex-wrap gap-2">
             {!isLeaf && <span onClick={e=>{e.stopPropagation();const next=!isOpen;setIsOpen(next);if(onToggle)onToggle(node.n,next);}} className={`inline-flex items-center justify-center w-4 h-4 border rounded-sm text-[11px] leading-none transition-colors ${isOpen ? 'border-slate-500 text-slate-600 bg-slate-100' : 'border-slate-300 text-slate-400 bg-white'}`}>{isOpen ? '−' : '+'}</span>}
             <button onClick={(e) => { e.stopPropagation(); toggleHighlight(node.n); }} className="focus:outline-none transition-transform hover:scale-110"><Star size={16} fill={isHighlighted ? "#f59e0b" : "none"} color={isHighlighted ? "#f59e0b" : "#cbd5e1"} /></button>
-            <span className="truncate">{node.n}</span>
+            <span className="truncate">{fmtLabel(node.n, isLeaf)}</span>
             {hasMapping && isBalance && (
               <button onClick={(e) => { e.stopPropagation(); const typeToPass = accountCode ? accountCode : (node.n.toUpperCase().includes('COBRAR') ? 'cxc' : 'cxp'); onShowReport(typeToPass); }}
                 className="ml-2 px-2.5 py-1 bg-blue-600 text-white rounded-md text-[9px] font-black tracking-widest hover:bg-blue-700 shadow-md flex items-center gap-1">
@@ -900,10 +914,10 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
           {showBS  && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell ${isHighlighted ? 'text-amber-900' : 'text-slate-800'}`}>{fmtCur(Math.abs(node.b))}</td>}
           <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${isHighlighted ? 'text-amber-700' : 'text-slate-500'}`}>{pct}</td>
         </tr>
-        {isOpen && node.c && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle}/>)}
+        {isOpen && node.c && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle} titleCaseLeaves={titleCaseLeaves}/>)}
         {!isLeaf && isOpen && (
           <tr className="bg-slate-200/60 font-black text-[10px] border-t border-slate-200">
-            <td style={{ paddingLeft: level * 18 + 24 }} className="py-1.5 px-3 uppercase text-slate-500 tracking-wider">TOTAL {node.n}</td>
+            <td style={{ paddingLeft: level * 18 + 24 }} className="py-1.5 px-3 uppercase text-slate-500 tracking-wider">TOTAL {fmtLabel(node.n, true)}</td>
             {showUSD && <td className="py-1.5 px-3 text-right font-mono text-slate-700">{fmtCur(Math.abs(node.u))}</td>}
             {showBS  && <td className="py-1.5 px-3 text-right font-mono text-slate-700 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>}
             <td className="py-1.5 px-3 text-right font-mono text-slate-500">{pct}</td>
@@ -1148,13 +1162,22 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   }, [dbData, selectedMonth, activosFijosData]);
 
   let totalUSD = 0; let totalBS = 0; let baseVentas = 0;
+  let ingresosUSD = 0; let ingresosBS = 0;
+  let costosUSD = 0;  let costosBS = 0;
   tree.forEach(n => {
-    if(n.n.toUpperCase().includes('INGRESO')||n.n.toUpperCase().includes('VENTA')||n.n.startsWith('4')) {
-      totalUSD+=n.u; totalBS+=n.b; baseVentas+=n.u;
-    } else { totalUSD-=n.u; totalBS-=n.b; }
+    const up = n.n.toUpperCase();
+    const isIng  = up.includes('INGRESO') || up.includes('VENTA') || n.n.startsWith('4');
+    const isCost = up.includes('COSTO') || n.n.startsWith('5');
+    if (isIng)  { totalUSD+=n.u; totalBS+=n.b; baseVentas+=n.u; ingresosUSD+=n.u; ingresosBS+=n.b; }
+    else        { totalUSD-=n.u; totalBS-=n.b; if(isCost){ costosUSD+=n.u; costosBS+=n.b; } }
   });
   if (baseVentas === 0) baseVentas = 1;
+  const utilidadBrutaUSD = ingresosUSD - costosUSD;
+  const utilidadBrutaBS  = ingresosBS  - costosBS;
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+  // Title Case helper for leaf account descriptions
+  const toTitleCase = (str) => str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
@@ -1220,7 +1243,25 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
               </tr>
             </thead>
             <tbody key={expandKey}>
-              {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency}/>)}
+              {tree.map((node, i) => {
+                const up = node.n.toUpperCase();
+                const isIng  = up.includes('INGRESO') || up.includes('VENTA') || node.n.startsWith('4');
+                const isCost = up.includes('COSTO') || node.n.startsWith('5');
+                const showUB = isCost; // show Utilidad Bruta row right after COSTOS node
+                return (
+                  <React.Fragment key={i}>
+                    <ExpandableRow node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency} titleCaseLeaves={true}/>
+                    {showUB && (
+                      <tr className="border-t-2 border-emerald-400 bg-emerald-50">
+                        <td className="px-5 py-3 font-black text-[11px] uppercase tracking-widest text-emerald-800 pl-8">UTILIDAD BRUTA</td>
+                        {currency !== 'bs'  && <td className={`px-3 py-3 text-right font-mono font-black text-sm ${utilidadBrutaUSD >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtR(utilidadBrutaUSD)}</td>}
+                        {currency !== 'usd' && <td className={`px-3 py-3 text-right font-mono font-black text-sm hidden sm:table-cell ${utilidadBrutaBS >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtR(utilidadBrutaBS)}</td>}
+                        <td className="px-3 py-3 text-right font-mono font-black text-[11px] text-emerald-600">{baseVentas ? (Math.abs(utilidadBrutaUSD)/Math.abs(baseVentas)*100).toFixed(2) : 0}%</td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               <tr className="bg-[#111111] text-white font-black border-t-4 border-orange-600">
                 <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
                 {currency !== 'bs'  && <td className={`px-3 py-7 text-right text-lg font-mono ${totalUSD < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmtR(totalUSD)}</td>}
