@@ -1061,6 +1061,9 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
   const [currency, setCurrency] = useState('both'); // 'usd' | 'bs' | 'both'
   const toggleHighlight = (a) => setHighlightedAccounts(prev => { const s=new Set(prev); if(s.has(a))s.delete(a); else s.add(a); return s; });
+  const [openNodeMap, setOpenNodeMap] = useState(() => ({}));
+  const reportNodeOpen = (label, isOpen) => setOpenNodeMap(p => ({...p, [label.trim().toUpperCase()]: isOpen}));
+  const getOpenSet = () => defaultOpen ? null : new Set(Object.entries(openNodeMap).filter(([,v])=>v).map(([k])=>k));
 
   const tree = useMemo(() => {
     const root = [];
@@ -1203,7 +1206,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
             <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronDown size={14}/> Expandir</button>
             <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronRight size={14}/> Contraer</button>
           </div>
-          <button onClick={() => exportResultadoExcel(tree, monthLabel(selectedMonth), totalUSD, defaultOpen ? null : new Set(), currency)}
+          <button onClick={() => exportResultadoExcel(tree, monthLabel(selectedMonth), totalUSD, getOpenSet(), currency)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
             <FileSpreadsheet size={13}/> Excel
           </button>
@@ -1211,9 +1214,14 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
             const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
             const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
             const cols = ['Cuenta', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[]), '%'].map(c=>`<th>${c}</th>`).join('');
+            const openStates = getOpenSet();
             const buildRows = (nodes, lvl=0) => nodes.map(n => {
               const indent = '&nbsp;'.repeat(lvl*4);
-              if (!n.isLeaf && n.c?.length) return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${buildRows(n.c, lvl+1)}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+              if (!n.isLeaf && n.c?.length) {
+                const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
+                const childRows = isOpen ? buildRows(n.c, lvl+1) : '';
+                return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+              }
               return `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${baseVentas?((Math.abs(n.u)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr>`;
             }).join('');
             printReport(`<h1>Estado de Resultado</h1><h2>Período: ${selectedMonth==='General'?'Acumulado':monthLabel(selectedMonth)}</h2>`,
@@ -1250,7 +1258,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
                 const showUB = isCost; // show Utilidad Bruta row right after COSTOS node
                 return (
                   <React.Fragment key={i}>
-                    <ExpandableRow node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency} titleCaseLeaves={true}/>
+                    <ExpandableRow node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency} titleCaseLeaves={true} onToggle={reportNodeOpen}/>
                     {showUB && (
                       <tr className="border-t-2 border-emerald-400 bg-emerald-50">
                         <td className="px-5 py-3 font-black text-[11px] uppercase tracking-widest text-emerald-800 pl-8">UTILIDAD BRUTA</td>
@@ -1287,7 +1295,7 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
 
   const tree = useMemo(() => {
     const root = [];
-    const getData = (m) => dbData.filter(d => d.month === m && !d.path.toUpperCase().includes('ACTIVO') && !d.path.toUpperCase().includes('PASIVO') && !d.path.toUpperCase().includes('PATRIMONIO'));
+    const getData = (m) => dbData.filter(d => d.month === m && !d.path.toUpperCase().includes('ACTIVO') && !d.path.toUpperCase().includes('PASIVO') && !d.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(d.name));
     const m1Data = getData(month1); const m2Data = getData(month2);
     const processItem = (item, isM1) => {
       const pathParts = item.path.split('>');
@@ -1315,11 +1323,15 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
           const map = RUBRO_DEPR_MAP[rubro];
           if (!map) return;
           const nDebe = map.debe.length;
+
+          const perMesBs = r.depreMensual;
+          const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
+
           map.debe.forEach(d => {
             const key = `${d.cta}-${d.nombre}`;
             if (!byRubro[key]) byRubro[key] = { m1: 0, m2: 0, cat: d.cta[0]==='6'?'GASTOS':'COSTOS Y GASTOS OPERATIVOS' };
-            byRubro[key].m1 += r.depreMensual / nDebe;
-            byRubro[key].m2 += r.depreMensual / nDebe;
+            byRubro[key].m1 += perMesUSD / nDebe;
+            byRubro[key].m2 += perMesUSD / nDebe;
           });
         });
         return byRubro;
@@ -1618,8 +1630,19 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       const canonPath = BALANCE_ACCOUNT_PATH[prefix];
       if (!canonPath) return;
 
-      const usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
-      const bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
+      let usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
+      let bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
+
+      const isContraAccount = /DEP.*ACUM|ACUMULAD/i.test(item.name) || /P[EÉ]RDIDA/i.test(item.name);
+
+      if (isContraAccount) {
+        usdV = -Math.abs(usdV);
+        bsV  = -Math.abs(bsV);
+      } else {
+        usdV = Math.abs(usdV);
+        bsV  = Math.abs(bsV);
+      }
+
       insertLeaf(canonPath, item.name, usdV, bsV);
     });
 
@@ -1628,10 +1651,10 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       // CxC y CxP — totalizar SOLO los registros de la cuenta específica
       Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
         const allRecords = auxDataConfig?.[info.type] || [];
-        // Filtrar los que tienen cuentaContable que empieza por este código
         const forThisCode = allRecords.filter(d => (d.cuentaContable||'').trim().startsWith(code));
-        // Si ninguno tiene cuentaContable explícito (fallback), usar todo el tipo
-        const records = forThisCode.length > 0 ? forThisCode : allRecords;
+
+        const isSharedBucket = Object.values(ACCOUNT_MAPS).filter(m => m.type === info.type).length > 1;
+        const records = forThisCode.length > 0 ? forThisCode : (isSharedBucket ? [] : allRecords);
         const total = records.reduce((s, r) => s + r.monto, 0);
         if (total === 0) return;
         const prefixMatch = code.match(/^(\d+\.\d+\.\d+\.\d+)/);
