@@ -95,6 +95,11 @@ const processPlanCuentas = async (file) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const processSaldosBalance = async (file, planCuentas) => {
   const ext = file.name.split('.').pop().toLowerCase();
+  const detectMonth = (name) => {
+    const m = name.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+    return m ? m[0].charAt(0).toUpperCase() + m[0].slice(1).toLowerCase() : 'Saldos Iniciales';
+  };
+  const fileMonth = detectMonth(file.name);
 
   const parseVal = (v) => {
     if (v === null || v === undefined) return null;
@@ -165,7 +170,7 @@ const processSaldosBalance = async (file, planCuentas) => {
         const path = pathStack.map(p => p.trim()).filter(Boolean).join('>');
         if (!path) continue; // skip orphan accounts with no path context
         balanceData.push({
-          month: 'Saldos Iniciales',
+          month: fileMonth,
           path,
           name: name.trim(),
           usd: usdVal ?? 0,
@@ -223,7 +228,7 @@ const processSaldosBalance = async (file, planCuentas) => {
 
     if (isAccount && (usdV !== null || bsV !== null)) {
       balanceData.push({
-        month: 'Saldos Iniciales',
+        month: fileMonth,
         path: pathStack.map(p => p.trim()).join('>') || 'ACTIVOS>OTROS',
         name, usd: usdV ?? 0, bs: bsV ?? 0,
       });
@@ -235,7 +240,166 @@ const processSaldosBalance = async (file, planCuentas) => {
 };
 
 // ============================================================================
-// 1b. PROCESADOR DE AUXILIARES (CxC / CxP)
+// 1d. EXPORTACIÓN EXCEL — utilidades compartidas
+// ============================================================================
+const COMPANY_INFO = {
+  name:    'SERVICIOS JIRET G&B, C.A.',
+  rif:     'RIF: J-412309374',
+  addr1:   'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB',
+  addr2:   'SECTOR EL TREBOL MARACAIBO-ZULIA',
+  logo:    'Supply G&B',
+};
+
+const buildLetterheadRows = (title, subtitle) => [
+  [COMPANY_INFO.logo, '', '', '', COMPANY_INFO.name],
+  ['',                '', '', '', COMPANY_INFO.rif  ],
+  ['',                '', '', '', COMPANY_INFO.addr1],
+  ['',                '', '', '', COMPANY_INFO.addr2],
+  [],
+  [title],
+  ...(subtitle ? [[subtitle]] : []),
+  [],
+];
+
+const applyLetterheadStyles = (ws, nDataCols, headerRowCount) => {
+  // Bold + large logo cell
+  const logoCell = 'A1';
+  if (!ws[logoCell]) ws[logoCell] = {};
+  ws[logoCell].s = { font: { bold: true, sz: 14 } };
+  // Company name bold right
+  const nameCell = `${String.fromCharCode(64 + nDataCols)}1`;
+  if (ws[nameCell]) ws[nameCell].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
+  // Title row bold
+  const titleRow = headerRowCount - 1; // 0-indexed
+  const titleCellRef = `A${titleRow + 1}`;
+  if (ws[titleCellRef]) ws[titleCellRef].s = { font: { bold: true, sz: 13 } };
+};
+
+const fmtNum = (v) => (v == null || isNaN(v)) ? '' :
+  new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+// Flattena un árbol { n, c?, u, b, isLeaf } en filas para Excel
+const flattenTreeForExcel = (nodes, level = 0, rows = []) => {
+  nodes.forEach(n => {
+    if (!n.isLeaf && n.c?.length) {
+      rows.push({ label: '  '.repeat(level) + n.n, level, isSection: true, u: null, b: null });
+      flattenTreeForExcel(n.c, level + 1, rows);
+      rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
+    } else {
+      rows.push({ label: '  '.repeat(level + 1) + n.n, level, isLeaf: true, u: n.u, b: n.b });
+    }
+  });
+  return rows;
+};
+
+// Exporta Balance General a Excel
+const exportBalanceExcel = async (tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff) => {
+  try {
+    const XL = await loadSheetJS();
+    const COLS = ['Cuenta / Descripción', 'Saldo USD', 'Saldo Bs.'];
+    const letterhead = buildLetterheadRows(
+      'BALANCE DE SITUACIÓN FINANCIERA',
+      `Corte: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`
+    );
+    const dataRows = flattenTreeForExcel(tree);
+    const sheetData = [
+      ...letterhead,
+      COLS,
+      ...dataRows.map(r => [r.label, r.u != null ? fmtNum(r.u) : '', r.b != null ? fmtNum(r.b) : '']),
+      [],
+      ['ACTIVOS',                fmtNum(totalActivos), ''],
+      ['PASIVO + PATRIMONIO',    fmtNum(totalPasPat),  ''],
+      ['ACTIVO − (PASIVO+PATRIMONIO)', fmtNum(balanceDiff), ''],
+    ];
+    const ws = XL.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [{ wch: 55 }, { wch: 20 }, { wch: 22 }];
+    const wb = XL.utils.book_new();
+    XL.utils.book_append_sheet(wb, ws, 'Balance General');
+    XL.writeFile(wb, `Balance_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
+  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+};
+
+// Exporta Estado de Resultados a Excel
+const exportResultadoExcel = async (tree, selectedMonth, totalUSD) => {
+  try {
+    const XL = await loadSheetJS();
+    const COLS = ['Cuenta / Descripción', 'Saldo USD', 'Saldo Bs.', '% Ventas'];
+    const letterhead = buildLetterheadRows(
+      'ESTADO DE RESULTADO',
+      `Período: ${selectedMonth === 'General' ? 'Acumulado' : selectedMonth}`
+    );
+    const fmtPct = (u, base) => base ? `${((Math.abs(u)/Math.abs(base))*100).toFixed(2)}%` : '';
+    const baseVentas = tree.reduce((s, n) => n.n.toUpperCase().includes('INGRESO')||n.n.toUpperCase().includes('VENTA')||n.n.startsWith('4') ? s + Math.abs(n.u) : s, 0) || 1;
+    const dataRows = flattenTreeForExcel(tree);
+    const sheetData = [
+      ...letterhead,
+      COLS,
+      ...dataRows.map(r => [r.label, r.u != null ? fmtNum(r.u) : '', r.b != null ? fmtNum(r.b) : '', r.u != null ? fmtPct(r.u, baseVentas) : '']),
+      [],
+      ['RESULTADO DEL EJERCICIO', fmtNum(totalUSD), '', fmtPct(totalUSD, baseVentas)],
+    ];
+    const ws = XL.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [{ wch: 55 }, { wch: 20 }, { wch: 22 }, { wch: 12 }];
+    const wb = XL.utils.book_new();
+    XL.utils.book_append_sheet(wb, ws, 'Estado de Resultado');
+    XL.writeFile(wb, `EstadoResultado_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
+  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+};
+
+// Exporta Análisis Comparativo a Excel
+const exportComparativoExcel = async (tree, month1, month2, total_m1, total_m2) => {
+  try {
+    const XL = await loadSheetJS();
+    const fmtNum2 = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
+    const letterhead = buildLetterheadRows('ANÁLISIS COMPARATIVO DE VARIACIONES', `${month1} vs ${month2}`);
+    const COLS = ['Estructura', month1, month2, 'Var. Absoluta', 'Var. %'];
+    const dataRows = [];
+    tree.forEach(cat => {
+      dataRows.push([cat.n, fmtNum2(cat.m1_u), fmtNum2(cat.m2_u), fmtNum2(cat.m2_u - cat.m1_u), cat.m1_u !== 0 ? `${Math.abs((cat.m2_u-cat.m1_u)/Math.abs(cat.m1_u)*100).toFixed(2)}%` : '—']);
+      [...cat.c].sort((a,b) => a.n.localeCompare(b.n)).forEach(acc => {
+        const varAbs = acc.m2_u - acc.m1_u;
+        const varPct = acc.m1_u !== 0 ? `${Math.abs(varAbs/Math.abs(acc.m1_u)*100).toFixed(2)}%` : (acc.m2_u!==0?'100%':'0%');
+        dataRows.push(['  ' + acc.n, fmtNum2(acc.m1_u), fmtNum2(acc.m2_u), fmtNum2(varAbs), varPct]);
+      });
+      dataRows.push(['TOTAL ' + cat.n, fmtNum2(cat.m1_u), fmtNum2(cat.m2_u), fmtNum2(cat.m2_u - cat.m1_u), cat.m1_u ? `${Math.abs((cat.m2_u-cat.m1_u)/Math.abs(cat.m1_u)*100).toFixed(2)}%` : '—']);
+      dataRows.push([]);
+    });
+    const varTotal = total_m2 - total_m1;
+    const sheetData = [...letterhead, COLS, ...dataRows, [], ['RESULTADO DEL EJERCICIO', fmtNum2(total_m1), fmtNum2(total_m2), fmtNum2(varTotal), total_m1 ? `${Math.abs(varTotal/Math.abs(total_m1)*100).toFixed(2)}%` : '—']];
+    const ws = XL.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [{ wch: 50 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
+    const wb = XL.utils.book_new();
+    XL.utils.book_append_sheet(wb, ws, 'Comparativo');
+    XL.writeFile(wb, `Comparativo_${month1}_vs_${month2}.xlsx`);
+  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+};
+
+// Exporta Auxiliar CxC / CxP a Excel
+const exportAuxiliarExcel = async (byClient, total, mapInfo, accountCode, isCxC) => {
+  try {
+    const XL = await loadSheetJS();
+    const letterhead = buildLetterheadRows(
+      isCxC ? 'AUXILIAR DE CUENTAS POR COBRAR' : 'AUXILIAR DE CUENTAS POR PAGAR',
+      `Cuenta: ${accountCode} — ${mapInfo.label}`
+    );
+    const COLS = ['Cód.', 'Nombre', 'Operación', 'Emisión', 'Vencimiento', 'Días', 'No. Documento', 'Descripción', 'Monto USD', 'Cuenta Contable'];
+    const dataRows = [];
+    byClient.forEach(([nombre, group]) => {
+      group.records.forEach(item => {
+        dataRows.push([group.cod, nombre, item.operacion||'-', item.emision, item.vence, item.dias, item.doc, item.descripcion||'-', item.monto, item.cuentaContable||'-']);
+      });
+      dataRows.push(['', 'SUBTOTAL ' + nombre, '', '', '', '', '', '', new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(group.subtotal), '']);
+      dataRows.push([]);
+    });
+    dataRows.push(['', 'TOTAL GENERAL', '', '', '', '', '', '', new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(total), '']);
+    const sheetData = [...letterhead, COLS, ...dataRows];
+    const ws = XL.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [{wch:8},{wch:35},{wch:12},{wch:12},{wch:12},{wch:7},{wch:15},{wch:25},{wch:16},{wch:30}];
+    const wb = XL.utils.book_new();
+    XL.utils.book_append_sheet(wb, ws, isCxC ? 'CxC' : 'CxP');
+    XL.writeFile(wb, `Auxiliar_${accountCode}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
+  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+};
 // ============================================================================
 const isNewAuxFormat = (row) => {
   if (!row || row.length < 8) return false;
@@ -436,11 +600,17 @@ const handleExportActivosFijosExcel = async (records, fileName) => {
       r.vidaUtilAsig, r.vidaUtilTrans, r.costoUSD,
       r.costoBS, r.depAcum, r.valorNeto, r.depreMensual, r.tasa
     ]);
-    const ws = XL.utils.aoa_to_sheet([
-      ["SERVICIOS JIRET G&B, C.A."], ["RIF: J-412309374"],
-      ["REGISTRO DE ACTIVOS FIJOS"], [`Fecha: ${new Date().toLocaleDateString()}`],
-      [], headers, ...rows
-    ]);
+    const letterhead = [
+      ['Supply G&B', '', '', '', '', '', '', '', '', '', '', 'SERVICIOS JIRET G&B, C.A.'],
+      ['', '', '', '', '', '', '', '', '', '', '', 'RIF: J-412309374'],
+      ['', '', '', '', '', '', '', '', '', '', '', 'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB'],
+      ['', '', '', '', '', '', '', '', '', '', '', 'SECTOR EL TREBOL MARACAIBO-ZULIA'],
+      [],
+      ['REGISTRO DE ACTIVOS FIJOS'],
+      [`Fecha de corte: ${new Date().toLocaleDateString('es-VE')}`],
+      [],
+    ];
+    const ws = XL.utils.aoa_to_sheet([...letterhead, headers, ...rows]);
     ws['!cols'] = [5,36,14,16,12,12,16,16,14,14,13,8].map(w=>({wch:w}));
     const wb = XL.utils.book_new();
     XL.utils.book_append_sheet(wb, ws, "Activos Fijos");
@@ -465,14 +635,14 @@ const ACCOUNT_MAPS = {
 
 // Cuentas que muestran el botón "VER REPORTE" en el Balance
 const VER_REPORTE_ACCOUNTS = new Set([
-  '1.1.02.01.001',
-  '1.1.02.05.002',
-  '1.1.05.01.008',
-  '2.1.01.01.003',
-  '2.1.01.01.004',
-  '2.1.01.02.001',
-  '2.1.01.02.007',
-  '2.1.01.02.008',
+  '1.1.02.01.001',  // Cuentas por Cobrar Clientes
+  '1.1.02.05.002',  // Otras Cuentas por Cobrar
+  '1.1.05.01.008',  // Anticipos a Proveedores Zuliana de Empaque
+  '2.1.01.01.001',  // Cuentas por Pagar Proveedores
+  '2.1.01.01.003',  // Yancarlos Perez Casanova
+  '2.1.01.01.004',  // Cuentas por Pagar Sure Pack
+  '2.1.01.02.007',  // Inmueble por Pagar
+  '2.1.01.02.008',  // Vehículos por Pagar
 ]);
 
 const mkR = (cod,nombre,operacion,emision,vence,dias,doc,descripcion,monto,cc) =>
@@ -587,9 +757,18 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 // 4. VISTA: SUB-REPORTE AUXILIAR (CxC / CxP) — agrupado por cliente
 // ============================================================================
 function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
-  const mapInfo = ACCOUNT_MAPS[accountCode] || { type: 'cxp_general', filter: 'ALL', label: 'Reporte General' };
+  const mapInfo = ACCOUNT_MAPS[accountCode] || { type: 'cxp_general', label: 'Reporte General' };
   const allData = auxDataConfig[mapInfo.type] || [];
-  const filteredData = (!mapInfo.filter || mapInfo.filter === 'ALL') ? allData : allData.filter(d => d.nombre.toUpperCase().includes(mapInfo.filter.toUpperCase()));
+
+  // Filtrar solo los registros que pertenecen a esta cuenta específica
+  const filteredData = useMemo(() => {
+    const byCC = allData.filter(d => {
+      const cc = (d.cuentaContable || '').trim();
+      return cc.startsWith(accountCode) || cc.includes(accountCode);
+    });
+    // Si ningún registro tiene cuentaContable configurada, mostrar todos (fallback)
+    return byCC.length > 0 ? byCC : allData;
+  }, [allData, accountCode]);
   const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const isCxC = mapInfo.type.includes('cxc');
@@ -618,9 +797,15 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
           <p className="text-xs font-bold text-slate-400 uppercase mt-1">{accountCode.includes('.') ? `Cuenta: ${accountCode} — ${mapInfo.label}` : 'Reporte'}</p>
           <p className="text-[10px] text-slate-300 mt-0.5">{byClient.length} {isCxC ? 'clientes' : 'proveedores'} · {filteredData.length} documentos</p>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Saldo Total</p>
-          <p className={`text-2xl font-mono font-black ${isCxC ? 'text-blue-600' : 'text-red-600'}`}>USD {fmtCur(total)}</p>
+        <div className="flex flex-col items-end gap-3">
+          <div className="text-right">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Saldo Total</p>
+            <p className={`text-2xl font-mono font-black ${isCxC ? 'text-blue-600' : 'text-red-600'}`}>USD {fmtCur(total)}</p>
+          </div>
+          <button onClick={() => exportAuxiliarExcel(byClient, total, mapInfo, accountCode, isCxC)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileSpreadsheet size={14}/> Exportar Excel
+          </button>
         </div>
       </div>
       <div className="space-y-2">
@@ -727,9 +912,15 @@ function EstadoResultadoView({ onBack, dbData }) {
             </select>
           </div>
         </div>
-        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
-          <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
-          <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
+            <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+          </div>
+          <button onClick={() => exportResultadoExcel(tree, selectedMonth, totalUSD)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileSpreadsheet size={13}/> Excel
+          </button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
@@ -809,6 +1000,10 @@ function AnalisisComparativoView({ onBack, dbData }) {
           <select value={month1} onChange={e=>setMonth1(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
           <span className="text-slate-400 font-black text-xs">VS</span>
           <select value={month2} onChange={e=>setMonth2(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
+          <button onClick={() => exportComparativoExcel(tree, month1, month2, total_m1, total_m2)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileSpreadsheet size={13}/> Excel
+          </button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
@@ -978,6 +1173,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     };
 
     // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
+    const hasAFAuxiliar = !!(activosFijosData?.records?.length);
+
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
       if (!fullCodeMatch) return;
@@ -987,15 +1184,16 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       const isAF = fullCode.startsWith('1.1.06');
 
       if (isAF) {
+        if (hasAFAuxiliar) return; // el auxiliar de activos fijos tiene datos más precisos
         // Activos fijos: costo en USD del archivo; dep. acum. en Bs → convierte con tasa del balance
         const category = AF_CATEGORY_MAP_BY_CODE[fullCode] || 'PROPIEDAD, PLANTA Y EQUIPOS';
         const afPath = ['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', category];
         let usdV, bsV;
         if (isDepAcum) {
           bsV  = -Math.abs(item.bs  || 0);
-          usdV = tasa > 0 ? bsV / tasa : 0;   // Bs ÷ tasa del balance
+          usdV = tasa > 0 ? bsV / tasa : 0;
         } else {
-          usdV = item.usd || 0;                // costo de adquisición en USD
+          usdV = item.usd || 0;
           bsV  = item.bs  || (usdV * tasa);
         }
         insertLeaf(afPath, item.name, usdV, bsV);
@@ -1011,8 +1209,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
     });
 
     // ── Inyectar CxC / CxP / Activos Fijos desde auxiliares ─────────────────
-    if (selectedMonth !== 'Saldos Iniciales') {
-
+    {
       // CxC y CxP
       Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
         const records = auxDataConfig?.[info.type] || [];
@@ -1022,21 +1219,14 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
         if (!prefixMatch) return;
         const canonPath = BALANCE_ACCOUNT_PATH[prefixMatch[1]];
         if (!canonPath) return;
-        // Reemplazar hoja existente con el total del auxiliar
         const leafName = `${code}-${info.label}`;
-        let cur = root;
-        let targetArr = null;
-        let ok = true;
-        for (const f of canonPath) {
-          const node = cur?.find(n => normKey(n.n) === normKey(f));
-          if (!node) { ok = false; break; }
-          cur = node.c;
-        }
-        if (ok) { targetArr = cur; const i = targetArr.findIndex(n => normKey(n.n)===normKey(leafName)&&n.isLeaf); if (i!==-1) targetArr.splice(i,1); }
+        let cur = root; let ok = true;
+        for (const f of canonPath) { const node = cur?.find(n => normKey(n.n) === normKey(f)); if (!node) { ok = false; break; } cur = node.c; }
+        if (ok) { const i = cur.findIndex(n => normKey(n.n)===normKey(leafName)&&n.isLeaf); if (i!==-1) cur.splice(i,1); }
         insertLeaf(canonPath, leafName, total, total * tasa);
       });
 
-      // Activos Fijos desde auxiliar de inversiones
+      // Activos Fijos desde auxiliar de inversiones (siempre, es la fuente autoritativa)
       if (activosFijosData?.records?.length) {
         const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
         const getRubroBalance = (r) => {
@@ -1126,9 +1316,15 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
             <input type="number" min="1" step="0.01" value={tasa} onChange={e=>setTasa(parseFloat(e.target.value)||1)} className="bg-amber-50 border border-amber-300 text-amber-800 text-xs rounded-lg p-1.5 w-24 font-black outline-none"/>
           </div>
         </div>
-        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
-          <button onClick={()=>{setDefaultOpen(true);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
-          <button onClick={()=>{setDefaultOpen(false);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+        <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button onClick={()=>{setDefaultOpen(true);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
+            <button onClick={()=>{setDefaultOpen(false);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+          </div>
+          <button onClick={() => exportBalanceExcel(tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileSpreadsheet size={13}/> Excel
+          </button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
