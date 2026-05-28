@@ -1674,19 +1674,18 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       const canonPath = BALANCE_ACCOUNT_PATH[prefix];
       if (!canonPath) return;
 
-      // Cuentas que mantienen exactamente los valores USD y Bs. del archivo (sin conversión por tasa)
-      const preserveSign = fullCode === '3.1.03.01.002';
-
       let usdV, bsV;
-      if (preserveSign) {
-        // Usar estrictamente los valores del archivo adjunto — tasa no afecta esta cuenta
-        usdV = item.usd ?? 0;
-        bsV  = item.bs  ?? 0;
+
+      if (fullCode === '3.1.03.01.002') {
+        // Preservar el monto del archivo sin conversión por tasa, pero siempre positivo
+        // para que sume correctamente al TOTAL PATRIMONIO
+        usdV = Math.abs(item.usd ?? 0);
+        bsV  = Math.abs(item.bs  ?? 0);
       } else {
         usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
         bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
 
-        // CORRECCIÓN: Forzar negativo SOLO en depreciaciones
+        // Forzar negativo SOLO en depreciaciones acumuladas
         const isContraAccount = /DEP.*ACUM/i.test(item.name);
         if (isContraAccount) {
           usdV = -Math.abs(usdV);
