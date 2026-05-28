@@ -870,6 +870,56 @@ const DEP_ACUM_ACCOUNT_MAP = {
   'VEHICULO':         '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
 };
 
+// ─── Mapa canónico de prefijo de cuenta → jerarquía del Balance ───────────────
+const BALANCE_ACCOUNT_PATH = {
+  '1.1.01.01': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','CAJA MONEDA EXTRANJERA'],
+  '1.1.01.02': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','BANCOS NACIONALES'],
+  '1.1.01.03': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','BANCOS NACIONALES MONEDA EXT.'],
+  '1.1.02.01': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','CLIENTES'],
+  '1.1.02.02': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','INTERCOMPAÑIAS'],
+  '1.1.02.03': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','DIRECTORES'],
+  '1.1.02.04': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','EMPLEADOS'],
+  '1.1.02.05': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','ANTICIPOS Y OTRAS CUENTAS'],
+  '1.1.03.01': ['ACTIVOS','ACTIVO CIRCULANTE','INVERSIONES A CORTO PLAZO','INVENTARIOS'],
+  '1.1.04.01': ['ACTIVOS','ACTIVO CIRCULANTE','RETENCIONES Y APORTES','RETENCIONES Y CREDITOS FISCALES'],
+  '1.1.05.01': ['ACTIVOS','ACTIVO CIRCULANTE','PREPAGADOS','GASTOS PAGADOS POR ANTICIPADO'],
+  // Activos Fijos 1.1.06 → handled separately by AF_CATEGORY_MAP_BY_CODE
+  '2.1.01.01': ['PASIVO','PASIVO CIRCULANTE','CTAS Y EFECTOS POR PAGAR','CUENTAS POR PAGAR'],
+  '2.1.01.02': ['PASIVO','PASIVO CIRCULANTE','OTRAS CUENTAS POR PAGAR','OTRAS CUENTAS POR PAGAR'],
+  '2.1.01.04': ['PASIVO','PASIVO CIRCULANTE','DIRECTORES','DIRECTORES'],
+  '2.1.02.01': ['PASIVO','PASIVO CIRCULANTE','RET. Y APORTES POR ENTERAR','RETENCIONES E IMPUESTOS POR ENTERAR'],
+  '2.1.02.02': ['PASIVO','PASIVO CIRCULANTE','RET. Y APORTES POR ENTERAR','CONTRIBUYENTE I.V.A.'],
+  '2.1.02.03': ['PASIVO','PASIVO CIRCULANTE','RET. Y APORTES POR ENTERAR','IMPUESTOS REGIONALES Y APORTES'],
+  '2.1.03.01': ['PASIVO','PASIVO CIRCULANTE','PASIVOS LABORALES','PASIVOS NOMINALES'],
+  '2.2.02.01': ['PASIVO','PASIVO A LARGO PLAZO','APARTADOS','APARTADOS'],
+  '2.2.03.01': ['PASIVO','DIFERIDOS','DIFERIDOS','DIFERIDOS'],
+  '3.1.01.01': ['PATRIMONIO','CAPITAL SOCIAL','CAPITAL SOCIAL','CAPITAL SOCIAL'],
+  '3.1.03.01': ['PATRIMONIO','UTILIDADES NO DISTRIBUIDAS','UTILIDADES NO DISTRIBUIDAS','UTILIDADES NO DISTRIBUIDAS'],
+  '3.1.05.01': ['PATRIMONIO','RESULTADO DEL EJERCICIO','RESULTADO DEL EJERCICIO','RESULTADO DEL EJERCICIO'],
+};
+
+// Categoría de Propiedad, Planta y Equipos por código exacto
+const AF_CATEGORY_MAP_BY_CODE = {
+  '1.1.06.01.001': 'INMUEBLE (GALPON)',        // costo
+  '1.1.06.01.002': 'INMUEBLE (GALPON)',        // dep. acum.
+  '1.1.06.01.003': 'MAQUINARIAS Y EQUIPOS',   // costo
+  '1.1.06.01.004': 'MAQUINARIAS Y EQUIPOS',   // dep. acum.
+  '1.1.06.01.005': 'EQUIPOS DE COMPUTACIÓN',  // costo
+  '1.1.06.01.006': 'EQUIPOS DE COMPUTACIÓN',  // dep. acum.
+  '1.1.06.01.007': 'EQUIPOS DE COMPUTACIÓN',
+  '1.1.06.01.008': 'VEHÍCULOS',               // costo
+  '1.1.06.01.009': 'VEHÍCULOS',               // dep. acum.
+  '1.1.06.01.010': 'VEHÍCULOS',
+  '1.1.06.01.011': 'VEHÍCULOS',
+  '1.1.06.01.012': 'MOBILIARIO',              // costo
+  '1.1.06.01.013': 'MOBILIARIO',              // dep. acum.
+  '1.1.06.01.014': 'MOBILIARIO',
+  '1.1.06.01.015': 'MOBILIARIO',
+  '1.1.06.01.016': 'MOBILIARIO',
+  '1.1.06.01.017': 'PLANTA ELÉCTRICA',
+  '1.1.06.01.018': 'PLANTA ELÉCTRICA',
+};
+
 function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData }) {
   const availableMonths = useMemo(() => {
     const balanceRecords = dbData.filter(item =>
@@ -896,90 +946,150 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
   const tree = useMemo(() => {
     const root = [];
     const monthData = dbData.filter(d => d.month === selectedMonth);
-    const balanceData = monthData.filter(item => item.path.toUpperCase().includes('ACTIVO') || item.path.toUpperCase().includes('PASIVO') || item.path.toUpperCase().includes('PATRIMONIO') || /^[123]/.test(item.name));
     const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
 
-    balanceData.forEach(item => {
-      const pathArray = item.path.split('>');
+    // Inserta una hoja en el árbol siguiendo la ruta canónica
+    const insertLeaf = (pathArray, name, usdVal, bsVal) => {
       let cur = root;
       pathArray.forEach(folderName => {
         const key = normKey(folderName);
         let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
         cur = folder.c;
       });
-      // Prefer actual file values; fall back to tasa conversion only if one is missing
-      const usdVal = (item.usd !== undefined && item.usd !== null) ? item.usd : (item.bs ? item.bs / tasa : 0);
-      const bsVal  = (item.bs  !== undefined && item.bs  !== null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
-      const leafKey = normKey(item.name);
-      let leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
-      if (!leaf) cur.push({ n: item.name.trim(), u: usdVal, b: bsVal, isLeaf: true });
+      const leafKey = normKey(name);
+      const leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
+      if (!leaf) cur.push({ n: name.trim(), u: usdVal, b: bsVal, isLeaf: true });
       else { leaf.u += usdVal; leaf.b += bsVal; }
-    });
+    };
 
-    const compute = (nodes) => { let u=0,b=0; nodes.forEach(n=>{if(!n.isLeaf){const t=compute(n.c);n.u=t.u;n.b=t.b;}u+=n.u;b+=n.b;}); return {u,b}; };
+    // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
+    monthData.forEach(item => {
+      const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
+      if (!fullCodeMatch) return;
+      const fullCode = fullCodeMatch[1];
+      const prefix   = fullCode.substring(0, fullCode.lastIndexOf('.'));
+      const isDepAcum = /DEP.*ACUM|ACUMULAD/i.test(item.name);
+      const isAF = fullCode.startsWith('1.1.06');
 
-    // Para 'Saldos Iniciales' el TXT ya tiene toda la estructura — NO inyectar
-    // Solo inyectar CxC/CxP/AF cuando se trabaja con meses de Estado de Resultados
-    const isSaldosIniciales = selectedMonth === 'Saldos Iniciales';
-    const auxEntries = [];
-
-    if (!isSaldosIniciales) {
-      // CxC / CxP desde auxiliares (solo para meses de resultados)
-      Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
-        const records = auxDataConfig?.[info.type] || [];
-        const total = records.reduce((s,r) => s + r.monto, 0);
-        if (total === 0) return;
-        const isCxC = info.type.startsWith('cxc');
-        auxEntries.push({ name: `${code}-${info.label}`, path: isCxC ? 'ACTIVOS>ACTIVO CIRCULANTE>CUENTAS POR COBRAR' : 'PASIVOS>PASIVO CIRCULANTE>CUENTAS POR PAGAR', usd: total, bs: total * tasa });
-      });
-
-      // Activos Fijos (solo para meses de resultados)
-      if (activosFijosData?.records?.length) {
-        const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
-        const costoMap = {}; const depAccMap = {};
-        activosFijosData.records.forEach(r => {
-          const assetCta = r.cuenta && r.cuenta !== '-' ? r.cuenta : 'ACTIVOS FIJOS';
-          if (!costoMap[assetCta]) costoMap[assetCta] = { usd: 0, bs: 0 };
-          costoMap[assetCta].usd += r.costoUSD; costoMap[assetCta].bs += r.costoBS;
-          const ctaUp = assetCta.toUpperCase();
-          let depCta = 'DEP. ACUMULADA ACTIVOS FIJOS';
-          for (const [kw, ccode] of Object.entries(DEP_ACUM_ACCOUNT_MAP)) { if (ctaUp.includes(kw)) { depCta = ccode; break; } }
-          const depActual = r.depAcum + (extraM * r.depreMensual);
-          const tasaHist = r.tasa || (r.costoUSD ? r.costoBS / r.costoUSD : 1);
-          if (!depAccMap[depCta]) depAccMap[depCta] = { usd: 0, bs: 0 };
-          depAccMap[depCta].usd += depActual; depAccMap[depCta].bs += depActual * tasaHist;
-        });
-        Object.entries(costoMap).forEach(([cta, v]) => { if (v.usd !== 0) auxEntries.push({ name: cta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS', usd: v.usd, bs: v.bs }); });
-        Object.entries(depAccMap).forEach(([depCta, vals]) => { if (vals.usd !== 0) auxEntries.push({ name: depCta, path: 'ACTIVOS>ACTIVOS NO CORRIENTES>ACTIVOS FIJOS', usd: -vals.usd, bs: -vals.bs }); });
+      if (isAF) {
+        // Activos fijos: costo en USD del archivo; dep. acum. en Bs → convierte con tasa del balance
+        const category = AF_CATEGORY_MAP_BY_CODE[fullCode] || 'PROPIEDAD, PLANTA Y EQUIPOS';
+        const afPath = ['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', category];
+        let usdV, bsV;
+        if (isDepAcum) {
+          bsV  = -Math.abs(item.bs  || 0);
+          usdV = tasa > 0 ? bsV / tasa : 0;   // Bs ÷ tasa del balance
+        } else {
+          usdV = item.usd || 0;                // costo de adquisición en USD
+          bsV  = item.bs  || (usdV * tasa);
+        }
+        insertLeaf(afPath, item.name, usdV, bsV);
+        return;
       }
 
-      auxEntries.forEach(item => {
-        const pathArray = item.path.split('>'); let cur = root;
-        pathArray.forEach(folderName => {
-          const key = normKey(folderName);
-          let folder = cur.find(n => normKey(n.n) === key);
-          if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
-          cur = folder.c;
-        });
-        const leafKey = normKey(item.name);
-        const existIdx = cur.findIndex(n => normKey(n.n) === leafKey && n.isLeaf);
-        if (existIdx !== -1) cur.splice(existIdx, 1);
-        cur.push({ n: item.name.trim(), u: item.usd, b: item.bs, isLeaf: true });
+      const canonPath = BALANCE_ACCOUNT_PATH[prefix];
+      if (!canonPath) return;
+
+      const usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
+      const bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
+      insertLeaf(canonPath, item.name, usdV, bsV);
+    });
+
+    // ── Inyectar CxC / CxP / Activos Fijos desde auxiliares ─────────────────
+    if (selectedMonth !== 'Saldos Iniciales') {
+
+      // CxC y CxP
+      Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
+        const records = auxDataConfig?.[info.type] || [];
+        const total = records.reduce((s, r) => s + r.monto, 0);
+        if (total === 0) return;
+        const prefixMatch = code.match(/^(\d+\.\d+\.\d+\.\d+)/);
+        if (!prefixMatch) return;
+        const canonPath = BALANCE_ACCOUNT_PATH[prefixMatch[1]];
+        if (!canonPath) return;
+        // Reemplazar hoja existente con el total del auxiliar
+        const leafName = `${code}-${info.label}`;
+        let cur = root;
+        let targetArr = null;
+        let ok = true;
+        for (const f of canonPath) {
+          const node = cur?.find(n => normKey(n.n) === normKey(f));
+          if (!node) { ok = false; break; }
+          cur = node.c;
+        }
+        if (ok) { targetArr = cur; const i = targetArr.findIndex(n => normKey(n.n)===normKey(leafName)&&n.isLeaf); if (i!==-1) targetArr.splice(i,1); }
+        insertLeaf(canonPath, leafName, total, total * tasa);
       });
+
+      // Activos Fijos desde auxiliar de inversiones
+      if (activosFijosData?.records?.length) {
+        const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
+        const getRubroBalance = (r) => {
+          const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
+          if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
+          if (s.includes('GALPON')||s.includes('INMUEBLE')||s.includes('LOCAL')) return 'INMUEBLE (GALPON)';
+          if (s.includes('COMPUT')||s.includes('LAPTOP')||s.includes('MONITOR')||s.includes('IMPRES')) return 'EQUIPOS DE COMPUTACIÓN';
+          if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')) return 'MOBILIARIO';
+          return 'MAQUINARIAS Y EQUIPOS';
+        };
+        const AF_COSTO_LABEL = {
+          'INMUEBLE (GALPON)':      '1.1.06.01.001-INMUEBLE (GALPON)',
+          'MOBILIARIO':             '1.1.06.01.012-MOBILIARIO Y EQUIPO',
+          'MAQUINARIAS Y EQUIPOS':  '1.1.06.01.003-MAQUINARIAS Y EQUIPOS',
+          'EQUIPOS DE COMPUTACIÓN': '1.1.06.01.005-EQUIPOS DE COMPUTACIÓN',
+          'VEHÍCULOS':              '1.1.06.01.008-VEHÍCULOS',
+          'PLANTA ELÉCTRICA':       '1.1.06.01.017-PLANTA ELÉCTRICA',
+        };
+        const AF_DEP_LABEL = {
+          'INMUEBLE (GALPON)':      '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
+          'MOBILIARIO':             '1.1.06.01.013-DEP. ACUMULADA MOBILIARIO',
+          'MAQUINARIAS Y EQUIPOS':  '1.1.06.01.004-DEP. ACUMULADA MAQUINARIA Y EQUIPOS',
+          'EQUIPOS DE COMPUTACIÓN': '1.1.06.01.006-DEP. ACUMULADA EQUIPOS DE COMPUTACION',
+          'VEHÍCULOS':              '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
+          'PLANTA ELÉCTRICA':       '1.1.06.01.017-DEP. ACUMULADA PLANTA ELÉCTRICA',
+        };
+        const costoByRubro = {}, depBsByRubro = {};
+        activosFijosData.records.forEach(r => {
+          const rubro = getRubroBalance(r);
+          if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
+          costoByRubro[rubro].usd += r.costoUSD || 0;
+          costoByRubro[rubro].bs  += r.costoBS  || 0;
+          const depActual = (r.depAcum || 0) + extraM * (r.depreMensual || 0);
+          depBsByRubro[rubro] = (depBsByRubro[rubro] || 0) + depActual;
+        });
+        Object.entries(costoByRubro).forEach(([rubro, v]) => {
+          if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.bs);
+        });
+        Object.entries(depBsByRubro).forEach(([rubro, depBs]) => {
+          if (depBs > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_DEP_LABEL[rubro]||`DEP. ACUMULADA ${rubro}`, -(depBs / tasa), -depBs);
+        });
+      }
     }
 
+    // ── Calcular totales de nodos padre ───────────────────────────────────────
+    const compute = (nodes) => {
+      let u=0, b=0;
+      nodes.forEach(n => {
+        if (!n.isLeaf && n.c?.length) { const t = compute(n.c); n.u = t.u; n.b = t.b; }
+        u += n.u; b += n.b;
+      });
+      return {u, b};
+    };
     compute(root);
-    const sectionOrder = (name) => { const n=name.toUpperCase(); if(n.includes('ACTIVO')||n.startsWith('1'))return 1; if(n.includes('PASIVO')||n.startsWith('2'))return 2; if(n.includes('PATRIMONIO')||n.startsWith('3'))return 3; return 9; };
-    root.sort((a,b) => sectionOrder(a.n) - sectionOrder(b.n));
-    const assetSubOrder = (name) => { const n=name.toUpperCase(); if(n.includes('DISPONIBLE')||n.includes('CAJA')||n.includes('BANCO'))return 1; if(n.includes('POR COBRAR')||n.includes('COBRAR'))return 2; if(n.includes('INVENTARIO'))return 3; if(n.includes('ANTICIPO'))return 4; if(n.includes('FIJO')||n.includes('INMUEBLE'))return 6; return 5; };
-    const sortNodes = (nodes, depth) => { if(depth===0)return; nodes.sort((a,b)=>{const ao=assetSubOrder(a.n),bo=assetSubOrder(b.n);if(ao!==bo)return ao-bo;return a.n.localeCompare(b.n);}); nodes.forEach(n=>{if(!n.isLeaf&&n.c)sortNodes(n.c,depth-1);}); };
-    root.forEach(r => { if(r.c) sortNodes(r.c, 3); });
+
+    // Ordenar raíz: ACTIVOS → PASIVO → PATRIMONIO
+    root.sort((a, b) => {
+      const o = n => { const u=n.toUpperCase(); return u.includes('ACTIV')?1:u.includes('PASIV')?2:u.includes('PATRIM')?3:4; };
+      return o(a.n) - o(b.n);
+    });
+
     return root;
   }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData]);
 
   let totalActivos = 0; let totalPasPat = 0;
-  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIVO')||n.n.startsWith('1'))totalActivos+=n.u; else totalPasPat+=n.u; });
+  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIV'))totalActivos+=n.u; else totalPasPat+=n.u; });
+  const balanceDiff = totalActivos - totalPasPat;
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
 
   if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={auxDataConfig} />;
@@ -1030,11 +1140,24 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
                 {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={a=>{setHighlightedAccounts(p=>{const s=new Set(p);if(s.has(a))s.delete(a);else s.add(a);return s;})}} onShowReport={setActiveCode} isBalance={true}/>)}
                 <tr className="bg-slate-900 text-white font-black border-t-4 border-blue-500">
                   <td colSpan={4} className="p-6">
-                    <div className="flex flex-wrap justify-between items-center px-4">
-                      <div className="flex items-center gap-4"><Scale size={32} className="text-blue-400"/><div><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Ecuación Patrimonial</p><p className="text-sm font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p></div></div>
-                      <div className="flex gap-8 text-right">
+                    <div className="flex flex-wrap justify-between items-center px-4 gap-4">
+                      <div className="flex items-center gap-4">
+                        <Scale size={32} className="text-blue-400"/>
+                        <div>
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Ecuación Patrimonial</p>
+                          <p className="text-sm font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-6 text-right flex-wrap">
                         <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Activos</p><p className="text-xl font-mono text-blue-400">USD {fmtR(totalActivos)}</p></div>
                         <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Pasivo + Patrimonio</p><p className="text-xl font-mono text-purple-400">USD {fmtR(totalPasPat)}</p></div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">ACTIVO − (PASIVO+PATRIMONIO)</p>
+                          <p className={`text-xl font-mono font-black ${Math.abs(balanceDiff) < 0.01 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            USD {new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(balanceDiff)}
+                            {Math.abs(balanceDiff) < 0.01 && <span className="ml-2 text-xs">✓ Cuadrado</span>}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </td>
