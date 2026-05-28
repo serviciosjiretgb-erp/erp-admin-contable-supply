@@ -1674,18 +1674,27 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
       const canonPath = BALANCE_ACCOUNT_PATH[prefix];
       if (!canonPath) return;
 
-      let usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
-      let bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
+      // Cuentas que mantienen exactamente los valores USD y Bs. del archivo (sin conversión por tasa)
+      const preserveSign = fullCode === '3.1.03.01.002';
 
-      // CORRECCIÓN: Forzar negativo SOLO en depreciaciones, ignorando "(UTILIDAD) PÉRDIDA ACUMULADA"
-      const isContraAccount = /DEP.*ACUM/i.test(item.name);
-
-      if (isContraAccount) {
-        usdV = -Math.abs(usdV);
-        bsV  = -Math.abs(bsV);
+      let usdV, bsV;
+      if (preserveSign) {
+        // Usar estrictamente los valores del archivo adjunto — tasa no afecta esta cuenta
+        usdV = item.usd ?? 0;
+        bsV  = item.bs  ?? 0;
       } else {
-        usdV = Math.abs(usdV);
-        bsV  = Math.abs(bsV);
+        usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
+        bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
+
+        // CORRECCIÓN: Forzar negativo SOLO en depreciaciones
+        const isContraAccount = /DEP.*ACUM/i.test(item.name);
+        if (isContraAccount) {
+          usdV = -Math.abs(usdV);
+          bsV  = -Math.abs(bsV);
+        } else {
+          usdV = Math.abs(usdV);
+          bsV  = Math.abs(bsV);
+        }
       }
 
       insertLeaf(canonPath, item.name, usdV, bsV);
