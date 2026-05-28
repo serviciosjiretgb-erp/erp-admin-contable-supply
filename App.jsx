@@ -1791,8 +1791,15 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
   let totalActivos = 0; let totalPasPat = 0;
   let totalActivos_bs = 0; let totalPasPat_bs = 0;
   tree.forEach(n => {
-    if(n.n.toUpperCase().includes('ACTIV')) { totalActivos+=n.u; totalActivos_bs+=n.b; }
-    else { totalPasPat+=n.u; totalPasPat_bs+=n.b; }
+    if (n.n.toUpperCase().includes('ACTIV')) {
+      totalActivos    += n.u;
+      totalActivos_bs += n.b;
+    } else {
+      // Usar Math.abs para que coincida con lo que muestra el ExpandableRow (siempre positivo)
+      // independientemente del signo interno de cada nodo (Pasivo crédito, Patrimonio crédito)
+      totalPasPat    += Math.abs(n.u);
+      totalPasPat_bs += Math.abs(n.b);
+    }
   });
   const balanceDiff    = totalActivos - totalPasPat;
   const balanceDiff_bs = totalActivos_bs - totalPasPat_bs;
