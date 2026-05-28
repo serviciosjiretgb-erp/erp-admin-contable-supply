@@ -825,11 +825,11 @@ const DEFAULT_AUX_DATA = {
 // ============================================================================
 // 3. COMPONENTE: ÁRBOL EXPANDIBLE
 // ============================================================================
-const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, currency = 'both' }) => {
+const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, currency = 'both', onToggle }) => {
   const isAccountNode = /^\d\./.test(node.n) || (!node.c || node.c.length === 0);
   const isLeaf = !node.c || node.c.length === 0;
   const [isOpen, setIsOpen] = useState(defaultOpen);
-  useEffect(() => { setIsOpen(defaultOpen); }, [defaultOpen]);
+  useEffect(() => { setIsOpen(defaultOpen); if(onToggle) onToggle(node.n, defaultOpen); }, [defaultOpen]);
 
   const accountCodeMatch = node.n.match(/^(\d[\d\.]+)/);
   const accountCode = accountCodeMatch ? accountCodeMatch[1] : null;
@@ -886,7 +886,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
       <>
         <tr onClick={() => !isLeaf && setIsOpen(!isOpen)} className={`border-b border-gray-200 cursor-pointer transition-colors ${isHighlighted ? 'bg-amber-100/80 hover:bg-amber-200 border-l-4 border-amber-500' : 'bg-white hover:bg-slate-50 border-l-4 border-slate-400'}`}>
           <td style={indent} className="py-2.5 px-3 font-bold text-[11px] text-slate-900 uppercase select-none flex items-center flex-wrap gap-2">
-            {!isLeaf && <span className={`inline-flex items-center justify-center w-4 h-4 border rounded-sm text-[11px] leading-none transition-colors ${isOpen ? 'border-slate-500 text-slate-600 bg-slate-100' : 'border-slate-300 text-slate-400 bg-white'}`}>{isOpen ? '−' : '+'}</span>}
+            {!isLeaf && <span onClick={e=>{e.stopPropagation();const next=!isOpen;setIsOpen(next);if(onToggle)onToggle(node.n,next);}} className={`inline-flex items-center justify-center w-4 h-4 border rounded-sm text-[11px] leading-none transition-colors ${isOpen ? 'border-slate-500 text-slate-600 bg-slate-100' : 'border-slate-300 text-slate-400 bg-white'}`}>{isOpen ? '−' : '+'}</span>}
             <button onClick={(e) => { e.stopPropagation(); toggleHighlight(node.n); }} className="focus:outline-none transition-transform hover:scale-110"><Star size={16} fill={isHighlighted ? "#f59e0b" : "none"} color={isHighlighted ? "#f59e0b" : "#cbd5e1"} /></button>
             <span className="truncate">{node.n}</span>
             {hasMapping && isBalance && (
@@ -900,7 +900,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
           {showBS  && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell ${isHighlighted ? 'text-amber-900' : 'text-slate-800'}`}>{fmtCur(Math.abs(node.b))}</td>}
           <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${isHighlighted ? 'text-amber-700' : 'text-slate-500'}`}>{pct}</td>
         </tr>
-        {isOpen && node.c && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency}/>)}
+        {isOpen && node.c && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle}/>)}
         {!isLeaf && isOpen && (
           <tr className="bg-slate-200/60 font-black text-[10px] border-t border-slate-200">
             <td style={{ paddingLeft: level * 18 + 24 }} className="py-1.5 px-3 uppercase text-slate-500 tracking-wider">TOTAL {node.n}</td>
@@ -964,10 +964,28 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Saldo Total</p>
             <p className={`text-2xl font-mono font-black ${isCxC ? 'text-blue-600' : 'text-red-600'}`}>USD {fmtCur(total)}</p>
           </div>
-          <button onClick={() => exportAuxiliarExcel(byClient, total, mapInfo, accountCode, isCxC)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
-            <FileSpreadsheet size={14}/> Exportar Excel
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => exportAuxiliarExcel(byClient, total, mapInfo, accountCode, isCxC)}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+              <FileSpreadsheet size={14}/> Excel
+            </button>
+            <button onClick={() => {
+              const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
+              const rows = byClient.map(([nombre, group]) => {
+                const detRows = group.records.map(item =>
+                  `<tr><td>&nbsp;&nbsp;&nbsp;&nbsp;${item.doc}</td><td>${item.emision}</td><td>${item.vence}</td><td style="text-align:right">${item.dias}</td><td>${item.descripcion||'-'}</td><td style="text-align:right;font-weight:900">${fmtP(item.monto)}</td></tr>`
+                ).join('');
+                return `<tr class="section"><td colspan="5" style="font-weight:900">${nombre}</td><td style="text-align:right;font-weight:900">${fmtP(group.subtotal)}</td></tr>${detRows}<tr class="total"><td colspan="5">SUBTOTAL ${nombre}</td><td style="text-align:right">${fmtP(group.subtotal)}</td></tr>`;
+              }).join('');
+              printReport(
+                `<h1>${isCxC?'Auxiliar de Cuentas por Cobrar':'Auxiliar de Cuentas por Pagar'}</h1><h2>Cuenta: ${accountCode} — ${mapInfo.label}</h2>`,
+                `<table><thead><tr><th>Nombre / Doc.</th><th>Emisión</th><th>Vencimiento</th><th>Días</th><th>Descripción</th><th>Monto USD</th></tr></thead><tbody>${rows}<tr class="grand-total"><td colspan="5">TOTAL GENERAL</td><td style="text-align:right">${fmtP(total)}</td></tr></tbody></table>`
+              );
+            }}
+              className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+              <FileText size={14}/> PDF
+            </button>
+          </div>
         </div>
       </div>
       <div className="space-y-2">
@@ -1129,8 +1147,12 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     return root;
   }, [dbData, selectedMonth, activosFijosData]);
 
-  let totalUSD = 0; let baseVentas = 0;
-  tree.forEach(n => { if(n.n.toUpperCase().includes('INGRESO')||n.n.toUpperCase().includes('VENTA')||n.n.startsWith('4')){totalUSD+=n.u;baseVentas+=n.u;}else{totalUSD-=n.u;} });
+  let totalUSD = 0; let totalBS = 0; let baseVentas = 0;
+  tree.forEach(n => {
+    if(n.n.toUpperCase().includes('INGRESO')||n.n.toUpperCase().includes('VENTA')||n.n.startsWith('4')) {
+      totalUSD+=n.u; totalBS+=n.b; baseVentas+=n.u;
+    } else { totalUSD-=n.u; totalBS-=n.b; }
+  });
   if (baseVentas === 0) baseVentas = 1;
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
@@ -1202,7 +1224,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
               <tr className="bg-[#111111] text-white font-black border-t-4 border-orange-600">
                 <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
                 {currency !== 'bs'  && <td className={`px-3 py-7 text-right text-lg font-mono ${totalUSD < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmtR(totalUSD)}</td>}
-                {currency !== 'usd' && <td className="px-3 py-7 text-right text-lg font-mono hidden sm:table-cell text-slate-400">—</td>}
+                {currency !== 'usd' && <td className={`px-3 py-7 text-right text-base font-mono hidden sm:table-cell ${totalBS < 0 ? 'text-red-300' : 'text-amber-300'}`}>{fmtR(totalBS)}</td>}
                 <td className="px-3 py-7 text-right text-lg font-mono">{(Math.abs(totalUSD)/baseVentas*100).toFixed(2)}%</td>
               </tr>
             </tbody>
@@ -1607,7 +1629,8 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
           depBsByRubro[rubro] = (depBsByRubro[rubro] || 0) + depActual;
         });
         Object.entries(costoByRubro).forEach(([rubro, v]) => {
-          if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.bs);
+          // Siempre usar el costo en USD del auxiliar directamente (NO convertir Bs÷tasa)
+          if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.bs > 0 ? v.bs : v.usd * tasa);
         });
         Object.entries(depBsByRubro).forEach(([rubro, depBs]) => {
           if (depBs > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_DEP_LABEL[rubro]||`DEP. ACUMULADA ${rubro}`, -(depBs / tasa), -depBs);
@@ -1636,13 +1659,21 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
   }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData]);
 
   let totalActivos = 0; let totalPasPat = 0;
-  tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIV'))totalActivos+=n.u; else totalPasPat+=n.u; });
-  // Fix ecuación: pasivos y patrimonio son de naturaleza acreedora → su suma es negativa
-  // Diferencia correcta = totalActivos + totalPasPat (ya es negativo)
-  const balanceDiff = totalActivos + totalPasPat;
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
+  let totalActivos_bs = 0; let totalPasPat_bs = 0;
+  tree.forEach(n => {
+    if(n.n.toUpperCase().includes('ACTIV')) { totalActivos+=n.u; totalActivos_bs+=n.b; }
+    else { totalPasPat+=n.u; totalPasPat_bs+=n.b; }
+  });
+  const balanceDiff    = totalActivos + totalPasPat;
+  const balanceDiff_bs = totalActivos_bs + totalPasPat_bs;
+  const fmtR  = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
+  const fmtRs = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const [openNodes, setOpenNodes] = useState(() => new Set());
   const toggleOpen = (label) => setOpenNodes(p => { const s=new Set(p); if(s.has(label))s.delete(label); else s.add(label); return s; });
+  // Track open/closed nodes for export — synced with ExpandableRow via callback
+  const [openNodeMap, setOpenNodeMap] = useState(() => ({}));
+  const reportNodeOpen = (label, isOpen) => setOpenNodeMap(p => ({...p, [label.trim().toUpperCase()]: isOpen}));
+  const getOpenSet = () => defaultOpen ? null : new Set(Object.entries(openNodeMap).filter(([,v])=>v).map(([k])=>k));
 
   // Build print HTML for balance
   const handlePrintBalance = () => {
@@ -1692,7 +1723,7 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
             <button onClick={()=>{setDefaultOpen(true);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronDown size={14}/> Expandir</button>
             <button onClick={()=>{setDefaultOpen(false);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronRight size={14}/> Contraer</button>
           </div>
-          <button onClick={() => exportBalanceExcel(tree, monthLabel(selectedMonth), tasa, totalActivos, totalPasPat, balanceDiff, defaultOpen ? null : openNodes, currency)}
+          <button onClick={() => exportBalanceExcel(tree, monthLabel(selectedMonth), tasa, totalActivos, totalPasPat, balanceDiff, getOpenSet(), currency)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
             <FileSpreadsheet size={13}/> Excel
           </button>
@@ -1724,16 +1755,16 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
                 </tr>
               </thead>
               <tbody key={expandKey}>
-                {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={a=>{setHighlightedAccounts(p=>{const s=new Set(p);if(s.has(a))s.delete(a);else s.add(a);return s;})}} onShowReport={setActiveCode} isBalance={true} currency={currency}/>)}
+                {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={a=>{setHighlightedAccounts(p=>{const s=new Set(p);if(s.has(a))s.delete(a);else s.add(a);return s;})}} onShowReport={setActiveCode} isBalance={true} currency={currency} onToggle={reportNodeOpen}/>)}
                 {/* Total Pasivo y Patrimonio */}
                 <tr className="bg-slate-100 border-t-2 border-slate-300">
                   <td className="px-4 py-3 font-black text-xs uppercase text-slate-700 tracking-wider pl-6">TOTAL PASIVO Y PATRIMONIO</td>
-                  <td className="px-3 py-3 text-right font-mono font-black text-sm text-slate-900">{fmtR(-totalPasPat)}</td>
-                  <td className="px-3 py-3 text-right font-mono font-black text-sm text-slate-600 hidden sm:table-cell">—</td>
+                  {currency !== 'bs'  && <td className="px-3 py-3 text-right font-mono font-black text-sm text-slate-900">{fmtR(-totalPasPat)}</td>}
+                  {currency !== 'usd' && <td className="px-3 py-3 text-right font-mono font-black text-sm text-amber-700 hidden sm:table-cell">Bs. {fmtR(-totalPasPat_bs)}</td>}
                   <td/>
                 </tr>
                 <tr className="bg-[#111111] text-white font-black border-t-4 border-orange-500">
-                  <td colSpan={4} className="p-5">
+                  <td colSpan={currency==='both'?4:3} className="p-5">
                     <div className="flex flex-wrap justify-between items-center px-2 gap-4">
                       <div className="flex items-center gap-3">
                         <Scale size={28} className="text-orange-400"/>
@@ -1743,14 +1774,25 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
                         </div>
                       </div>
                       <div className="flex gap-5 text-right flex-wrap">
-                        <div><p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Activos</p><p className="text-lg font-mono text-orange-400">USD {fmtR(totalActivos)}</p></div>
-                        <div><p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Pasivo + Patrimonio</p><p className="text-lg font-mono text-amber-400">USD {fmtR(-totalPasPat)}</p></div>
+                        <div>
+                          <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Activos</p>
+                          {currency !== 'bs'  && <p className="text-lg font-mono text-orange-400">USD {fmtR(totalActivos)}</p>}
+                          {currency !== 'usd' && <p className="text-sm font-mono text-amber-300">Bs. {fmtR(totalActivos_bs)}</p>}
+                        </div>
+                        <div>
+                          <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Pasivo + Patrimonio</p>
+                          {currency !== 'bs'  && <p className="text-lg font-mono text-amber-400">USD {fmtR(-totalPasPat)}</p>}
+                          {currency !== 'usd' && <p className="text-sm font-mono text-amber-300">Bs. {fmtR(-totalPasPat_bs)}</p>}
+                        </div>
                         <div>
                           <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">DIFERENCIA</p>
-                          <p className={`text-lg font-mono font-black ${Math.abs(balanceDiff) < 0.01 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {currency !== 'bs' && <p className={`text-lg font-mono font-black ${Math.abs(balanceDiff) < 0.01 ? 'text-emerald-400' : 'text-red-400'}`}>
                             USD {new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(balanceDiff))}
                             {Math.abs(balanceDiff) < 0.01 && <span className="ml-2 text-[10px]">✓ CUADRADO</span>}
-                          </p>
+                          </p>}
+                          {currency !== 'usd' && <p className={`text-sm font-mono font-black ${Math.abs(balanceDiff_bs) < 1 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            Bs. {new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(balanceDiff_bs))}
+                          </p>}
                         </div>
                       </div>
                     </div>
