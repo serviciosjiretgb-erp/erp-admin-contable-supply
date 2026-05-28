@@ -73,10 +73,10 @@ const processFiles = async (files) => {
       if (!name || name === 'Etiquetas de fila' || name === 'RESULTADO DEL EJERCICIO') continue;
       if (name.startsWith('Total ')) { smartPop(pathStack, name); continue; }
       const usdStr = row[1]; const bsStr = row[2];
-      if (String(usdStr).includes('SALDO NETO') || String(bsStr).includes('SALDO NETO')) { pathStack.push(name.trim()); continue; }
+      if (String(usdStr).includes('SALDO NETO') || String(bsStr).includes('SALDO NETO')) { pathStack.push(name.trim().toUpperCase()); continue; }
       const usd = parseVal(usdStr); const bs = parseVal(bsStr);
-      if (usd !== null) { allParsedData.push({ month, path: pathStack.map(p => p.trim()).join('>'), name: name.trim(), usd, bs: bs || 0 }); }
-      else { pathStack.push(name.trim()); }
+      if (usd !== null) { allParsedData.push({ month, path: pathStack.map(p => p.trim().toUpperCase()).join('>'), name: name.trim().toUpperCase(), usd, bs: bs || 0 }); }
+      else { pathStack.push(name.trim().toUpperCase()); }
     }
   }
   return allParsedData;
@@ -188,7 +188,7 @@ const processSaldosBalance = async (file, planCuentas) => {
         // Section header → push to pathStack, but skip duplicate consecutive names
         const topName = pathStack.length ? pathStack[pathStack.length-1].toUpperCase() : '';
         if (name.toUpperCase() !== topName) {
-          pathStack.push(name.trim());
+          pathStack.push(name.trim().toUpperCase());
         }
       }
     }
@@ -237,11 +237,11 @@ const processSaldosBalance = async (file, planCuentas) => {
     if (isAccount && (usdV !== null || bsV !== null)) {
       balanceData.push({
         month: fileMonth,
-        path: pathStack.map(p => p.trim()).join('>') || 'ACTIVOS>OTROS',
+        path: pathStack.map(p => p.trim().toUpperCase()).join('>') || 'ACTIVOS>OTROS',
         name, usd: usdV ?? 0, bs: bsV ?? 0,
       });
     } else if (!isAccount) {
-      pathStack.push(name.trim());
+      pathStack.push(name.trim().toUpperCase());
     }
   }
   return balanceData;
@@ -1125,9 +1125,8 @@ const DEFAULT_AUX_DATA = {
 // ============================================================================
 // 3. COMPONENTE: ÁRBOL EXPANDIBLE
 // ============================================================================
-const toTitleCase = (s) => s.replace(/\b\w/g, c => c.toUpperCase()).replace(/\b(\w)(\w+)/g, (_, a, b) => a.toUpperCase() + b.toLowerCase());
 
-const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, currency = 'both', onToggle, titleCaseLeaves = false }) => {
+const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, highlightedAccounts, toggleHighlight, onShowReport, isBalance = false, currency = 'both', onToggle }) => {
   const isAccountNode = /^\d\./.test(node.n) || (!node.c || node.c.length === 0);
   const isLeaf = !node.c || node.c.length === 0;
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -1143,16 +1142,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
   const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
 
   // Format label: sections/folders always UPPERCASE; leaves TitleCase when flag is set (Estado Resultado)
-  const fmtLabel = (text, isSection) => {
-    if (isSection) return text.toUpperCase();
-    if (titleCaseLeaves) {
-      // Keep account code prefix as-is, apply TitleCase to description part
-      const m = text.match(/^(\d[\d\.]+(?:-|\s))(.*)/);
-      if (m) return m[1] + toTitleCase(m[2]);
-      return toTitleCase(text);
-    }
-    return text.toUpperCase();
-  };
+  const fmtLabel = (text) => text ? text.toUpperCase() : '';
 
   if (!isLeaf && !isAccountNode) {
     const isRoot = level === 0;
@@ -1165,12 +1155,12 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
     return (
       <>
         <tr className={isRoot ? 'bg-[#111827]' : 'bg-white border-b border-gray-100'}>
-          <td style={indent} className={isRoot ? `py-3 px-3 ${rootColor} font-black text-xs uppercase tracking-[0.2em]` : 'py-2 px-3 font-black text-[11px] text-slate-800 uppercase'}>{fmtLabel(node.n, true)}</td>
+          <td style={indent} className={isRoot ? `py-3 px-3 ${rootColor} font-black text-xs uppercase tracking-[0.2em]` : 'py-2 px-3 font-black text-[11px] text-slate-800 uppercase'}>{fmtLabel(node.n)}</td>
           <td colSpan={3} />
         </tr>
-        {node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle} titleCaseLeaves={titleCaseLeaves}/>)}
+        {node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle} )}
         <tr className={`${isRoot ? `bg-slate-900 text-white border-t-2 ${borderColor}` : 'bg-slate-200 text-slate-800 border-t border-slate-300'} shadow-sm`}>
-          <td style={{ paddingLeft: level * 18 + 28 }} className="py-2.5 px-3 font-black text-[10px] uppercase tracking-wider">TOTAL {fmtLabel(node.n, true)}</td>
+          <td style={{ paddingLeft: level * 18 + 28 }} className="py-2.5 px-3 font-black text-[10px] uppercase tracking-wider">TOTAL {fmtLabel(node.n)}</td>
           {showUSD && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${isRoot ? rootColor : 'text-slate-900'}`}>{fmtCur(Math.abs(node.u))}</td>}
           {showBS  && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black hidden sm:table-cell ${isRoot ? rootColor : 'text-slate-900'}`}>{fmtCur(Math.abs(node.b))}</td>}
           <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-black ${isRoot ? rootColor : 'text-slate-900'}`}>{pct}</td>
@@ -1187,7 +1177,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
         <tr className="border-b border-slate-100 bg-slate-50/80 hover:bg-slate-100 transition-colors">
           <td style={{ paddingLeft: `${level * 18 + 28}px` }} className="py-1.5 px-3 text-[10px] text-slate-500 flex items-center gap-2">
             <span className="w-1 h-1 rounded-full bg-slate-300 flex-shrink-0"/>
-            <span className="truncate max-w-[420px] italic">{fmtLabel(node.n, false)}</span>
+            <span className="truncate max-w-[420px] italic">{fmtLabel(node.n)}</span>
           </td>
           {showUSD && <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-500">{fmtCur(Math.abs(node.u))}</td>}
           <td className="py-1.5 px-3 text-right font-mono text-[10px] text-slate-400 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>
@@ -1214,10 +1204,10 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
           {showBS  && <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold hidden sm:table-cell ${isHighlighted ? 'text-amber-900' : 'text-slate-800'}`}>{fmtCur(Math.abs(node.b))}</td>}
           <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${isHighlighted ? 'text-amber-700' : 'text-slate-500'}`}>{pct}</td>
         </tr>
-        {isOpen && node.c && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle} titleCaseLeaves={titleCaseLeaves}/>)}
+        {isOpen && node.c && node.c.map((child, i) => <ExpandableRow key={i} node={child} level={level + 1} totalBaseUSD={totalBaseUSD} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} onShowReport={onShowReport} isBalance={isBalance} currency={currency} onToggle={onToggle} )}
         {!isLeaf && isOpen && (
           <tr className="bg-slate-200/60 font-black text-[10px] border-t border-slate-200">
-            <td style={{ paddingLeft: level * 18 + 24 }} className="py-1.5 px-3 uppercase text-slate-500 tracking-wider">TOTAL {fmtLabel(node.n, true)}</td>
+            <td style={{ paddingLeft: level * 18 + 24 }} className="py-1.5 px-3 uppercase text-slate-500 tracking-wider">TOTAL {fmtLabel(node.n)}</td>
             {showUSD && <td className="py-1.5 px-3 text-right font-mono text-slate-700">{fmtCur(Math.abs(node.u))}</td>}
             {showBS  && <td className="py-1.5 px-3 text-right font-mono text-slate-700 hidden sm:table-cell">{fmtCur(Math.abs(node.b))}</td>}
             <td className="py-1.5 px-3 text-right font-mono text-slate-500">{pct}</td>
@@ -1569,7 +1559,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
                 const showUB = isCost; // show Utilidad Bruta row right after COSTOS node
                 return (
                   <React.Fragment key={i}>
-                    <ExpandableRow node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency} titleCaseLeaves={true} onToggle={reportNodeOpen}/>
+                    <ExpandableRow node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency} onToggle={reportNodeOpen}/>
                     {showUB && (
                       <tr className="border-t-2 border-emerald-400 bg-emerald-50">
                         <td className="px-5 py-3 font-black text-[11px] uppercase tracking-widest text-emerald-800 pl-8">UTILIDAD BRUTA</td>
@@ -2729,38 +2719,43 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
 function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
   const MESES_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  // Meses que tienen datos de balance (cuentas 1/2/3)
-  const balanceMeses = useMemo(() => {
-    const ms = [...new Set(dbData.filter(d=>/^[123]/.test(d.name)).map(d=>d.month))];
-    return ms.sort((a,b) => (MESES_ORDER.indexOf(a)+1||99) - (MESES_ORDER.indexOf(b)+1||99));
-  }, [dbData]);
-
-  // Meses que tienen datos de resultados (cuentas 4/5/6)
-  const resultMeses = useMemo(() => {
-    const ms = [...new Set(dbData.filter(d=>/^[456]/.test(d.name)).map(d=>d.month))];
-    return ms.sort((a,b) => (MESES_ORDER.indexOf(a)+1||99) - (MESES_ORDER.indexOf(b)+1||99));
-  }, [dbData]);
-
+  // Meses disponibles: unión de meses con datos de balance (1/2/3) O resultado (4/5/6)
+  // "Saldos Iniciales" se fusiona con el primer mes de resultados disponible
   const allMeses = useMemo(() => {
-    const s = new Set([...balanceMeses, ...resultMeses]);
-    return [...s].sort((a,b) => (MESES_ORDER.indexOf(a)+1||99) - (MESES_ORDER.indexOf(b)+1||99));
-  }, [balanceMeses, resultMeses]);
+    const balMs = new Set(dbData.filter(d=>/^[123]/.test(d.name)).map(d=>d.month));
+    const resMs = new Set(dbData.filter(d=>/^[456]/.test(d.name)).map(d=>d.month));
+    // Los meses de resultados son los "meses reales"; eliminamos "Saldos Iniciales" del selector
+    const realMonths = [...new Set([...resMs, ...balMs])].filter(m=>m!=='Saldos Iniciales' && m!=='Sin Mes');
+    // Si solo hay Saldos Iniciales (sin resultados), igual lo mostramos
+    if (realMonths.length === 0 && balMs.has('Saldos Iniciales')) realMonths.push('Saldos Iniciales');
+    return realMonths.sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
+  }, [dbData]);
 
-  const [selectedMonth, setSelectedMonth] = useState(allMeses[0] || 'Abril');
+  const [selectedMonth, setSelectedMonth] = useState(() => allMeses[0] || 'Abril');
   const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('all'); // 'all' | '1' | '2' | '3' | '4' | '5' | '6'
+  const [filterType, setFilterType] = useState('all');
+  const [currency, setCurrency] = useState('both'); // 'usd' | 'bs' | 'both'
 
   const tasa = tasaByMonth[selectedMonth] || 1;
   const fmtR = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+  const showUSD = currency !== 'bs';
+  const showBS  = currency !== 'usd';
 
-  // Build trial balance for selected month
+  // Obtener datos combinados: balance (1/2/3) + resultado (4/5/6) del mes seleccionado
   const rows = useMemo(() => {
-    const monthData = dbData.filter(d => d.month === selectedMonth);
+    // Cuentas de balance: primero busca el mes exacto, luego "Saldos Iniciales" como fallback
+    const exactBal = dbData.filter(d => d.month === selectedMonth && /^[123]/.test(d.name));
+    const initBal  = dbData.filter(d => d.month === 'Saldos Iniciales' && /^[123]/.test(d.name));
+    const balData  = exactBal.length > 0 ? exactBal : initBal;
+
+    // Cuentas de resultado: mes exacto
+    const resData  = dbData.filter(d => d.month === selectedMonth && /^[456]/.test(d.name));
+
     const map = {};
-    monthData.forEach(item => {
+    [...balData, ...resData].forEach(item => {
       const code = item.name.match(/^(\d[\d\.]+)/)?.[1] || null;
       if (!code) return;
-      const key = item.name.trim();
+      const key = item.name.trim().toUpperCase();
       if (!map[key]) map[key] = { name: key, code, usd: 0, bs: 0 };
       map[key].usd += item.usd || 0;
       map[key].bs  += item.bs  || 0;
@@ -2768,21 +2763,20 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
 
     return Object.values(map)
       .filter(r => r.usd !== 0 || r.bs !== 0)
-      .sort((a, b) => a.code.localeCompare(b.code, undefined, {numeric:true}));
+      .sort((a,b) => a.code.localeCompare(b.code, undefined, {numeric:true}));
   }, [dbData, selectedMonth]);
 
-  // Filtered rows
   const filtered = useMemo(() => {
     let rs = rows;
     if (filterType !== 'all') rs = rs.filter(r => r.code.startsWith(filterType));
     if (search.trim()) {
-      const q = search.toLowerCase();
-      rs = rs.filter(r => r.name.toLowerCase().includes(q));
+      const q = search.toUpperCase();
+      rs = rs.filter(r => r.name.includes(q));
     }
     return rs;
   }, [rows, filterType, search]);
 
-  // Totals
+  // Totales
   const totDeudorUSD  = filtered.filter(r=>r.usd>0).reduce((s,r)=>s+r.usd,0);
   const totAcreedUSD  = filtered.filter(r=>r.usd<0).reduce((s,r)=>s+Math.abs(r.usd),0);
   const totDeudorBS   = filtered.filter(r=>r.bs>0).reduce((s,r)=>s+r.bs,0);
@@ -2793,37 +2787,79 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
     '1':'ACTIVOS (1)','2':'PASIVOS (2)','3':'PATRIMONIO (3)',
     '4':'INGRESOS (4)','5':'COSTOS (5)','6':'GASTOS (6)',
   };
+  const groupColor = {
+    '1':'bg-blue-900 text-blue-300','2':'bg-red-900 text-red-300',
+    '3':'bg-purple-900 text-purple-300','4':'bg-emerald-900 text-emerald-300',
+    '5':'bg-amber-900 text-amber-300','6':'bg-orange-900 text-orange-300',
+  };
 
+  // ── Export Excel ────────────────────────────────────────────────────────────
   const exportComprobacionExcel = async () => {
     try {
       const XL = await loadSheetJS();
       const n = v => parseFloat((v||0).toFixed(2));
-      const letterhead = buildLetterheadRows('BALANCE DE COMPROBACIÓN', `Período: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`);
-      const COLS = ['Código', 'Cuenta / Descripción', 'Saldo Deudor USD', 'Saldo Acreedor USD', 'Saldo Deudor Bs.', 'Saldo Acreedor Bs.'];
-      const dataRows = filtered.map(r => [
-        r.code,
-        r.name,
-        r.usd > 0 ? n(r.usd)  : '',
-        r.usd < 0 ? n(Math.abs(r.usd)) : '',
-        r.bs  > 0 ? n(r.bs)   : '',
-        r.bs  < 0 ? n(Math.abs(r.bs))  : '',
-      ]);
-      const sheetData = [
-        ...letterhead, COLS, ...dataRows, [],
-        ['', 'TOTAL DEUDOR',   n(totDeudorUSD), '',              n(totDeudorBS),  ''],
-        ['', 'TOTAL ACREEDOR', '',              n(totAcreedUSD), '',              n(totAcreedBS)],
-        ['', 'DIFERENCIA',     n(totDeudorUSD-totAcreedUSD), '', n(totDeudorBS-totAcreedBS), ''],
+      const nCols = showUSD && showBS ? 6 : showUSD ? 4 : 4;
+      const colHeaders = ['CÓDIGO','CUENTA / DESCRIPCIÓN',
+        ...(showUSD?['DEUDOR USD','ACREEDOR USD']:[]),
+        ...(showBS ?['DEUDOR Bs.','ACREEDOR Bs.'  ]:[]),
       ];
-      const ws = XL.utils.aoa_to_sheet(sheetData);
-      ws['!cols'] = [{wch:18},{wch:55},{wch:18},{wch:18},{wch:20},{wch:20}];
-      const wb = XL.utils.book_new();
-      XL.utils.book_append_sheet(wb, ws, 'Balance de Comprobación');
-      XL.writeFile(wb, `BalanceComprobacion_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
-    } catch(e) { alert('Error: '+e.message); }
+      const ws = {}; let r = 1;
+      for(let i=0;i<8;i++){for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]=mkCell('',{}); r++;}
+      applyHeaderRow(ws, r, colHeaders, XS.TEAL); r++;
+      let prevGrp = '';
+      filtered.forEach(row => {
+        const grp = row.code[0];
+        if (grp !== prevGrp) {
+          const grpColors={'1':'1E3A5F','2':'3B1219','3':'2E1065','4':'064E3B','5':'78350F','6':'431407'};
+          const grpFonts={'1':'93C5FD','2':'FCA5A5','3':'D8B4FE','4':'6EE7B7','5':'FCD34D','6':'FDBA74'};
+          const bg=grpColors[grp]||'111827'; const fg=grpFonts[grp]||'FFFFFF';
+          const grpSt={fill:{patternType:'solid',fgColor:{rgb:bg}},font:{name:'Arial',bold:true,color:{rgb:fg},sz:10},alignment:{horizontal:'left',vertical:'center'},border:{top:{style:'medium',color:{rgb:XS.TEAL}}}};
+          for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]={v:c===0?groupLabel[grp]:'',t:'s',s:grpSt};
+          r++; prevGrp=grp;
+        }
+        const isD=row.usd>=0;
+        const bg=r%2===0?'FFFFFF':'F0FDFA';
+        const bdr={bottom:{style:'hair',color:{rgb:'E5E7EB'}}};
+        const rowVals=['CÓDIGO','CUENTA',...(showUSD?['DU','AU']:[]),...(showBS?['DB','AB']:[])];
+        const vals=[row.code, row.name.replace(/^\d[\d.]*-?/,''),
+          ...(showUSD?[row.usd>0?n(row.usd):null, row.usd<0?n(Math.abs(row.usd)):null]:[]),
+          ...(showBS ?[row.bs>0?n(row.bs):null,   row.bs<0?n(Math.abs(row.bs)):null  ]:[]),
+        ];
+        vals.forEach((v,ci)=>{
+          const addr=String.fromCharCode(65+ci)+r;
+          const isNum=ci>=2; const isAcr=ci===3||ci===5;
+          ws[addr]={v:v??'',t:typeof v==='number'?'n':'s',s:{
+            fill:{patternType:'solid',fgColor:{rgb:bg}},
+            font:{name:'Arial',bold:false,color:{rgb:isAcr?'B91C1C':'0D9488'},sz:9},
+            alignment:{horizontal:isNum?'right':ci===0?'center':'left',vertical:'center'},
+            border:bdr,...(isNum&&v!=null?{numFmt:XS.NUM}:{})}};
+        });
+        r++;
+      });
+      // Totals
+      const totVals=[['',  'TOTAL DEUDOR',   ...(showUSD?[n(totDeudorUSD), null]:[]), ...(showBS?[n(totDeudorBS), null]:[])],
+                     ['',  'TOTAL ACREEDOR',  ...(showUSD?[null, n(totAcreedUSD)]:[]), ...(showBS?[null, n(totAcreedBS)]:[])],
+                     ['',  cuadra?'✓ CUADRADO':'DIFERENCIA', ...(showUSD?[n(Math.abs(totDeudorUSD-totAcreedUSD)),null]:[]),...(showBS?[n(Math.abs(totDeudorBS-totAcreedBS)),null]:[])],
+      ];
+      totVals.forEach(tv => {
+        tv.forEach((v,ci) => { ws[String.fromCharCode(65+ci)+r]=footerCell(v??'', ci===1?(cuadra?'10B981':XS.AMBER):ci===2||ci===4?'0D9488':'B91C1C', ci>=2&&v!=null); }); r++;
+      });
+      ws['!ref']=`A1:${String.fromCharCode(65+nCols-1)}${r}`;
+      ws['!cols']=[{wch:18},{wch:52},...(showUSD?[{wch:18},{wch:18}]:[]),...(showBS?[{wch:20},{wch:20}]:[])];
+      applyLetterhead(ws,'BALANCE DE COMPROBACIÓN',`Período: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`,nCols);
+      const wb=XL.utils.book_new();
+      XL.utils.book_append_sheet(wb,ws,'Balance de Comprobación');
+      XL.writeFile(wb,`BalanceComprobacion_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
+    } catch(e){alert('Error: '+e.message);}
   };
 
+  // ── PDF ─────────────────────────────────────────────────────────────────────
   const handlePrint = () => {
     const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+    const colHeaders = ['<th>Código</th><th>Cuenta / Descripción</th>',
+      ...(showUSD?['<th style="text-align:right">Deudor USD</th><th style="text-align:right">Acreedor USD</th>']:[]),
+      ...(showBS ?['<th style="text-align:right">Deudor Bs.</th><th style="text-align:right">Acreedor Bs.</th>']:[]),
+    ].join('');
     let prev = '';
     const rows_html = filtered.map(r => {
       const grp = r.code[0];
@@ -2831,22 +2867,17 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
       if (grp !== prev) { sep = `<tr class="section"><td colspan="6">${groupLabel[grp]||grp}</td></tr>`; prev=grp; }
       return `${sep}<tr>
         <td style="font-size:8pt;color:#666">${r.code}</td>
-        <td>${r.name.replace(/^\d[\d\.]*-/,'')}</td>
-        <td style="text-align:right">${r.usd>0?fmtP(r.usd):''}</td>
-        <td style="text-align:right">${r.usd<0?fmtP(Math.abs(r.usd)):''}</td>
-        <td style="text-align:right">${r.bs>0?fmtP(r.bs):''}</td>
-        <td style="text-align:right">${r.bs<0?fmtP(Math.abs(r.bs)):''}</td>
+        <td>${r.name.replace(/^\d[\d.]*-?/,'')}</td>
+        ${showUSD?`<td style="text-align:right">${r.usd>0?fmtP(r.usd):''}</td><td style="text-align:right">${r.usd<0?fmtP(Math.abs(r.usd)):''}</td>`:''}
+        ${showBS ?`<td style="text-align:right">${r.bs>0?fmtP(r.bs):''}</td><td style="text-align:right">${r.bs<0?fmtP(Math.abs(r.bs)):''}</td>`:''}
       </tr>`;
     }).join('');
     printReport(
       `<h1>Balance de Comprobación</h1><h2>Período: ${selectedMonth} | Tasa: ${tasa} Bs/USD</h2>`,
-      `<table>
-        <thead><tr><th>Código</th><th>Cuenta / Descripción</th><th>Deudor USD</th><th>Acreedor USD</th><th>Deudor Bs.</th><th>Acreedor Bs.</th></tr></thead>
-        <tbody>${rows_html}
-        <tr class="grand-total"><td colspan="2">TOTAL DEUDOR</td><td style="text-align:right">${fmtP(totDeudorUSD)}</td><td></td><td style="text-align:right">${fmtP(totDeudorBS)}</td><td></td></tr>
-        <tr class="grand-total"><td colspan="2">TOTAL ACREEDOR</td><td></td><td style="text-align:right">${fmtP(totAcreedUSD)}</td><td></td><td style="text-align:right">${fmtP(totAcreedBS)}</td></tr>
-        </tbody>
-      </table>`
+      `<table><thead><tr>${colHeaders}</tr></thead><tbody>${rows_html}
+      <tr class="grand-total"><td colspan="2">TOTAL DEUDOR</td>${showUSD?`<td style="text-align:right">${fmtP(totDeudorUSD)}</td><td></td>`:''}${showBS?`<td style="text-align:right">${fmtP(totDeudorBS)}</td><td></td>`:''}</tr>
+      <tr class="grand-total"><td colspan="2">TOTAL ACREEDOR</td>${showUSD?`<td></td><td style="text-align:right">${fmtP(totAcreedUSD)}</td>`:''}${showBS?`<td></td><td style="text-align:right">${fmtP(totAcreedBS)}</td>`:''}</tr>
+      </tbody></table>`
     );
   };
 
@@ -2861,14 +2892,22 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
               {allMeses.length > 0 ? allMeses.map(m=><option key={m}>{m}</option>) : <option>Sin datos</option>}
             </select>
           </div>
+          {/* Búsqueda */}
           <div className="relative border-l-2 border-slate-700 pl-4">
             <Search size={11} className="absolute left-7 top-1/2 -translate-y-1/2 text-slate-400"/>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar cuenta..." className="pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs outline-none w-40"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="BUSCAR CUENTA..." className="pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs outline-none w-44"/>
           </div>
+          {/* Filtro por grupo */}
           <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg p-1.5 outline-none">
-            <option value="all">Todas las cuentas</option>
+            <option value="all">TODAS LAS CUENTAS</option>
             {['1','2','3','4','5','6'].map(k=><option key={k} value={k}>{groupLabel[k]}</option>)}
           </select>
+          {/* Moneda toggle */}
+          <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
+            {[['both','USD + Bs'],['usd','Solo USD'],['bs','Solo Bs']].map(([v,lbl])=>(
+              <button key={v} onClick={()=>setCurrency(v)} className={`px-3 py-1.5 rounded text-[10px] font-black uppercase transition-colors ${currency===v?'bg-teal-500 text-white':'text-slate-400 hover:text-white hover:bg-slate-700'}`}>{lbl}</button>
+            ))}
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={exportComprobacionExcel} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
@@ -2881,23 +2920,26 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
       </header>
 
       <main className="p-4 md:p-8 max-w-7xl mx-auto pb-16">
-        {/* Header card */}
         <div className="bg-white px-8 py-6 border-t-4 border-teal-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500 mb-1">Servicios Jiret G&B, C.A.</p>
-          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Balance de Comprobación</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500 mb-1">SERVICIOS JIRET G&B, C.A.</p>
+          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">BALANCE DE COMPROBACIÓN</h1>
           <p className="text-teal-600 font-black uppercase bg-teal-50 px-5 py-1.5 rounded-full text-[10px] border border-teal-200 mt-2">
-            Período: {selectedMonth} {tasa > 1 ? `· Tasa: ${tasa} Bs/USD` : ''}
+            PERÍODO: {selectedMonth.toUpperCase()} {tasa > 1 ? `· TASA: ${tasa} Bs/USD` : ''}
           </p>
         </div>
 
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
           {[
-            {label:'Total Deudor USD',   val:`USD ${fmtR(totDeudorUSD)}`,  color:'text-teal-700',  bg:'bg-teal-50 border-teal-200'},
-            {label:'Total Acreedor USD', val:`USD ${fmtR(totAcreedUSD)}`,  color:'text-orange-700',bg:'bg-orange-50 border-orange-200'},
-            {label:'Total Deudor Bs.',   val:`Bs. ${fmtR(totDeudorBS)}`,   color:'text-slate-700', bg:'bg-white border-slate-200'},
-            {label:'Total Acreedor Bs.', val:`Bs. ${fmtR(totAcreedBS)}`,   color:'text-slate-700', bg:'bg-white border-slate-200'},
-            {label:'Diferencia USD',     val:cuadra?'✓ CUADRADO':`USD ${fmtR(totDeudorUSD-totAcreedUSD)}`,
+            ...(showUSD?[
+              {label:'TOTAL DEUDOR USD',   val:`USD ${fmtR(totDeudorUSD)}`,  color:'text-teal-700',   bg:'bg-teal-50 border-teal-200'},
+              {label:'TOTAL ACREEDOR USD', val:`USD ${fmtR(totAcreedUSD)}`,  color:'text-orange-700', bg:'bg-orange-50 border-orange-200'},
+            ]:[]),
+            ...(showBS?[
+              {label:'TOTAL DEUDOR Bs.',   val:`Bs. ${fmtR(totDeudorBS)}`,   color:'text-teal-600',   bg:'bg-white border-slate-200'},
+              {label:'TOTAL ACREEDOR Bs.', val:`Bs. ${fmtR(totAcreedBS)}`,   color:'text-slate-700',  bg:'bg-white border-slate-200'},
+            ]:[]),
+            {label:'DIFERENCIA USD', val:cuadra?'✓ CUADRADO':`USD ${fmtR(totDeudorUSD-totAcreedUSD)}`,
              color:cuadra?'text-emerald-600':'text-red-600', bg:cuadra?'bg-emerald-50 border-emerald-200':'bg-red-50 border-red-200'},
           ].map(k=>(
             <div key={k.label} className={`rounded-xl p-4 border ${k.bg} shadow-sm`}>
@@ -2907,17 +2949,27 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
           ))}
         </div>
 
-        {/* Table */}
+        {/* Fuente de datos */}
+        <div className="flex gap-3 mb-4 flex-wrap">
+          {[
+            {label:`BALANCE (1-3): ${rows.filter(r=>/^[123]/.test(r.code)).length} CUENTAS`, color:'text-blue-600 bg-blue-50 border-blue-200'},
+            {label:`RESULTADO (4-6): ${rows.filter(r=>/^[456]/.test(r.code)).length} CUENTAS`, color:'text-emerald-600 bg-emerald-50 border-emerald-200'},
+          ].map(b=>(
+            <span key={b.label} className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border ${b.color}`}>{b.label}</span>
+          ))}
+        </div>
+
+        {/* Tabla */}
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#111111] text-[9px] uppercase font-black text-slate-300 sticky top-0">
               <tr>
-                <th className="px-3 py-4 w-[32%]">Cuenta / Descripción</th>
-                <th className="px-3 py-4 text-right text-teal-400 w-[14%]">Deudor USD</th>
-                <th className="px-3 py-4 text-right text-orange-400 w-[14%]">Acreedor USD</th>
-                <th className="px-3 py-4 text-right text-teal-300 w-[16%] hidden md:table-cell">Deudor Bs.</th>
-                <th className="px-3 py-4 text-right text-orange-300 w-[16%] hidden md:table-cell">Acreedor Bs.</th>
-                <th className="px-3 py-4 text-right text-slate-400 w-[8%]">Nat.</th>
+                <th className="px-3 py-4 w-[36%]">CUENTA / DESCRIPCIÓN</th>
+                {showUSD && <th className="px-3 py-4 text-right text-teal-400">DEUDOR USD</th>}
+                {showUSD && <th className="px-3 py-4 text-right text-orange-400">ACREEDOR USD</th>}
+                {showBS  && <th className="px-3 py-4 text-right text-teal-300 hidden md:table-cell">DEUDOR Bs.</th>}
+                {showBS  && <th className="px-3 py-4 text-right text-orange-300 hidden md:table-cell">ACREEDOR Bs.</th>}
+                <th className="px-3 py-4 text-center text-slate-400 w-12">NAT.</th>
               </tr>
             </thead>
             <tbody>
@@ -2928,61 +2980,46 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
                   const showGrpHeader = grp !== prevGrp;
                   prevGrp = grp;
                   const isDeudor = row.usd >= 0;
-                  const grpColors = {'1':'bg-blue-900','2':'bg-red-900','3':'bg-purple-900','4':'bg-emerald-900','5':'bg-amber-900','6':'bg-orange-900'};
-                  const grpText = {'1':'text-blue-300','2':'text-red-300','3':'text-purple-300','4':'text-emerald-300','5':'text-amber-300','6':'text-orange-300'};
                   return (
                     <React.Fragment key={i}>
                       {showGrpHeader && (
-                        <tr className={`${grpColors[grp]||'bg-slate-800'}`}>
-                          <td colSpan={6} className={`px-4 py-2 font-black text-[10px] uppercase tracking-widest ${grpText[grp]||'text-slate-300'}`}>
+                        <tr className={groupColor[grp]||'bg-slate-800 text-slate-300'}>
+                          <td colSpan={2+(showUSD?2:0)+(showBS?2:0)} className="px-4 py-2 font-black text-[10px] uppercase tracking-widest">
                             {groupLabel[grp] || `GRUPO ${grp}`}
                           </td>
                         </tr>
                       )}
                       <tr className={`border-b border-slate-100 hover:bg-teal-50/30 transition-colors ${i%2===0?'bg-white':'bg-slate-50/40'}`}>
-                        <td className="px-3 py-2.5 text-[10px] font-bold text-slate-800 uppercase truncate max-w-[300px]" title={row.name}>
+                        <td className="px-3 py-2.5 uppercase text-[10px] font-bold text-slate-800 truncate max-w-[300px]" title={row.name}>
                           <span className="text-slate-400 mr-1.5 font-mono text-[9px]">{row.code}</span>
-                          {row.name.replace(/^\d[\d\.]*-?/,'').trim()}
+                          {row.name.replace(/^\d[\d.]*-?/,'').trim()}
                         </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-teal-700 font-bold">
-                          {row.usd > 0 ? fmtR(row.usd) : ''}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-orange-700 font-bold">
-                          {row.usd < 0 ? fmtR(Math.abs(row.usd)) : ''}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[10px] text-teal-600 hidden md:table-cell">
-                          {row.bs > 0 ? fmtR(row.bs) : ''}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-[10px] text-orange-600 hidden md:table-cell">
-                          {row.bs < 0 ? fmtR(Math.abs(row.bs)) : ''}
-                        </td>
+                        {showUSD && <td className="px-3 py-2.5 text-right font-mono text-[11px] text-teal-700 font-bold">{row.usd>0?fmtR(row.usd):''}</td>}
+                        {showUSD && <td className="px-3 py-2.5 text-right font-mono text-[11px] text-orange-700 font-bold">{row.usd<0?fmtR(Math.abs(row.usd)):''}</td>}
+                        {showBS  && <td className="px-3 py-2.5 text-right font-mono text-[10px] text-teal-600 hidden md:table-cell">{row.bs>0?fmtR(row.bs):''}</td>}
+                        {showBS  && <td className="px-3 py-2.5 text-right font-mono text-[10px] text-orange-600 hidden md:table-cell">{row.bs<0?fmtR(Math.abs(row.bs)):''}</td>}
                         <td className="px-3 py-2.5 text-center">
-                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${isDeudor?'bg-teal-100 text-teal-700':'bg-orange-100 text-orange-700'}`}>
-                            {isDeudor?'D':'A'}
-                          </span>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${isDeudor?'bg-teal-100 text-teal-700':'bg-orange-100 text-orange-700'}`}>{isDeudor?'D':'A'}</span>
                         </td>
                       </tr>
                     </React.Fragment>
                   );
                 });
               })()}
-              {/* Totals row */}
               <tr className="bg-[#111111] text-white font-black border-t-4 border-teal-500">
                 <td className="px-4 py-5 text-sm uppercase tracking-widest">TOTALES</td>
-                <td className="px-3 py-5 text-right font-mono text-teal-400 text-sm">{fmtR(totDeudorUSD)}</td>
-                <td className="px-3 py-5 text-right font-mono text-orange-400 text-sm">{fmtR(totAcreedUSD)}</td>
-                <td className="px-3 py-5 text-right font-mono text-teal-300 hidden md:table-cell">{fmtR(totDeudorBS)}</td>
-                <td className="px-3 py-5 text-right font-mono text-orange-300 hidden md:table-cell">{fmtR(totAcreedBS)}</td>
+                {showUSD && <td className="px-3 py-5 text-right font-mono text-teal-400 text-sm">{fmtR(totDeudorUSD)}</td>}
+                {showUSD && <td className="px-3 py-5 text-right font-mono text-orange-400 text-sm">{fmtR(totAcreedUSD)}</td>}
+                {showBS  && <td className="px-3 py-5 text-right font-mono text-teal-300 hidden md:table-cell">{fmtR(totDeudorBS)}</td>}
+                {showBS  && <td className="px-3 py-5 text-right font-mono text-orange-300 hidden md:table-cell">{fmtR(totAcreedBS)}</td>}
                 <td className="px-3 py-5 text-center">
-                  <span className={`text-[9px] font-black px-2 py-1 rounded ${cuadra?'bg-emerald-500':'bg-red-500'}`}>
-                    {cuadra?'✓':'✗'}
-                  </span>
+                  <span className={`text-[9px] font-black px-2 py-1 rounded ${cuadra?'bg-emerald-500':'bg-red-500'}`}>{cuadra?'✓':'✗'}</span>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-4">{filtered.length} cuentas · {rows.length} total</p>
+        <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-4">{filtered.length} CUENTAS MOSTRADAS · {rows.length} TOTAL</p>
       </main>
     </div>
   );
