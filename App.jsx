@@ -552,7 +552,9 @@ const processActivosFijosExcel = async (files) => {
       const hRow=raw[hIdx].map(c=>nk(String(c||'')));
       const ci=(...ns)=>{for(const n of ns){const i=hRow.findIndex(h=>h===n||h.includes(n));if(i!==-1)return i;}return -1;};
       const iCant=ci('cant','cantidad'); const iDesc=ci('mobiliario y equipo','mobiliario','descripcion','activo','bien');
-      const iSede=ci('sede'); const iCuenta=ci('cuenta');
+      const iSede=ci('sede'); const iCuenta=ci('cuenta contable del activo','cuenta del activo','cuenta activo','cuenta');
+      const iCuentaGasto=ci('cuenta gasto depreciacion','cuenta gasto','gasto depreciacion','cuenta debito');
+      const iCuentaDepAcum=ci('cuenta depreciacion acumulada','cuenta dep acum','cuenta credito','dep acumulada cuenta');
       const iDeprMet=hRow.findIndex(h=>h.includes('depreciacion')&&!h.includes('acum'));
       const iDepAcum1=hRow.findIndex(h=>h.includes('depreciacion')&&h.includes('acum'));
       const iFecha=ci('fecha de adquisicion','fecha adquisicion','fecha');
@@ -576,7 +578,10 @@ const processActivosFijosExcel = async (files) => {
         if (/^(total|subtotal|gran total)/i.test(descRaw)) continue;
         records.push({
           cant:parseVal(g(row,iCant))||1, descripcion:descRaw, sede:String(g(row,iSede)||'-').trim(),
-          cuenta:String(g(row,iCuenta)||'-').trim(), depreciacion:String(g(row,iDeprMet)||'-').trim(),
+          cuenta:String(g(row,iCuenta)||'-').trim(),
+          cuentaGasto:   iCuentaGasto   >= 0 ? String(g(row,iCuentaGasto)||'').trim()   : '',
+          cuentaDepAcum: iCuentaDepAcum >= 0 ? String(g(row,iCuentaDepAcum)||'').trim() : '',
+          depreciacion:String(g(row,iDeprMet)||'-').trim(),
           depreciacionAcum:String(g(row,iDepAcum1)||"-").trim(),
           fechaAdq:fmtXLDate(g(row,iFecha)),
           vidaUtilAsig:parseVal(g(row,iVUA)), vidaUtilTrans:parseVal(g(row,iVUT)),
@@ -857,7 +862,7 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 // ============================================================================
 // 5. VISTA: ESTADO DE RESULTADOS
 // ============================================================================
-function EstadoResultadoView({ onBack, dbData }) {
+function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData]);
   const [selectedMonth, setSelectedMonth] = useState('General');
   const [defaultOpen, setDefaultOpen] = useState(false);
@@ -883,6 +888,41 @@ function EstadoResultadoView({ onBack, dbData }) {
       if (!leaf) cur.push({ n: item.name.trim(), u: item.usd, b: item.bs, isLeaf: true });
       else { leaf.u += item.usd; leaf.b += item.bs; }
     });
+
+    // ── Inyectar depreciación mensual desde auxiliar de Activos Fijos ─────────
+    const afRecords = activosFijosData?.records || [];
+    if (afRecords.length > 0) {
+      const MONTH_ORDER = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const BASE_M = 4;
+      const monthsToProcess = selectedMonth === 'General'
+        ? [...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes')
+        : [selectedMonth];
+      // Agrupar depreciación mensual por cuenta de gasto
+      const depByCtaGasto = {};
+      afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
+        const rubro = getRubro(r);
+        const ctaGasto = r.cuentaGasto || `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+        const pathDep  = ['COSTOS Y GASTOS OPERATIVOS', 'GASTOS DE DEPRECIACIÓN'];
+        if (!depByCtaGasto[ctaGasto]) depByCtaGasto[ctaGasto] = { path: pathDep, montoBs: 0 };
+        depByCtaGasto[ctaGasto].montoBs += r.depreMensual * monthsToProcess.length;
+      });
+      // Insertar como hojas en el árbol bajo COSTOS Y GASTOS OPERATIVOS > GASTOS DE DEPRECIACIÓN
+      Object.entries(depByCtaGasto).forEach(([ctaGasto, info]) => {
+        let cur = root;
+        info.path.forEach(folderName => {
+          const key = normKey(folderName);
+          let folder = cur.find(n => normKey(n.n) === key);
+          if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
+          cur = folder.c;
+        });
+        const tasa = afRecords.find(r=>r.tasa>0)?.tasa || 1;
+        const usdVal = tasa > 0 ? info.montoBs / tasa : 0;
+        let leaf = cur.find(n => normKey(n.n)===normKey(ctaGasto)&&n.isLeaf);
+        if (!leaf) cur.push({ n: ctaGasto, u: usdVal, b: info.montoBs, isLeaf: true });
+        else { leaf.u += usdVal; leaf.b += info.montoBs; }
+      });
+    }
+
     const compute = (nodes) => { let u=0,b=0; nodes.forEach(n => { if(!n.isLeaf){const t=compute(n.c);n.u=t.u;n.b=t.b;} u+=n.u;b+=n.b; }); return {u,b}; };
     compute(root);
     root.forEach(rootNode => {
@@ -892,7 +932,7 @@ function EstadoResultadoView({ onBack, dbData }) {
       applySign([rootNode]);
     });
     return root;
-  }, [dbData, selectedMonth]);
+  }, [dbData, selectedMonth, activosFijosData]);
 
   let totalUSD = 0; let baseVentas = 0;
   tree.forEach(n => { if(n.n.toUpperCase().includes('INGRESO')||n.n.toUpperCase().includes('VENTA')||n.n.startsWith('4')){totalUSD+=n.u;baseVentas+=n.u;}else{totalUSD-=n.u;} });
@@ -1390,12 +1430,14 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
 // ============================================================================
 const getRubro = (r) => {
   const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
-  if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
-  if (s.includes('PLANTA ELECTR')||s.includes('GENERATOR')) return 'PLANTA ELÉCTRICA';
-  if (s.includes('GALPON')||s.includes('INMUEBLE')||s.includes('LOCAL')||s.includes('MEJORA')) return 'GALPON / INMUEBLE';
-  if (s.includes('MAQUINAR')||s.includes('EQUIPO')) return 'MAQUINARIA Y EQUIPOS';
-  if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')) return 'MOBILIARIO';
-  return 'OTROS';
+  if (s.includes('HERRAMIENTA')) return 'HERRAMIENTAS MENORES';
+  if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')||s.includes('MOTO')) return 'VEHÍCULOS';
+  if (s.includes('PLANTA ELECTR')||s.includes('PLANTA ELEC')||s.includes('GENERATOR')||s.includes('GENERADOR')) return 'PLANTA ELÉCTRICA';
+  if (s.includes('GALPON')||s.includes('GALPÓN')||s.includes('INMUEBLE')||s.includes('LOCAL')||s.includes('MEJORA')||s.includes('EDIFICIO')||s.includes('TERRENO')) return 'GALPÓN E INMUEBLES';
+  if (s.includes('COMPUT')||s.includes('LAPTOP')||s.includes('MONITOR')||s.includes('IMPRES')||s.includes('TELECO')||s.includes('TELEFON')||s.includes('SERVER')||s.includes('RED ')||s.includes('SWITCH')||s.includes('ROUTER')||s.includes('SCANER')) return 'EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES';
+  if (s.includes('MAQUINAR')||s.includes('TORNO')||s.includes('PRENSA')||s.includes('SOLDAD')||s.includes('COMPRESOR')||s.includes('BOMBA')) return 'MAQUINARIA Y EQUIPOS';
+  if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')||s.includes('ESTANTE')||s.includes('ARCHIV')||s.includes('VITRINA')||s.includes('MOSTRADOR')) return 'MOBILIARIO Y EQUIPO DE OFICINA';
+  return 'MAQUINARIA Y EQUIPOS'; // default
 };
 const MONTH_NUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
 const BASE_MONTH = 4;
@@ -1406,8 +1448,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const [filterSede, setFilterSede] = useState('all');
   const [filterRubro, setFilterRubro] = useState('all');
   const [mesCorte, setMesCorte] = useState('Abril');
-  const [editIdx, setEditIdx] = useState(null); // index in records for edit modal
+  const [editIdx, setEditIdx] = useState(null);
   const [editData, setEditData] = useState(null);
+  const [showAsiento, setShowAsiento] = useState(false);
 
   const sedes = useMemo(()=>['all',...new Set(records.map(r=>r.sede).filter(s=>s&&s!=='-'))],[records]);
   const rubros = useMemo(()=>['all',...new Set(records.map(getRubro))],[records]);
@@ -1446,6 +1489,57 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const totalNeto     = filteredValid.reduce((s,r)=>s+getValorNetoActual(r),0);
   const totalMensual  = filteredValid.reduce((s,r)=>s+r.depreMensual,0);
 
+  // Asientos de depreciación mensual por mes
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const asientosPorMes = useMemo(() => {
+    // Agrupar por (cuentaGasto, cuentaDepAcum) para consolidar líneas del asiento
+    const result = {};
+    MESES.forEach(mes => {
+      const lineas = [];
+      const byKey = {};
+      records.filter(r => r.costoUSD > 0 && r.depreMensual > 0).forEach(r => {
+        const rubro = getRubro(r);
+        // Cuenta DEBE (gasto/costo de depreciación)
+        const ctaGasto = r.cuentaGasto || `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+        // Cuenta HABER (depreciación acumulada)
+        const ctaAcum  = r.cuentaDepAcum || `1.1.06.xx.xxx-DEP. ACUMULADA ${rubro}`;
+        const key = `${ctaGasto}|||${ctaAcum}`;
+        if (!byKey[key]) byKey[key] = { ctaGasto, ctaAcum, rubro, montoBs: 0 };
+        byKey[key].montoBs += r.depreMensual;
+      });
+      Object.values(byKey).forEach(v => lineas.push(v));
+      result[mes] = lineas;
+    });
+    return result;
+  }, [records]);
+
+  const exportAsientoExcel = async (mes) => {
+    try {
+      const XL = await loadSheetJS();
+      const lineas = asientosPorMes[mes] || [];
+      const totalBs = lineas.reduce((s,l)=>s+l.montoBs, 0);
+      const letterhead = [
+        ['Supply G&B','','','','SERVICIOS JIRET G&B, C.A.'],
+        ['','','','','RIF: J-412309374'],
+        ['','','','','AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB'],
+        ['','','','','SECTOR EL TREBOL MARACAIBO-ZULIA'],
+        [],
+        [`ASIENTO CONTABLE — DEPRECIACIÓN ${mes.toUpperCase()}`],
+        [],
+      ];
+      const COLS = ['Cta.','Descripción Cuenta','Rubro','DEBE Bs.','HABER Bs.'];
+      const debeRows = lineas.map(l => [l.ctaGasto, `DEPRECIACIÓN — ${l.rubro}`, l.rubro, new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(l.montoBs), '']);
+      const haberRows = lineas.map(l => [l.ctaAcum, `DEP. ACUMULADA — ${l.rubro}`, l.rubro, '', new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(l.montoBs)]);
+      const fmtT = new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(totalBs);
+      const sheetData = [...letterhead, COLS, ...debeRows, ...haberRows, [], ['TOTAL','','',fmtT,fmtT]];
+      const ws = XL.utils.aoa_to_sheet(sheetData);
+      ws['!cols'] = [{wch:40},{wch:45},{wch:30},{wch:20},{wch:20}];
+      const wb = XL.utils.book_new();
+      XL.utils.book_append_sheet(wb, ws, `Depreciacion ${mes}`);
+      XL.writeFile(wb, `Asiento_Depreciacion_${mes}.xlsx`);
+    } catch(e) { alert('Error: '+e.message); }
+  };
+
   // Edit handlers
   const openEdit = (r, globalIdx) => { setEditIdx(globalIdx); setEditData({...r}); };
   const saveEdit = () => {
@@ -1467,12 +1561,14 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const cancelEdit = () => { setEditIdx(null); setEditData(null); };
 
   const RUBRO_COLORS = {
-    'VEHÍCULOS':         {bg:'bg-blue-600',  text:'text-blue-600',  light:'bg-blue-50'},
-    'MOBILIARIO':        {bg:'bg-amber-600',  text:'text-amber-600', light:'bg-amber-50'},
-    'MAQUINARIA Y EQUIPOS':{bg:'bg-purple-600',text:'text-purple-600',light:'bg-purple-50'},
-    'GALPON / INMUEBLE': {bg:'bg-emerald-700',text:'text-emerald-700',light:'bg-emerald-50'},
-    'PLANTA ELÉCTRICA':  {bg:'bg-rose-600',   text:'text-rose-600',  light:'bg-rose-50'},
-    'OTROS':             {bg:'bg-slate-600',  text:'text-slate-600', light:'bg-slate-50'},
+    'VEHÍCULOS':                                 {bg:'bg-blue-600',    text:'text-blue-700',   light:'bg-blue-50'},
+    'MOBILIARIO Y EQUIPO DE OFICINA':            {bg:'bg-amber-600',   text:'text-amber-700',  light:'bg-amber-50'},
+    'EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES':{bg:'bg-sky-600',    text:'text-sky-700',    light:'bg-sky-50'},
+    'HERRAMIENTAS MENORES':                      {bg:'bg-orange-600',  text:'text-orange-700', light:'bg-orange-50'},
+    'MAQUINARIA Y EQUIPOS':                      {bg:'bg-purple-600',  text:'text-purple-700', light:'bg-purple-50'},
+    'GALPÓN E INMUEBLES':                        {bg:'bg-emerald-700', text:'text-emerald-700',light:'bg-emerald-50'},
+    'PLANTA ELÉCTRICA':                          {bg:'bg-rose-600',    text:'text-rose-600',   light:'bg-rose-50'},
+    'OTROS':                                     {bg:'bg-slate-600',   text:'text-slate-600',  light:'bg-slate-50'},
   };
 
   if (!records.length) return (
@@ -1560,6 +1656,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
         </div>
         <button onClick={()=>handleExportActivosFijosExcel(filteredValid,'Activos_Fijos')} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-emerald-700 flex items-center gap-1.5">
           <FileSpreadsheet size={13}/> Excel
+        </button>
+        <button onClick={()=>setShowAsiento(v=>!v)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 border transition-colors ${showAsiento?'bg-violet-600 text-white border-violet-700':'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}>
+          <BookOpen size={13}/> Asientos Dep.
         </button>
       </header>
 
@@ -1667,6 +1766,83 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
             </div>
           );
         })}
+
+        {/* ── ASIENTOS DE DEPRECIACIÓN ──────────────────────────────────────── */}
+        {showAsiento && (
+          <div className="bg-white rounded-xl shadow-sm border border-violet-200 mb-4 overflow-hidden">
+            <div className="bg-violet-600 px-5 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black text-violet-200 uppercase tracking-widest">Libro Diario</p>
+                <p className="text-white font-black text-sm">Asientos Contables de Depreciación por Mes</p>
+              </div>
+              <p className="text-violet-200 text-[10px] font-bold">Depreciación mensual: Bs. {fmt(totalMensual)}</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse" style={{minWidth:'900px'}}>
+                <thead>
+                  <tr className="text-[9px] uppercase font-black border-b border-violet-100 bg-violet-50">
+                    <th className="px-4 py-2 text-violet-600 w-12">Mes</th>
+                    <th className="px-4 py-2 text-violet-500">Cuenta Contable</th>
+                    <th className="px-3 py-2 text-violet-400 w-40">Rubro</th>
+                    <th className="px-3 py-2 text-emerald-600 text-right w-32">DEBE Bs.</th>
+                    <th className="px-3 py-2 text-red-500 text-right w-32">HABER Bs.</th>
+                    <th className="px-2 py-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(mes => {
+                    const lineas = asientosPorMes[mes] || [];
+                    const totalBs = lineas.reduce((s,l)=>s+l.montoBs,0);
+                    if (!lineas.length) return null;
+                    return (
+                      <React.Fragment key={mes}>
+                        {/* Encabezado del mes */}
+                        <tr className="bg-violet-50/80 border-t-2 border-violet-200">
+                          <td colSpan={4} className="px-4 py-2 font-black text-violet-700 text-[10px] uppercase tracking-widest">{mes}</td>
+                          <td className="px-3 py-2 text-right text-[9px] font-black text-violet-500"></td>
+                          <td className="px-2 py-2 text-center">
+                            <button onClick={()=>exportAsientoExcel(mes)} title="Exportar" className="p-1 hover:bg-violet-100 rounded text-violet-400 hover:text-violet-700">
+                              <FileSpreadsheet size={12}/>
+                            </button>
+                          </td>
+                        </tr>
+                        {/* Líneas DEBE */}
+                        {lineas.map((l,i) => (
+                          <tr key={`d${i}`} className="border-b border-slate-50 hover:bg-emerald-50/30">
+                            <td className="px-4 py-1.5 text-center"><span className="text-[8px] font-black text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">DEBE</span></td>
+                            <td className="px-4 py-1.5 font-mono text-[10px] text-slate-700">{l.ctaGasto}</td>
+                            <td className="px-3 py-1.5 text-[9px] text-slate-400 truncate max-w-[140px]">{l.rubro}</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-bold text-[10px] text-emerald-700">Bs. {fmt(l.montoBs)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-[10px] text-slate-300">—</td>
+                            <td/>
+                          </tr>
+                        ))}
+                        {/* Líneas HABER */}
+                        {lineas.map((l,i) => (
+                          <tr key={`h${i}`} className="border-b border-slate-50 hover:bg-red-50/30">
+                            <td className="px-4 py-1.5 text-center"><span className="text-[8px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">HABER</span></td>
+                            <td className="px-4 py-1.5 font-mono text-[10px] text-slate-700 pl-10">{l.ctaAcum}</td>
+                            <td className="px-3 py-1.5 text-[9px] text-slate-400 truncate max-w-[140px]">{l.rubro}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-[10px] text-slate-300">—</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-bold text-[10px] text-red-600">Bs. {fmt(l.montoBs)}</td>
+                            <td/>
+                          </tr>
+                        ))}
+                        {/* Subtotal del mes */}
+                        <tr className="bg-violet-50 border-t border-violet-200">
+                          <td colSpan={3} className="px-4 py-2 text-[9px] font-black text-violet-600 uppercase">Total {mes}</td>
+                          <td className="px-3 py-2 text-right font-mono font-black text-[10px] text-emerald-700">Bs. {fmt(totalBs)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-black text-[10px] text-red-600">Bs. {fmt(totalBs)}</td>
+                          <td/>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Total general */}
         <div className="bg-slate-800 rounded-xl p-5 flex flex-wrap justify-between items-center gap-4 border border-slate-700 shadow-md">
@@ -1778,8 +1954,8 @@ function ReportesFinancierosApp() {
     return () => clearInterval(id);
   }, []);
 
-  if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData}/>;
-  if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData}/>;
+  if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
+  if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
   if (view === 'balance')     return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData}/>;
   if (view === 'inversiones') return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={activosFijosData} setActivosFijosData={setActivosFijosData}/>;
 
