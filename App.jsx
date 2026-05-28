@@ -261,29 +261,50 @@ const buildLetterheadRows = (title, subtitle) => [
   [],
 ];
 
-const applyLetterheadStyles = (ws, nDataCols, headerRowCount) => {
-  // Bold + large logo cell
-  const logoCell = 'A1';
-  if (!ws[logoCell]) ws[logoCell] = {};
-  ws[logoCell].s = { font: { bold: true, sz: 14 } };
-  // Company name bold right
-  const nameCell = `${String.fromCharCode(64 + nDataCols)}1`;
-  if (ws[nameCell]) ws[nameCell].s = { font: { bold: true, sz: 11 }, alignment: { horizontal: 'right' } };
-  // Title row bold
-  const titleRow = headerRowCount - 1; // 0-indexed
-  const titleCellRef = `A${titleRow + 1}`;
-  if (ws[titleCellRef]) ws[titleCellRef].s = { font: { bold: true, sz: 13 } };
+// ── Shared Excel number format helper ─────────────────────────────────────────
+const XL_FMT_USD = '#,##0.00 "USD"';
+const XL_FMT_BS  = '#,##0.00 "Bs."';
+const XL_FMT_PCT = '0.00%';
+
+// Apply number format to a range of cells in a worksheet
+const applyNumFmt = (ws, range, fmt) => {
+  const { utils } = window.XLSX || {};
+  if (!ws['!ref']) return;
+  const ref = ws['!ref'];
+  // Parse range string like "B10:C50"
+  const [start, end] = range.split(':');
+  const toRC = (cell) => { const m = cell.match(/([A-Z]+)(\d+)/); return m ? { c: m[1].split('').reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0)-1, r: parseInt(m[2])-1 } : null; };
+  const s = toRC(start); const e = end ? toRC(end) : s;
+  if (!s||!e) return;
+  for (let r=s.r; r<=e.r; r++) for (let c=s.c; c<=e.c; c++) {
+    const addr = String.fromCharCode(65+c)+(r+1);
+    if (!ws[addr]) ws[addr] = { v: 0, t:'n' };
+    if (!ws[addr].s) ws[addr].s = {};
+    ws[addr].s.numFmt = fmt;
+  }
 };
 
-const fmtNum = (v) => (v == null || isNaN(v)) ? '' :
-  new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+// Uniform letterhead builder — left: logo; right: company info; centered title block
+const buildLetterheadRows = (title, subtitle) => [
+  ['Supply G&B', '', '', '', 'SERVICIOS JIRET G&B, C.A.'],
+  ['',           '', '', '', 'RIF: J-412309374'          ],
+  ['',           '', '', '', 'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB'],
+  ['',           '', '', '', 'SECTOR EL TREBOL MARACAIBO-ZULIA'],
+  [],
+  [title],
+  ...(subtitle ? [[subtitle]] : []),
+  [],
+];
 
-// Flattena un árbol { n, c?, u, b, isLeaf } en filas para Excel
-const flattenTreeForExcel = (nodes, level = 0, rows = []) => {
+// Flat row list respecting collapse state (only emit visible rows)
+// openStates: Set of node labels currently open (if undefined = all open)
+const flattenTreeForExcel = (nodes, openStates, level = 0, rows = []) => {
   nodes.forEach(n => {
     if (!n.isLeaf && n.c?.length) {
       rows.push({ label: '  '.repeat(level) + n.n, level, isSection: true, u: null, b: null });
-      flattenTreeForExcel(n.c, level + 1, rows);
+      // If openStates provided, only recurse when node is open
+      const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
+      if (isOpen) flattenTreeForExcel(n.c, openStates, level + 1, rows);
       rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
     } else {
       rows.push({ label: '  '.repeat(level + 1) + n.n, level, isLeaf: true, u: n.u, b: n.b });
@@ -292,80 +313,121 @@ const flattenTreeForExcel = (nodes, level = 0, rows = []) => {
   return rows;
 };
 
-// Exporta Balance General a Excel
-const exportBalanceExcel = async (tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff) => {
+const LETTERHEAD_ROWS = 8; // rows before data header
+
+// Style the letterhead block and column header row
+const styleWorksheet = (ws, nDataCols, headerRow, titleRow, dataStartRow, numRowsData, colsUSD, colsBS) => {
+  const alpha = i => String.fromCharCode(65+i);
+  // Logo
+  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:13,color:{rgb:'D4500A'}} };
+  // Company name
+  const cn = alpha(nDataCols-1)+'1';
+  if (ws[cn]) ws[cn].s = { font:{bold:true,sz:10}, alignment:{horizontal:'right'} };
+  // Title
+  if (ws[`A${titleRow}`]) ws[`A${titleRow}`].s = { font:{bold:true,sz:12,color:{rgb:'111111'}} };
+  // Column header row
+  for (let c=0; c<nDataCols; c++) {
+    const addr = alpha(c)+headerRow;
+    if (!ws[addr]) ws[addr] = {v:'',t:'s'};
+    ws[addr].s = { font:{bold:true,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'111111'}}, alignment:{horizontal: c===0?'left':'right'} };
+  }
+  // USD columns
+  colsUSD.forEach(c => {
+    for (let r=dataStartRow; r<dataStartRow+numRowsData; r++) {
+      const addr = alpha(c)+r;
+      if (!ws[addr]) return;
+      if (!ws[addr].s) ws[addr].s = {};
+      ws[addr].s.numFmt = '#,##0.00';
+      ws[addr].s.alignment = {horizontal:'right'};
+    }
+  });
+  // Bs columns
+  colsBS.forEach(c => {
+    for (let r=dataStartRow; r<dataStartRow+numRowsData; r++) {
+      const addr = alpha(c)+r;
+      if (!ws[addr]) return;
+      if (!ws[addr].s) ws[addr].s = {};
+      ws[addr].s.numFmt = '#,##0.00';
+      ws[addr].s.alignment = {horizontal:'right'};
+    }
+  });
+};
+
+// exportBalanceExcel — respects expand/collapse via openNodes set
+const exportBalanceExcel = async (tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff, openNodes) => {
   try {
     const XL = await loadSheetJS();
-    const COLS = ['Cuenta / Descripción', 'Saldo USD', 'Saldo Bs.'];
-    const letterhead = buildLetterheadRows(
-      'BALANCE DE SITUACIÓN FINANCIERA',
-      `Corte: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`
-    );
-    const dataRows = flattenTreeForExcel(tree);
+    const n = (v) => v != null && !isNaN(v) ? parseFloat(v.toFixed(2)) : 0;
+    const titleRow = 6; const headerRow = LETTERHEAD_ROWS; const dataStart = LETTERHEAD_ROWS+1;
+    const letterhead = buildLetterheadRows('BALANCE DE SITUACIÓN FINANCIERA', `Corte: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`);
+    const COLS = ['Cuenta / Descripción', 'USD', 'Bs.'];
+    const dataRows = flattenTreeForExcel(tree, openNodes);
+
+    // Add "Total Pasivo y Patrimonio" row after last non-activos node
+    const totalPasPat_abs = Math.abs(totalPasPat);
+
     const sheetData = [
       ...letterhead,
       COLS,
-      ...dataRows.map(r => [r.label, r.u != null ? fmtNum(r.u) : '', r.b != null ? fmtNum(r.b) : '']),
+      ...dataRows.map(r => [r.label, r.u != null ? n(Math.abs(r.u)) : '', r.b != null ? n(Math.abs(r.b)) : '']),
       [],
-      ['ACTIVOS',                fmtNum(totalActivos), ''],
-      ['PASIVO + PATRIMONIO',    fmtNum(totalPasPat),  ''],
-      ['ACTIVO − (PASIVO+PATRIMONIO)', fmtNum(balanceDiff), ''],
+      ['TOTAL PASIVO Y PATRIMONIO', n(totalPasPat_abs), ''],
+      ['TOTAL ACTIVOS',             n(totalActivos),    ''],
+      ['ACTIVO − (PASIVO+PATRIMONIO)', n(balanceDiff),  ''],
     ];
-    const ws = XL.utils.aoa_to_sheet(sheetData);
-    ws['!cols'] = [{ wch: 55 }, { wch: 20 }, { wch: 22 }];
+    const ws = XL.utils.aoa_to_sheet(sheetData, {cellDates:false});
+    ws['!cols'] = [{ wch: 58 }, { wch: 20 }, { wch: 22 }];
     const wb = XL.utils.book_new();
     XL.utils.book_append_sheet(wb, ws, 'Balance General');
     XL.writeFile(wb, `Balance_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
   } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
 };
 
-// Exporta Estado de Resultados a Excel
-const exportResultadoExcel = async (tree, selectedMonth, totalUSD) => {
+// exportResultadoExcel — respects expand/collapse
+const exportResultadoExcel = async (tree, selectedMonth, totalUSD, openNodes) => {
   try {
     const XL = await loadSheetJS();
-    const COLS = ['Cuenta / Descripción', 'Saldo USD', 'Saldo Bs.', '% Ventas'];
-    const letterhead = buildLetterheadRows(
-      'ESTADO DE RESULTADO',
-      `Período: ${selectedMonth === 'General' ? 'Acumulado' : selectedMonth}`
-    );
-    const fmtPct = (u, base) => base ? `${((Math.abs(u)/Math.abs(base))*100).toFixed(2)}%` : '';
-    const baseVentas = tree.reduce((s, n) => n.n.toUpperCase().includes('INGRESO')||n.n.toUpperCase().includes('VENTA')||n.n.startsWith('4') ? s + Math.abs(n.u) : s, 0) || 1;
-    const dataRows = flattenTreeForExcel(tree);
+    const n = (v) => v != null && !isNaN(v) ? parseFloat(v.toFixed(2)) : 0;
+    const letterhead = buildLetterheadRows('ESTADO DE RESULTADO', `Período: ${selectedMonth === 'General' ? 'Acumulado' : selectedMonth}`);
+    const COLS = ['Cuenta / Descripción', 'USD', 'Bs.', '% Ventas'];
+    const baseVentas = tree.reduce((s, nd) => nd.n.toUpperCase().includes('INGRESO')||nd.n.toUpperCase().includes('VENTA')||nd.n.startsWith('4') ? s + Math.abs(nd.u) : s, 0) || 1;
+    const fmtPct = (u) => u != null ? parseFloat((Math.abs(u)/Math.abs(baseVentas)*100).toFixed(2)) : '';
+    const dataRows = flattenTreeForExcel(tree, openNodes);
     const sheetData = [
       ...letterhead,
       COLS,
-      ...dataRows.map(r => [r.label, r.u != null ? fmtNum(r.u) : '', r.b != null ? fmtNum(r.b) : '', r.u != null ? fmtPct(r.u, baseVentas) : '']),
+      ...dataRows.map(r => [r.label, r.u != null ? n(Math.abs(r.u)) : '', r.b != null ? n(Math.abs(r.b)) : '', r.u != null ? fmtPct(r.u) : '']),
       [],
-      ['RESULTADO DEL EJERCICIO', fmtNum(totalUSD), '', fmtPct(totalUSD, baseVentas)],
+      ['RESULTADO DEL EJERCICIO', n(totalUSD), '', fmtPct(totalUSD)],
     ];
     const ws = XL.utils.aoa_to_sheet(sheetData);
-    ws['!cols'] = [{ wch: 55 }, { wch: 20 }, { wch: 22 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 58 }, { wch: 18 }, { wch: 22 }, { wch: 12 }];
     const wb = XL.utils.book_new();
     XL.utils.book_append_sheet(wb, ws, 'Estado de Resultado');
     XL.writeFile(wb, `EstadoResultado_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
   } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
 };
 
-// Exporta Análisis Comparativo a Excel
+// exportComparativoExcel
 const exportComparativoExcel = async (tree, month1, month2, total_m1, total_m2) => {
   try {
     const XL = await loadSheetJS();
-    const fmtNum2 = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
+    const n = v => parseFloat((v||0).toFixed(2));
+    const pct = (v, base) => base ? `${Math.abs(v/Math.abs(base)*100).toFixed(2)}%` : '—';
     const letterhead = buildLetterheadRows('ANÁLISIS COMPARATIVO DE VARIACIONES', `${month1} vs ${month2}`);
     const COLS = ['Estructura', month1, month2, 'Var. Absoluta', 'Var. %'];
     const dataRows = [];
     tree.forEach(cat => {
-      dataRows.push([cat.n, fmtNum2(cat.m1_u), fmtNum2(cat.m2_u), fmtNum2(cat.m2_u - cat.m1_u), cat.m1_u !== 0 ? `${Math.abs((cat.m2_u-cat.m1_u)/Math.abs(cat.m1_u)*100).toFixed(2)}%` : '—']);
-      [...cat.c].sort((a,b) => a.n.localeCompare(b.n)).forEach(acc => {
+      dataRows.push([cat.n, n(cat.m1_u), n(cat.m2_u), n(cat.m2_u-cat.m1_u), pct(cat.m2_u-cat.m1_u, cat.m1_u)]);
+      [...cat.c].sort((a,b)=>a.n.localeCompare(b.n)).forEach(acc => {
         const varAbs = acc.m2_u - acc.m1_u;
-        const varPct = acc.m1_u !== 0 ? `${Math.abs(varAbs/Math.abs(acc.m1_u)*100).toFixed(2)}%` : (acc.m2_u!==0?'100%':'0%');
-        dataRows.push(['  ' + acc.n, fmtNum2(acc.m1_u), fmtNum2(acc.m2_u), fmtNum2(varAbs), varPct]);
+        dataRows.push(['  '+acc.n, n(acc.m1_u), n(acc.m2_u), n(varAbs), pct(varAbs, acc.m1_u)]);
       });
-      dataRows.push(['TOTAL ' + cat.n, fmtNum2(cat.m1_u), fmtNum2(cat.m2_u), fmtNum2(cat.m2_u - cat.m1_u), cat.m1_u ? `${Math.abs((cat.m2_u-cat.m1_u)/Math.abs(cat.m1_u)*100).toFixed(2)}%` : '—']);
+      dataRows.push(['TOTAL '+cat.n, n(cat.m1_u), n(cat.m2_u), n(cat.m2_u-cat.m1_u), pct(cat.m2_u-cat.m1_u,cat.m1_u)]);
       dataRows.push([]);
     });
     const varTotal = total_m2 - total_m1;
-    const sheetData = [...letterhead, COLS, ...dataRows, [], ['RESULTADO DEL EJERCICIO', fmtNum2(total_m1), fmtNum2(total_m2), fmtNum2(varTotal), total_m1 ? `${Math.abs(varTotal/Math.abs(total_m1)*100).toFixed(2)}%` : '—']];
+    const sheetData = [...letterhead, COLS, ...dataRows, [], ['RESULTADO DEL EJERCICIO', n(total_m1), n(total_m2), n(varTotal), pct(varTotal, total_m1)]];
     const ws = XL.utils.aoa_to_sheet(sheetData);
     ws['!cols'] = [{ wch: 50 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
     const wb = XL.utils.book_new();
@@ -374,7 +436,7 @@ const exportComparativoExcel = async (tree, month1, month2, total_m1, total_m2) 
   } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
 };
 
-// Exporta Auxiliar CxC / CxP a Excel
+// exportAuxiliarExcel
 const exportAuxiliarExcel = async (byClient, total, mapInfo, accountCode, isCxC) => {
   try {
     const XL = await loadSheetJS();
@@ -386,12 +448,12 @@ const exportAuxiliarExcel = async (byClient, total, mapInfo, accountCode, isCxC)
     const dataRows = [];
     byClient.forEach(([nombre, group]) => {
       group.records.forEach(item => {
-        dataRows.push([group.cod, nombre, item.operacion||'-', item.emision, item.vence, item.dias, item.doc, item.descripcion||'-', item.monto, item.cuentaContable||'-']);
+        dataRows.push([group.cod, nombre, item.operacion||'-', item.emision, item.vence, item.dias, item.doc, item.descripcion||'-', parseFloat((item.monto||0).toFixed(2)), item.cuentaContable||'-']);
       });
-      dataRows.push(['', 'SUBTOTAL ' + nombre, '', '', '', '', '', '', new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(group.subtotal), '']);
+      dataRows.push(['', 'SUBTOTAL ' + nombre, '', '', '', '', '', '', parseFloat(group.subtotal.toFixed(2)), '']);
       dataRows.push([]);
     });
-    dataRows.push(['', 'TOTAL GENERAL', '', '', '', '', '', '', new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(total), '']);
+    dataRows.push(['', 'TOTAL GENERAL', '', '', '', '', '', '', parseFloat(total.toFixed(2)), '']);
     const sheetData = [...letterhead, COLS, ...dataRows];
     const ws = XL.utils.aoa_to_sheet(sheetData);
     ws['!cols'] = [{wch:8},{wch:35},{wch:12},{wch:12},{wch:12},{wch:7},{wch:15},{wch:25},{wch:16},{wch:30}];
@@ -399,6 +461,110 @@ const exportAuxiliarExcel = async (byClient, total, mapInfo, accountCode, isCxC)
     XL.utils.book_append_sheet(wb, ws, isCxC ? 'CxC' : 'CxP');
     XL.writeFile(wb, `Auxiliar_${accountCode}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
   } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+};
+
+// exportActivosFijosExcel — grouped by category with subtotals
+const exportActivosFijosExcelGrouped = async (records, getRubo, fileName, mesCorte, getDepAcumFn, getNetoFn, fmt) => {
+  try {
+    const XL = await loadSheetJS();
+    const n = v => parseFloat((v||0).toFixed(2));
+    const letterhead = [
+      ['Supply G&B', '', '', '', '', '', '', '', '', '', '', 'SERVICIOS JIRET G&B, C.A.'],
+      ['',           '', '', '', '', '', '', '', '', '', '', 'RIF: J-412309374'],
+      ['',           '', '', '', '', '', '', '', '', '', '', 'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB'],
+      ['',           '', '', '', '', '', '', '', '', '', '', 'SECTOR EL TREBOL MARACAIBO-ZULIA'],
+      [],
+      ['REGISTRO DE ACTIVOS FIJOS'],
+      [`Corte: ${mesCorte}  —  ${new Date().toLocaleDateString('es-VE')}`],
+      [],
+    ];
+    const headers = ['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum Bs.','Val.Neto Bs.','Dep.Mensual Bs.','Tasa'];
+    const sheetData = [...letterhead];
+
+    // Group by rubro
+    const grupos = {};
+    records.forEach(r => {
+      const g = getRubo(r);
+      if (!grupos[g]) grupos[g] = [];
+      grupos[g].push(r);
+    });
+
+    const RUBRO_ORDER = ['MOBILIARIO Y EQUIPO DE OFICINA','EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES','HERRAMIENTAS MENORES','MAQUINARIA Y EQUIPOS','PLANTA ELÉCTRICA','GALPÓN E INMUEBLES','VEHÍCULOS'];
+    const orderedRubros = RUBRO_ORDER.filter(r=>grupos[r]).concat(Object.keys(grupos).filter(r=>!RUBRO_ORDER.includes(r)));
+
+    orderedRubros.forEach(rubro => {
+      const items = grupos[rubro];
+      sheetData.push([rubro.toUpperCase()]);  // category header row
+      sheetData.push(headers);
+      items.forEach(r => sheetData.push([r.cant, r.descripcion, r.sede, r.fechaAdq, r.vidaUtilAsig, r.vidaUtilTrans, n(r.costoUSD), n(r.costoBS), n(getDepAcumFn(r)), n(getNetoFn(r)), n(r.depreMensual), n(r.tasa)]));
+      const sUSD = items.reduce((s,r)=>s+r.costoUSD,0);
+      const sBS  = items.reduce((s,r)=>s+r.costoBS,0);
+      const sDA  = items.reduce((s,r)=>s+getDepAcumFn(r),0);
+      const sN   = items.reduce((s,r)=>s+getNetoFn(r),0);
+      const sM   = items.reduce((s,r)=>s+r.depreMensual,0);
+      sheetData.push(['SUBTOTAL '+rubro,'','','','','',n(sUSD),n(sBS),n(sDA),n(sN),n(sM),'']);
+      sheetData.push([]);
+    });
+
+    const totUSD = records.reduce((s,r)=>s+r.costoUSD,0);
+    const totBS  = records.reduce((s,r)=>s+r.costoBS,0);
+    const totDA  = records.reduce((s,r)=>s+getDepAcumFn(r),0);
+    const totN   = records.reduce((s,r)=>s+getNetoFn(r),0);
+    const totM   = records.reduce((s,r)=>s+r.depreMensual,0);
+    sheetData.push(['TOTAL GENERAL','','','','','',n(totUSD),n(totBS),n(totDA),n(totN),n(totM),'']);
+
+    const ws = XL.utils.aoa_to_sheet(sheetData);
+    ws['!cols'] = [5,38,12,14,10,10,16,16,16,16,16,8].map(w=>({wch:w}));
+    const wb = XL.utils.book_new();
+    XL.utils.book_append_sheet(wb, ws, 'Activos Fijos');
+    XL.writeFile(wb, `${fileName}.xlsx`);
+  } catch(e) { console.error('Export error:', e); alert('Error: '+e.message); }
+};
+
+// Print / PDF helper — opens a print-ready HTML window
+const printReport = (titleHtml, contentHtml) => {
+  const win = window.open('', '_blank', 'width=1000,height=700');
+  if (!win) { alert('Permite las ventanas emergentes para imprimir/PDF.'); return; }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Reporte</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #111; background: #fff; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 3px solid #E05A00; }
+  .logo { font-size: 18pt; font-weight: 900; color: #E05A00; line-height: 1; }
+  .logo span { color: #111; }
+  .company { text-align: right; }
+  .company .name { font-weight: 900; font-size: 11pt; }
+  .company .sub { font-size: 7.5pt; color: #555; line-height: 1.4; }
+  .title-block { text-align: center; margin-bottom: 10px; }
+  .title-block h1 { font-size: 13pt; font-weight: 900; text-transform: uppercase; }
+  .title-block h2 { font-size: 9pt; color: #666; margin-top: 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  th { background: #111; color: #fff; padding: 5px 6px; text-align: right; font-size: 7.5pt; text-transform: uppercase; }
+  th:first-child { text-align: left; }
+  td { padding: 3.5px 6px; border-bottom: 1px solid #eee; }
+  td:first-child { text-align: left; }
+  td:not(:first-child) { text-align: right; font-family: 'Courier New', monospace; }
+  tr.section td { font-weight: 900; text-transform: uppercase; background: #F3F3F3; color: #E05A00; }
+  tr.total td { font-weight: 900; background: #f7f7f7; border-top: 1.5px solid #ccc; }
+  tr.grand-total td { font-weight: 900; background: #111; color: #fff; font-size: 9pt; }
+  .footer-eq { margin-top: 12px; padding: 8px; background: #111; color: #fff; display: flex; justify-content: space-between; border-radius: 4px; font-size: 8pt; }
+  @media print { button { display: none; } }
+</style>
+</head><body>
+<div class="header">
+  <div><div class="logo">Supply<br><span>G</span>&amp;<span>B</span></div></div>
+  <div class="company">
+    <div class="name">SERVICIOS JIRET G&amp;B, C.A.</div>
+    <div class="sub">RIF: J-412309374<br>AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB<br>SECTOR EL TREBOL MARACAIBO-ZULIA</div>
+  </div>
+</div>
+<div class="title-block">${titleHtml}</div>
+${contentHtml}
+<br><button onclick="window.print()" style="padding:8px 20px;background:#E05A00;color:#fff;border:none;border-radius:4px;font-weight:900;cursor:pointer;font-size:10pt;">🖨 IMPRIMIR / GUARDAR PDF</button>
+</body></html>`);
+  win.document.close();
 };
 // ============================================================================
 const isNewAuxFormat = (row) => {
@@ -989,32 +1155,48 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
-      <header className="bg-white border-b-2 border-orange-400 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-4">
+      <header className="bg-[#111111] border-b-4 border-orange-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-4">
         <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-orange-600"><ArrowLeft size={16}/> Volver al Panel</button>
-          <div className="flex items-center gap-2 border-l-2 border-slate-200 pl-4">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Período:</span>
-            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-orange-50 border-2 border-orange-300 text-orange-800 text-xs rounded-lg p-1.5 font-black uppercase cursor-pointer outline-none min-w-[120px]">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-orange-400"><ArrowLeft size={16}/> Panel</button>
+          <div className="flex items-center gap-2 border-l-2 border-slate-700 pl-4">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Período:</span>
+            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-orange-500/10 border border-orange-500/40 text-orange-300 text-xs rounded-lg p-1.5 font-black uppercase cursor-pointer outline-none min-w-[120px]">
               <option value="General">General (Acumulado)</option>
               {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-          <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
-            <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+          <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
+            <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronDown size={14}/> Expandir</button>
+            <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronRight size={14}/> Contraer</button>
           </div>
-          <button onClick={() => exportResultadoExcel(tree, selectedMonth, totalUSD)}
+          <button onClick={() => exportResultadoExcel(tree, selectedMonth, totalUSD, defaultOpen ? null : new Set())}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
             <FileSpreadsheet size={13}/> Excel
+          </button>
+          <button onClick={() => {
+            const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+            const buildRows = (nodes, lvl=0) => nodes.map(n => {
+              const indent = '&nbsp;'.repeat(lvl*4);
+              if (!n.isLeaf && n.c?.length) return `<tr class="section"><td>${indent}${n.n}</td><td></td><td></td><td></td></tr>${buildRows(n.c, lvl+1)}<tr class="total"><td>${indent}TOTAL ${n.n}</td><td>${fmtP(n.u)}</td><td>${fmtP(n.b)}</td><td></td></tr>`;
+              return `<tr><td>${indent}${n.n}</td><td>${fmtP(n.u)}</td><td>${fmtP(n.b)}</td><td>${baseVentas?((Math.abs(n.u)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr>`;
+            }).join('');
+            printReport(`<h1>Estado de Resultado</h1><h2>Período: ${selectedMonth==='General'?'Acumulado':selectedMonth}</h2>`,
+              `<table><thead><tr><th>Cuenta</th><th>USD</th><th>Bs.</th><th>%</th></tr></thead><tbody>${buildRows(tree)}<tr class="grand-total"><td>RESULTADO DEL EJERCICIO</td><td>${fmtP(totalUSD)}</td><td></td><td>${baseVentas?((Math.abs(totalUSD)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr></tbody></table>`);
+          }}
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileText size={13}/> PDF
           </button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-4 border-orange-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Estado de Resultado {selectedMonth === 'General' ? 'Acumulado' : selectedMonth}</h2>
+        <div className="bg-white px-8 py-8 border-t-4 border-orange-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">Servicios Jiret G&B, C.A.</p>
+          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Estado de Resultado</h1>
+          <p className="text-orange-600 font-black uppercase bg-orange-50 px-5 py-1.5 rounded-full text-[10px] border border-orange-200 mt-2">
+            Período: {selectedMonth === 'General' ? 'Acumulado' : selectedMonth}
+          </p>
         </div>
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
           <table className="w-full text-left border-collapse">
@@ -1426,79 +1608,111 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
 
   let totalActivos = 0; let totalPasPat = 0;
   tree.forEach(n => { if(n.n.toUpperCase().includes('ACTIV'))totalActivos+=n.u; else totalPasPat+=n.u; });
-  const balanceDiff = totalActivos - totalPasPat;
+  // Fix ecuación: pasivos y patrimonio son de naturaleza acreedora → su suma es negativa
+  // Diferencia correcta = totalActivos + totalPasPat (ya es negativo)
+  const balanceDiff = totalActivos + totalPasPat;
   const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v));
+  const [openNodes, setOpenNodes] = useState(() => new Set());
+  const toggleOpen = (label) => setOpenNodes(p => { const s=new Set(p); if(s.has(label))s.delete(label); else s.add(label); return s; });
+
+  // Build print HTML for balance
+  const handlePrintBalance = () => {
+    const fmtP = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+    const buildRows = (nodes, lvl=0) => nodes.map(n => {
+      const indent = '&nbsp;'.repeat(lvl*4);
+      if (!n.isLeaf && n.c?.length) {
+        const childRows = buildRows(n.c, lvl+1);
+        return `<tr class="section"><td>${indent}${n.n}</td><td></td><td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td><td>${fmtP(n.u)}</td><td>${fmtP(n.b)}</td></tr>`;
+      }
+      return `<tr><td>${indent}${n.n}</td><td>${fmtP(n.u)}</td><td>${fmtP(n.b)}</td></tr>`;
+    }).join('');
+    const content = `<table><thead><tr><th>Cuenta / Descripción</th><th>USD</th><th>Bs.</th></tr></thead><tbody>${buildRows(tree)}<tr class="grand-total"><td>TOTAL PASIVO Y PATRIMONIO</td><td>${fmtP(-totalPasPat)}</td><td></td></tr><tr class="grand-total"><td>TOTAL ACTIVOS</td><td>${fmtP(totalActivos)}</td><td></td></tr><tr class="grand-total" style="background:${Math.abs(balanceDiff)<0.01?'#006622':'#990000'}"><td>ACTIVO − (PASIVO+PATRIMONIO)</td><td>${fmtP(balanceDiff)}</td><td>${Math.abs(balanceDiff)<0.01?'✓ CUADRADO':''}</td></tr></tbody></table>`;
+    printReport(`<h1>Balance de Situación Financiera</h1><h2>Corte: ${selectedMonth} | Tasa: ${tasa} Bs/USD</h2>`, content);
+  };
 
   if (activeCode) return <AuxiliarReportView accountCode={activeCode} onBack={() => setActiveCode(null)} auxDataConfig={auxDataConfig} />;
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
-      <header className="bg-white border-b-2 border-blue-400 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-2">
+      <header className="bg-[#111111] border-b-4 border-orange-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-2">
         <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-blue-600"><ArrowLeft size={16}/> Salir al Panel</button>
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-orange-400"><ArrowLeft size={16}/> Panel</button>
           {availableMonths.length > 0 && (
-            <div className="border-l-2 border-slate-200 pl-4 flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Corte:</span>
-              <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-blue-50 border border-blue-300 text-blue-700 text-xs rounded-lg p-1.5 font-bold uppercase cursor-pointer outline-none">
+            <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Corte:</span>
+              <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-orange-500/10 border border-orange-500/40 text-orange-300 text-xs rounded-lg p-1.5 font-bold uppercase cursor-pointer outline-none">
                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           )}
-          <div className="border-l-2 border-slate-200 pl-4 flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tasa Bs/USD:</span>
-            <input type="number" min="1" step="0.01" value={tasa} onChange={e=>setTasa(parseFloat(e.target.value)||1)} className="bg-amber-50 border border-amber-300 text-amber-800 text-xs rounded-lg p-1.5 w-24 font-black outline-none"/>
+          <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tasa Bs/USD:</span>
+            <input type="number" min="1" step="0.01" value={tasa} onChange={e=>setTasa(parseFloat(e.target.value)||1)} className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs rounded-lg p-1.5 w-24 font-black outline-none"/>
           </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-          <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button onClick={()=>{setDefaultOpen(true);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronDown size={14}/> Expandir</button>
-            <button onClick={()=>{setDefaultOpen(false);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 hover:bg-white"><ChevronRight size={14}/> Contraer</button>
+          <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
+            <button onClick={()=>{setDefaultOpen(true);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronDown size={14}/> Expandir</button>
+            <button onClick={()=>{setDefaultOpen(false);setExpandKey(k=>k+1);}} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronRight size={14}/> Contraer</button>
           </div>
-          <button onClick={() => exportBalanceExcel(tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff)}
+          <button onClick={() => exportBalanceExcel(tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff, defaultOpen ? null : openNodes)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
             <FileSpreadsheet size={13}/> Excel
+          </button>
+          <button onClick={handlePrintBalance}
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileText size={13}/> PDF
           </button>
         </div>
       </header>
       <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-4 border-blue-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <h1 className="text-3xl font-black text-slate-900 uppercase mb-2 tracking-tighter">Servicios Jiret G&B, C.A.</h1>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4 w-full max-w-md">Balance de Situación Financiera</h2>
-          <p className="text-blue-600 font-black uppercase bg-blue-50 px-5 py-2 rounded-full text-[10px] border border-blue-100">{selectedMonth ? `Corte: ${selectedMonth}` : 'Sin datos'}</p>
+        <div className="bg-white px-8 py-8 border-t-4 border-orange-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">Servicios Jiret G&B, C.A.</p>
+          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Balance de Situación Financiera</h1>
+          <p className="text-orange-600 font-black uppercase bg-orange-50 px-5 py-1.5 rounded-full text-[10px] border border-orange-200 mt-2">
+            Corte: {selectedMonth || 'Sin datos'} {tasa > 1 ? `· Tasa: ${tasa} Bs/USD` : ''}
+          </p>
         </div>
         {dbData.length === 0 || tree.length === 0 ? (
-          <div className="bg-white p-12 text-center rounded-xl border border-slate-200"><AlertTriangle className="mx-auto text-blue-400 mb-4" size={48}/><p className="text-slate-500 font-black text-xs uppercase">No se detectaron cuentas de Balance.</p></div>
+          <div className="bg-white p-12 text-center rounded-xl border border-slate-200"><AlertTriangle className="mx-auto text-orange-400 mb-4" size={48}/><p className="text-slate-500 font-black text-xs uppercase">No se detectaron cuentas de Balance.</p></div>
         ) : (
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
             <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-800 text-[10px] uppercase font-black text-slate-300">
+              <thead className="bg-[#111111] text-[10px] uppercase font-black text-slate-300">
                 <tr>
                   <th className="px-4 py-5 w-[55%]">Estructura</th>
-                  <th className="px-3 py-5 text-right text-blue-300">Saldo USD</th>
-                  <th className="px-3 py-5 text-right text-amber-300 hidden sm:table-cell">Saldo Bs. <span className="text-slate-400 font-normal normal-case text-[8px]">(archivo · tasa×{tasa})</span></th>
-                  <th className="px-3 py-5 text-right">%</th>
+                  <th className="px-3 py-5 text-right text-orange-300">Saldo USD</th>
+                  <th className="px-3 py-5 text-right text-amber-300 hidden sm:table-cell">Saldo Bs.</th>
+                  <th className="px-3 py-5 text-right text-slate-400">%</th>
                 </tr>
               </thead>
               <tbody key={expandKey}>
                 {tree.map((node, i) => <ExpandableRow key={i} node={node} totalBaseUSD={totalActivos} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={a=>{setHighlightedAccounts(p=>{const s=new Set(p);if(s.has(a))s.delete(a);else s.add(a);return s;})}} onShowReport={setActiveCode} isBalance={true}/>)}
-                <tr className="bg-slate-900 text-white font-black border-t-4 border-blue-500">
-                  <td colSpan={4} className="p-6">
-                    <div className="flex flex-wrap justify-between items-center px-4 gap-4">
-                      <div className="flex items-center gap-4">
-                        <Scale size={32} className="text-blue-400"/>
+                {/* Total Pasivo y Patrimonio */}
+                <tr className="bg-slate-100 border-t-2 border-slate-300">
+                  <td className="px-4 py-3 font-black text-xs uppercase text-slate-700 tracking-wider pl-6">TOTAL PASIVO Y PATRIMONIO</td>
+                  <td className="px-3 py-3 text-right font-mono font-black text-sm text-slate-900">{fmtR(-totalPasPat)}</td>
+                  <td className="px-3 py-3 text-right font-mono font-black text-sm text-slate-600 hidden sm:table-cell">—</td>
+                  <td/>
+                </tr>
+                <tr className="bg-[#111111] text-white font-black border-t-4 border-orange-500">
+                  <td colSpan={4} className="p-5">
+                    <div className="flex flex-wrap justify-between items-center px-2 gap-4">
+                      <div className="flex items-center gap-3">
+                        <Scale size={28} className="text-orange-400"/>
                         <div>
-                          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Ecuación Patrimonial</p>
-                          <p className="text-sm font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-0.5">Ecuación Patrimonial</p>
+                          <p className="text-xs font-black tracking-widest">ACTIVOS = PASIVOS + PATRIMONIO</p>
                         </div>
                       </div>
-                      <div className="flex gap-6 text-right flex-wrap">
-                        <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Activos</p><p className="text-xl font-mono text-blue-400">USD {fmtR(totalActivos)}</p></div>
-                        <div><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Pasivo + Patrimonio</p><p className="text-xl font-mono text-purple-400">USD {fmtR(totalPasPat)}</p></div>
+                      <div className="flex gap-5 text-right flex-wrap">
+                        <div><p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Activos</p><p className="text-lg font-mono text-orange-400">USD {fmtR(totalActivos)}</p></div>
+                        <div><p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Pasivo + Patrimonio</p><p className="text-lg font-mono text-amber-400">USD {fmtR(-totalPasPat)}</p></div>
                         <div>
-                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">ACTIVO − (PASIVO+PATRIMONIO)</p>
-                          <p className={`text-xl font-mono font-black ${Math.abs(balanceDiff) < 0.01 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            USD {new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(balanceDiff)}
-                            {Math.abs(balanceDiff) < 0.01 && <span className="ml-2 text-xs">✓ Cuadrado</span>}
+                          <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">DIFERENCIA</p>
+                          <p className={`text-lg font-mono font-black ${Math.abs(balanceDiff) < 0.01 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            USD {new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(balanceDiff))}
+                            {Math.abs(balanceDiff) < 0.01 && <span className="ml-2 text-[10px]">✓ CUADRADO</span>}
                           </p>
                         </div>
                       </div>
@@ -1749,7 +1963,7 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
             </select>
           </div>
         </div>
-        <button onClick={()=>handleExportActivosFijosExcel(filteredValid,'Activos_Fijos')} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-emerald-700 flex items-center gap-1.5">
+        <button onClick={()=>exportActivosFijosExcelGrouped(filteredValid,getRubro,'Activos_Fijos',mesCorte,getDepAcumActual,getValorNetoActual,fmt)} className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-emerald-700 flex items-center gap-1.5">
           <FileSpreadsheet size={13}/> Excel
         </button>
         <button onClick={()=>setShowAsiento(v=>!v)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 border transition-colors ${showAsiento?'bg-violet-600 text-white border-violet-700':'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}>
