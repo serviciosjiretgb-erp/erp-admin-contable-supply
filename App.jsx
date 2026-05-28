@@ -242,24 +242,6 @@ const processSaldosBalance = async (file, planCuentas) => {
 // ============================================================================
 // 1d. EXPORTACIÓN EXCEL — utilidades compartidas
 // ============================================================================
-const COMPANY_INFO = {
-  name:    'SERVICIOS JIRET G&B, C.A.',
-  rif:     'RIF: J-412309374',
-  addr1:   'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB',
-  addr2:   'SECTOR EL TREBOL MARACAIBO-ZULIA',
-  logo:    'Supply G&B',
-};
-
-const buildLetterheadRows = (title, subtitle) => [
-  [COMPANY_INFO.logo, '', '', '', COMPANY_INFO.name],
-  ['',                '', '', '', COMPANY_INFO.rif  ],
-  ['',                '', '', '', COMPANY_INFO.addr1],
-  ['',                '', '', '', COMPANY_INFO.addr2],
-  [],
-  [title],
-  ...(subtitle ? [[subtitle]] : []),
-  [],
-];
 
 // ── Shared Excel number format helper ─────────────────────────────────────────
 const XL_FMT_USD = '#,##0.00 "USD"';
@@ -268,10 +250,7 @@ const XL_FMT_PCT = '0.00%';
 
 // Apply number format to a range of cells in a worksheet
 const applyNumFmt = (ws, range, fmt) => {
-  const { utils } = window.XLSX || {};
   if (!ws['!ref']) return;
-  const ref = ws['!ref'];
-  // Parse range string like "B10:C50"
   const [start, end] = range.split(':');
   const toRC = (cell) => { const m = cell.match(/([A-Z]+)(\d+)/); return m ? { c: m[1].split('').reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0)-1, r: parseInt(m[2])-1 } : null; };
   const s = toRC(start); const e = end ? toRC(end) : s;
