@@ -1617,8 +1617,13 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   // Tasa por mes: se carga automáticamente al cambiar de mes y se guarda al editar
   const [tasa, setTasaLocal] = useState(() => tasaByMonth[availableMonths[availableMonths.length-1] || ''] || 90);
   const handleTasaChange = (v) => { setTasaLocal(v); if(onSaveTasa && selectedMonth) onSaveTasa(selectedMonth, v); };
-  // Sincronizar tasa al cambiar de mes
-  useEffect(() => { if(selectedMonth) setTasaLocal(tasaByMonth[selectedMonth] || 90); }, [selectedMonth]);
+  // Sincronizar tasa al cambiar de mes O cuando llega una tasa guardada desde config
+  useEffect(() => {
+    if (selectedMonth) {
+      const saved = tasaByMonth[selectedMonth];
+      if (saved) setTasaLocal(saved);
+    }
+  }, [selectedMonth, tasaByMonth]);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
   const [currency, setCurrency] = useState('both');
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Saldos Abril' : m;
@@ -1764,8 +1769,9 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           depBsByRubro[rubro] = (depBsByRubro[rubro] || 0) + depActual;
         });
         Object.entries(costoByRubro).forEach(([rubro, v]) => {
-          // Siempre usar el costo en USD del auxiliar directamente (NO convertir Bs÷tasa)
-          if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.bs > 0 ? v.bs : v.usd * tasa);
+          // Costo USD: viene del auxiliar (no cambia)
+          // Costo Bs: se recalcula con la tasa actual del balance
+          if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.usd * tasa);
         });
         Object.entries(depBsByRubro).forEach(([rubro, depBs]) => {
           if (depBs > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_DEP_LABEL[rubro]||`DEP. ACUMULADA ${rubro}`, -(depBs / tasa), -depBs);
