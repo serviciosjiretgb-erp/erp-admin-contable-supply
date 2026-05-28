@@ -453,13 +453,27 @@ const handleExportActivosFijosExcel = async (records, fileName) => {
 // ============================================================================
 const ACCOUNT_MAPS = {
   '1.1.02.01.001': { type: 'cxc_general',  label: 'Cuentas por Cobrar Clientes' },
+  '1.1.02.05.002': { type: 'cxc_general',  label: 'Otras Cuentas por Cobrar' },
   '1.1.05.01.008': { type: 'cxc_zuliana',  label: 'Anticipos a Proveedores Zuliana' },
-  '2.1.01.02.008': { type: 'cxp_autototal', label: 'Vehículos por Pagar' },
-  '2.1.01.01.004': { type: 'cxp_surepack',  label: 'CxP Sure Pack' },
-  '2.1.01.02.007': { type: 'cxp_pacomela',  label: 'Inmueble por Pagar' },
   '2.1.01.01.003': { type: 'cxp_yancarlos', label: 'Otras CxP Proveedores' },
-  '2.1.01.01.001': { type: 'cxp_general',   label: 'Cuentas por Pagar Proveedores' }
+  '2.1.01.01.004': { type: 'cxp_surepack',  label: 'CxP Sure Pack' },
+  '2.1.01.02.001': { type: 'cxp_general',  label: 'CxP Zuliana de Empaque Préstamos' },
+  '2.1.01.02.007': { type: 'cxp_pacomela',  label: 'Inmueble por Pagar' },
+  '2.1.01.02.008': { type: 'cxp_autototal', label: 'Vehículos por Pagar' },
+  '2.1.01.01.001': { type: 'cxp_general',   label: 'Cuentas por Pagar Proveedores' },
 };
+
+// Cuentas que muestran el botón "VER REPORTE" en el Balance
+const VER_REPORTE_ACCOUNTS = new Set([
+  '1.1.02.01.001',
+  '1.1.02.05.002',
+  '1.1.05.01.008',
+  '2.1.01.01.003',
+  '2.1.01.01.004',
+  '2.1.01.02.001',
+  '2.1.01.02.007',
+  '2.1.01.02.008',
+]);
 
 const mkR = (cod,nombre,operacion,emision,vence,dias,doc,descripcion,monto,cc) =>
   ({ cod, nombre, operacion, emision, vence, dias: String(dias), doc, descripcion, monto, cuentaContable: cc });
@@ -488,7 +502,7 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 
   const accountCodeMatch = node.n.match(/^(\d[\d\.]+)/);
   const accountCode = accountCodeMatch ? accountCodeMatch[1] : null;
-  const hasMapping = (accountCode && ACCOUNT_MAPS[accountCode]) || (isBalance && (node.n.toUpperCase().includes('POR COBRAR') || node.n.toUpperCase().includes('POR PAGAR')));
+  const hasMapping = isBalance && accountCode && VER_REPORTE_ACCOUNTS.has(accountCode);
 
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const pct = totalBaseUSD && node.u !== 0 ? `${((Math.abs(node.u) / totalBaseUSD) * 100).toFixed(2)}%` : '';
