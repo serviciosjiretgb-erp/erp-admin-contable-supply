@@ -1338,7 +1338,11 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
 
     root.forEach(cat => {
       let cat_m1 = 0, cat_m2 = 0;
-      const isIngreso = cat.n.includes('INGRESO') || cat.n.includes('VENTA') || cat.key?.startsWith('4');
+      const up = cat.n.toUpperCase();
+      const isIngreso = up.includes('INGRESO') || up.includes('VENTA') || /^4/.test(cat.key||'');
+      // Apply same sign logic as EstadoResultadoView: ingresos keep positive (negate negative source values), gastos positive
+      // Source data sign: ingresos are stored negative (credit nature), gastos positive (debit nature)
+      // multiplier -1 on ingresos flips them to positive; +1 on gastos keeps them positive
       const multiplier = isIngreso ? -1 : 1;
       cat.c.forEach(acc => { acc.m1_u *= multiplier; acc.m2_u *= multiplier; cat_m1 += acc.m1_u; cat_m2 += acc.m2_u; });
       cat.m1_u = cat_m1; cat.m2_u = cat_m2;
@@ -1346,9 +1350,17 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
     return root;
   }, [dbData, month1, month2, activosFijosData]);
 
+  // After sign application inside useMemo:
+  // • INGRESOS cats: m1_u/m2_u are positive (revenue)
+  // • COSTOS/GASTOS cats: m1_u/m2_u are positive (expenses)
+  // RESULTADO = INGRESOS - COSTOS/GASTOS
   let total_m1 = 0, total_m2 = 0;
-  tree.forEach(cat => { const isIng = cat.n.includes('INGRESO')||(cat.key&&cat.key.startsWith('4')); if(isIng){total_m1+=cat.m1_u;total_m2+=cat.m2_u;}else{total_m1-=cat.m1_u;total_m2-=cat.m2_u;} });
-  const varAbsTotal = total_m1 - total_m2;
+  tree.forEach(cat => {
+    const isIng = cat.n.toUpperCase().includes('INGRESO') || cat.n.toUpperCase().includes('VENTA') || (cat.key && /^4/.test(cat.key));
+    if (isIng) { total_m1 += cat.m1_u; total_m2 += cat.m2_u; }
+    else       { total_m1 -= cat.m1_u; total_m2 -= cat.m2_u; }
+  });
+  const varAbsTotal = total_m2 - total_m1;
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
