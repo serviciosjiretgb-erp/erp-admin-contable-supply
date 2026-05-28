@@ -1210,9 +1210,13 @@ function BalanceGeneralView({ onBack, dbData, auxDataConfig, activosFijosData })
 
     // ── Inyectar CxC / CxP / Activos Fijos desde auxiliares ─────────────────
     {
-      // CxC y CxP
+      // CxC y CxP — totalizar SOLO los registros de la cuenta específica
       Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
-        const records = auxDataConfig?.[info.type] || [];
+        const allRecords = auxDataConfig?.[info.type] || [];
+        // Filtrar los que tienen cuentaContable que empieza por este código
+        const forThisCode = allRecords.filter(d => (d.cuentaContable||'').trim().startsWith(code));
+        // Si ninguno tiene cuentaContable explícito (fallback), usar todo el tipo
+        const records = forThisCode.length > 0 ? forThisCode : allRecords;
         const total = records.reduce((s, r) => s + r.monto, 0);
         if (total === 0) return;
         const prefixMatch = code.match(/^(\d+\.\d+\.\d+\.\d+)/);
@@ -1698,24 +1702,39 @@ function ReportesFinancierosApp() {
   const handleUploadActivosFijos = async (e) => { if (!e.target.files.length) return; try { const d=await processActivosFijosExcel(e.target.files); setActivosFijosData(d); alert(`✅ Activos Fijos: ${d.records.length} registros cargados.`); } catch(err){alert("Error: "+err.message);} e.target.value=''; };
   const handleUploadResultados = async (e) => { if (!e.target.files.length) return; try { const newData=await processFiles(e.target.files); setDbData(prev=>{const nm=[...new Set(newData.map(d=>d.month))];return [...prev.filter(d=>!nm.includes(d.month)),...newData];}); alert("✅ Resultados cargados."); } catch(err){alert("Error.");} };
   const handleUploadPlan = async (e) => { if (!e.target.files.length) return; try { const plan=await processPlanCuentas(e.target.files[0]); setPlanCuentas(plan); alert("✅ Plan de cuentas cargado."); } catch(err){alert("Error.");} };
-  const handleUploadSaldos = async (e) => { if (!e.target.files.length) return; try { const d=await processSaldosBalance(e.target.files[0],planCuentas); setDbData(prev=>[...prev,...d]); alert("✅ Saldos cargados."); } catch(err){alert("Error.");} };
-  const handleUploadAuxiliar = async (e) => {
+  const handleUploadSaldos = async (e) => { if (!e.target.files.length) return; try { const d=await processSaldosBalance(e.target.files[0],planCuentas); setDbData(prev=>[...prev,...d]); alert(`✅ Saldos cargados (${d.length} cuentas).`); } catch(err){alert("Error: "+err.message);} e.target.value=''; };
+
+  // ── Auxiliar CxC (solo cuentas por cobrar) ──────────────────────────────────
+  const handleUploadCxC = async (e) => {
     if (!e.target.files.length) return;
     try {
       const parsed = await processAuxFile(e.target.files);
-      setAuxDataConfig(prev => ({...prev,
-        cxc_general:   [...(prev.cxc_general   ||[]), ...parsed.cxc_general],
-        cxc_zuliana:   [...(prev.cxc_zuliana   ||[]), ...parsed.cxc_zuliana],
-        cxp_autototal: [...(prev.cxp_autototal ||[]), ...parsed.cxp_autototal],
-        cxp_surepack:  [...(prev.cxp_surepack  ||[]), ...parsed.cxp_surepack],
-        cxp_pacomela:  [...(prev.cxp_pacomela  ||[]), ...parsed.cxp_pacomela],
-        cxp_yancarlos: [...(prev.cxp_yancarlos ||[]), ...parsed.cxp_yancarlos],
-        cxp_general:   [...(prev.cxp_general   ||[]), ...parsed.cxp_general],
+      const tot = parsed.cxc_general.length + parsed.cxc_zuliana.length;
+      setAuxDataConfig(prev => ({
+        ...prev,
+        cxc_general: parsed.cxc_general,
+        cxc_zuliana: parsed.cxc_zuliana,
       }));
-      const totCxC = parsed.cxc_general.length + parsed.cxc_zuliana.length;
-      const totCxP = parsed.cxp_autototal.length+parsed.cxp_surepack.length+parsed.cxp_pacomela.length+parsed.cxp_yancarlos.length+parsed.cxp_general.length;
-      alert(`✅ Auxiliares: CxC ${totCxC} · CxP ${totCxP} registros`);
-    } catch(err){alert("❌ Error: "+err.message);} e.target.value='';
+      alert(`✅ Auxiliar CxC cargado: ${tot} registros`);
+    } catch(err){ alert("❌ Error CxC: "+err.message); } e.target.value='';
+  };
+
+  // ── Auxiliar CxP (solo cuentas por pagar) ──────────────────────────────────
+  const handleUploadCxP = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const parsed = await processAuxFile(e.target.files);
+      const tot = parsed.cxp_autototal.length+parsed.cxp_surepack.length+parsed.cxp_pacomela.length+parsed.cxp_yancarlos.length+parsed.cxp_general.length;
+      setAuxDataConfig(prev => ({
+        ...prev,
+        cxp_autototal: parsed.cxp_autototal,
+        cxp_surepack:  parsed.cxp_surepack,
+        cxp_pacomela:  parsed.cxp_pacomela,
+        cxp_yancarlos: parsed.cxp_yancarlos,
+        cxp_general:   parsed.cxp_general,
+      }));
+      alert(`✅ Auxiliar CxP cargado: ${tot} registros`);
+    } catch(err){ alert("❌ Error CxP: "+err.message); } e.target.value='';
   };
 
   const handleSimulatePDFs = () => { setAuxDataConfig(DEFAULT_AUX_DATA); alert("✅ Datos demo cargados."); };
@@ -1724,10 +1743,11 @@ function ReportesFinancierosApp() {
   const clearSlot = (slot) => {
     const msgs = {
       '01': () => { if(window.confirm("¿Limpiar Plan de Cuentas?")) { setPlanCuentas({}); alert("Plan de Cuentas eliminado."); }},
-      '02': () => { if(window.confirm("¿Limpiar Saldos Iniciales?")) { setDbData(prev=>prev.filter(d=>d.month!=='Saldos Iniciales')); alert("Saldos Iniciales eliminados."); }},
-      '03': () => { if(window.confirm("¿Limpiar todos los meses de Resultados?")) { setDbData(prev=>prev.filter(d=>d.month==='Saldos Iniciales')); alert("Resultados eliminados."); }},
-      '04': () => { if(window.confirm("¿Limpiar todos los Auxiliares CxC/CxP?")) { setAuxDataConfig({}); alert("Auxiliares eliminados."); }},
-      '05': () => { if(window.confirm("¿Limpiar datos de Activos Fijos?")) { setActivosFijosData({records:[]}); alert("Activos Fijos eliminados."); }},
+      '02': () => { if(window.confirm("¿Limpiar Saldos de Balance?")) { setDbData(prev=>prev.filter(d=>!['Saldos Iniciales','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].some(m=>d.month===m&&prev.filter(x=>x.month===m&&x.name.match(/^[123]/)).length>0))); alert("Saldos eliminados."); }},
+      '03': () => { if(window.confirm("¿Limpiar todos los meses de Resultados?")) { setDbData([]); alert("Resultados eliminados."); }},
+      '04': () => { if(window.confirm("¿Limpiar Auxiliar CxC?")) { setAuxDataConfig(prev=>({...prev,cxc_general:[],cxc_zuliana:[]})); alert("CxC eliminado."); }},
+      '05': () => { if(window.confirm("¿Limpiar Auxiliar CxP?")) { setAuxDataConfig(prev=>({...prev,cxp_general:[],cxp_autototal:[],cxp_surepack:[],cxp_pacomela:[],cxp_yancarlos:[]})); alert("CxP eliminado."); }},
+      '06': () => { if(window.confirm("¿Limpiar datos de Activos Fijos?")) { setActivosFijosData({records:[]}); alert("Activos Fijos eliminados."); }},
     };
     msgs[slot] && msgs[slot]();
   };
@@ -1735,8 +1755,10 @@ function ReportesFinancierosApp() {
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
   const hasPlan = Object.keys(planCuentas).length > 0;
+  const cxcTotal = (auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxc_zuliana?.length||0);
+  const cxpTotal = (auxDataConfig?.cxp_general?.length||0)+(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_autototal?.length||0)+(auxDataConfig?.cxp_pacomela?.length||0)+(auxDataConfig?.cxp_yancarlos?.length||0);
   const hasAuxData = Object.keys(auxDataConfig).length > 0;
-  const auxTotal = (auxDataConfig?.cxc_general?.length||0)+(auxDataConfig?.cxp_surepack?.length||0)+(auxDataConfig?.cxp_general?.length||0);
+  const auxTotal = cxcTotal + cxpTotal;
   const afCount = activosFijosData?.records?.length || 0;
 
   // ── Clock (hook declarado antes de cualquier return condicional) ────────────
@@ -1768,8 +1790,13 @@ function ReportesFinancierosApp() {
         <h1 className="text-white font-black text-lg tracking-widest uppercase flex items-center gap-2">Configuración <span className="text-orange-500 text-sm">/ Ingesta de Datos</span></h1>
       </header>
       <main className="max-w-3xl mx-auto p-8 space-y-6">
-        <div className="grid grid-cols-3 gap-4">
-          {[{label:'Plan de Cuentas',ok:hasPlan,val:hasPlan?'Cargado':'Pendiente'},{label:'Meses en Memoria',ok:loadedMonths.length>0,val:loadedMonths.length>0?loadedMonths.join(', '):'Ninguno'},{label:'Auxiliares CxC/CxP',ok:hasAuxData,val:hasAuxData?`${auxTotal} reg.`:'Pendiente'}].map(s=>(
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            {label:'Plan de Cuentas',  ok:hasPlan,       val:hasPlan?'Cargado':'Pendiente'},
+            {label:'Meses en Memoria', ok:loadedMonths.length>0, val:loadedMonths.length>0?loadedMonths.join(', '):'Ninguno'},
+            {label:'Auxiliar CxC',     ok:cxcTotal>0,    val:cxcTotal>0?`${cxcTotal} reg.`:'Pendiente'},
+            {label:'Auxiliar CxP',     ok:cxpTotal>0,    val:cxpTotal>0?`${cxpTotal} reg.`:'Pendiente'},
+          ].map(s=>(
             <div key={s.label} className={`rounded-2xl p-4 border ${s.ok?'bg-emerald-950/40 border-emerald-700':'bg-[#1a1a1a] border-slate-700'}`}>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{s.label}</p>
               <p className={`text-xs font-bold truncate ${s.ok?'text-emerald-400':'text-slate-500'}`}>{s.val}</p>
@@ -1780,13 +1807,19 @@ function ReportesFinancierosApp() {
           <h2 className="text-white font-black text-sm uppercase tracking-widest mb-6 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
           {[
             {num:'01',label:hasPlan?`✓ Plan Cuentas (${Object.keys(planCuentas).length} ctas)`:'Plan de Cuentas (.txt)',active:true,accept:'.txt',handler:handleUploadPlan,hasClear:hasPlan},
-            {num:'02',label:dbData.some(d=>d.month==='Saldos Iniciales')?'✓ Saldos Iniciales Cargados':'Balance General (.txt / .xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>d.month==='Saldos Iniciales')},
+            {num:'02',label:loadedMonths.length>0?`✓ Balance (${loadedMonths.filter(m=>dbData.some(d=>d.month===m&&/^[123]/.test(d.name))).length} mes cargado)`:'Balance General (.txt / .xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>/^[123]/.test(d.name))},
             {num:'03',label:loadedMonths.length>0?`✓ Resultados (${loadedMonths.length} mes${loadedMonths.length!==1?'es':''})`:'Estado de Resultados (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt,.csv',handler:handleUploadResultados,multiple:true,hasClear:loadedMonths.length>0},
-            {num:'04',label:auxTotal>0?`✓ Auxiliares cargados (${auxTotal} reg.)`:'Auxiliares CxC + CxP (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadAuxiliar,multiple:true,hasClear:hasAuxData},
-            {num:'05',label:afCount>0?`✓ Activos Fijos (${afCount} reg.)`:'Activos Fijos (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
+            {num:'04',label:cxcTotal>0?`✓ CxC cargado (${cxcTotal} reg.)`:'Auxiliar Cuentas por Cobrar (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxC,multiple:true,hasClear:cxcTotal>0,color:'blue'},
+            {num:'05',label:cxpTotal>0?`✓ CxP cargado (${cxpTotal} reg.)`:'Auxiliar Cuentas por Pagar (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxP,multiple:true,hasClear:cxpTotal>0,color:'red'},
+            {num:'06',label:afCount>0?`✓ Activos Fijos (${afCount} reg.)`:'Activos Fijos (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
           ].map(step=>(
             <div key={step.num} className="flex items-center gap-2">
-            <label key={step.num} className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${step.active?'border-orange-500/50 text-orange-300 bg-orange-500/5 hover:bg-orange-500/10 hover:border-orange-500':'border-slate-700 text-slate-600 opacity-40 cursor-not-allowed'}`}>
+            <label className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer flex-1 ${
+              step.color==='blue' ? 'border-blue-500/50 text-blue-300 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500' :
+              step.color==='red'  ? 'border-red-500/50 text-red-300 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500' :
+              step.active         ? 'border-orange-500/50 text-orange-300 bg-orange-500/5 hover:bg-orange-500/10 hover:border-orange-500' :
+                                    'border-slate-700 text-slate-600 opacity-40 cursor-not-allowed'
+            }`}>
               <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
               <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
               <Upload size={16} className="opacity-50"/>
