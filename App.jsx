@@ -9,11 +9,19 @@ import {
 // 1. LÓGICA DE PROCESAMIENTO DE ARCHIVOS
 // ============================================================================
 const loadSheetJS = () => new Promise((resolve, reject) => {
-  if (window.XLSX) { resolve(window.XLSX); return; }
+  if (window.XLSXStyle) { resolve(window.XLSXStyle); return; }
+  if (window.XLSX && window.XLSX.utils && window.XLSX.writeFile) { resolve(window.XLSX); return; }
   const s = document.createElement('script');
-  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  s.onload  = () => resolve(window.XLSX);
-  s.onerror = () => reject(new Error('No se pudo cargar SheetJS'));
+  s.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+  s.onload  = () => resolve(window.XLSXStyle || window.XLSX);
+  s.onerror = () => {
+    // fallback to plain SheetJS
+    const s2 = document.createElement('script');
+    s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s2.onload = () => resolve(window.XLSX);
+    s2.onerror = () => reject(new Error('No se pudo cargar SheetJS'));
+    document.head.appendChild(s2);
+  };
   document.head.appendChild(s);
 });
 
@@ -244,26 +252,184 @@ const processSaldosBalance = async (file, planCuentas) => {
 // ============================================================================
 
 // ── Shared Excel number format helper ─────────────────────────────────────────
-const XL_FMT_USD = '#,##0.00 "USD"';
-const XL_FMT_BS  = '#,##0.00 "Bs."';
-const XL_FMT_PCT = '0.00%';
+// ── Excel style helpers ───────────────────────────────────────────────────────
+const XS = {
+  // Paleta
+  BLACK:    '111111', ORANGE:  'E05A00', WHITE:  'FFFFFF',
+  HDR_BG:   '111827', SECT1:   '1F2937', GREY:   '6B7280',
+  SECT2:    'E5E7EB', SECT3:   'F3F4F6', SECT4:  'FAFAFA',
+  TOT1:     'D1D5DB', TOT2:    'E5E7EB', TOT3:   'F3F4F6',
+  RED:      'DC2626', AMBER:   'F59E0B', GREEN:  '15803D',
+  TEAL:     '0D9488', BLUE:    '1D4ED8', PURPLE: '7C3AED',
+  NUM:      '#,##0.00',  PCT: '0.00',
 
-// Apply number format to a range of cells in a worksheet
-const applyNumFmt = (ws, range, fmt) => {
-  if (!ws['!ref']) return;
-  const [start, end] = range.split(':');
-  const toRC = (cell) => { const m = cell.match(/([A-Z]+)(\d+)/); return m ? { c: m[1].split('').reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0)-1, r: parseInt(m[2])-1 } : null; };
-  const s = toRC(start); const e = end ? toRC(end) : s;
-  if (!s||!e) return;
-  for (let r=s.r; r<=e.r; r++) for (let c=s.c; c<=e.c; c++) {
-    const addr = String.fromCharCode(65+c)+(r+1);
-    if (!ws[addr]) ws[addr] = { v: 0, t:'n' };
-    if (!ws[addr].s) ws[addr].s = {};
-    ws[addr].s.numFmt = fmt;
-  }
+  fill: (rgb) => ({ fgColor: { rgb } }),
+  font: (bold=false, rgb='111111', sz=9, italic=false) =>
+    ({ name:'Arial', bold, color:{ rgb }, sz, italic }),
+  al: (h='left', v='center', ind=0, wrap=false) =>
+    ({ horizontal:h, vertical:v, indent:ind, wrapText:wrap }),
+  side: (style, rgb) => ({ style, color:{ rgb } }),
+
+  // Full cell style object
+  cell: (fillRgb, fontRgb, bold=false, h='left', sz=9, numFmt=null,
+         topStyle=null, topColor=null, botStyle=null, botColor=null, italic=false) => ({
+    fill:{ patternType:'solid', fgColor:{ rgb: fillRgb || 'FFFFFF' } },
+    font:{ name:'Arial', bold, color:{ rgb: fontRgb||'111111' }, sz, italic },
+    alignment:{ horizontal:h, vertical:'center' },
+    border:{
+      top:    topStyle ? { style:topStyle, color:{ rgb:topColor||'D1D5DB' } } : {},
+      bottom: botStyle ? { style:botStyle, color:{ rgb:botColor||'D1D5DB' } } : {},
+    },
+    ...(numFmt ? { numFmt } : {}),
+  }),
 };
 
-// Uniform letterhead builder — left: logo; right: company info; centered title block
+// Build a cell object with value + style
+const mkCell = (v, s) => {
+  const t = typeof v === 'number' ? 'n' : (v == null || v === '' ? 'z' : 's');
+  return { v: v ?? '', t, s };
+};
+
+// Write a row into worksheet manually
+const writeRow = (ws, rowIdx, cols, cells, defaultH=14) => {
+  cols.forEach((col, ci) => {
+    const addr = String.fromCharCode(65+ci)+(rowIdx);
+    ws[addr] = cells[ci] || mkCell('', {});
+  });
+};
+
+// Apply letterhead to worksheet (rows 1-8)
+const applyLetterhead = (ws, title, subtitle, nCols) => {
+  const colRange = Array.from({length:nCols},(_,i)=>i);
+  // Orange top border on row 1
+  colRange.forEach(ci => {
+    const addr = String.fromCharCode(65+ci)+'1';
+    if (!ws[addr]) ws[addr] = mkCell('', {});
+    ws[addr].s = { ...ws[addr].s,
+      border:{ top:{ style:'thick', color:{ rgb:XS.ORANGE } } } };
+  });
+  // Logo
+  const logoCell = ws['A1'] || mkCell('Supply G&B',{});
+  ws['A1'] = { v:'Supply G&B', t:'s', s: XS.cell(XS.WHITE,XS.ORANGE,true,'left',16,null,'thick',XS.ORANGE) };
+  // Company info in last column
+  const lastCol = String.fromCharCode(65+nCols-1);
+  [
+    ['SERVICIOS JIRET G&B, C.A.',       XS.cell(XS.WHITE,XS.BLACK,true,'right',10,null,'thick',XS.ORANGE)],
+    ['RIF: J-412309374',                 XS.cell(XS.WHITE,XS.GREY,false,'right',8)],
+    ['AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB', XS.cell(XS.WHITE,XS.GREY,false,'right',7)],
+    ['SECTOR EL TREBOL MARACAIBO-ZULIA', XS.cell(XS.WHITE,XS.GREY,false,'right',7)],
+  ].forEach(([txt, st], i) => {
+    const addr = lastCol+(1+i);
+    ws[addr] = { v:txt, t:'s', s:st };
+  });
+  // Empty row 5
+  // Title row 6
+  ws['A6'] = { v:title, t:'s', s: XS.cell(XS.WHITE,XS.BLACK,true,'center',13) };
+  // Subtitle row 7
+  if (subtitle) ws['A7'] = { v:subtitle, t:'s', s: XS.cell(XS.WHITE,XS.GREY,false,'center',9,null,null,null,null,null,true) };
+  // Row 8 empty
+};
+
+// Apply column header row style
+const applyHeaderRow = (ws, rowIdx, labels, borderColor=XS.ORANGE) => {
+  labels.forEach((lbl, ci) => {
+    const addr = String.fromCharCode(65+ci)+rowIdx;
+    ws[addr] = { v:lbl, t:'s', s:{
+      fill:{ patternType:'solid', fgColor:{ rgb:XS.HDR_BG } },
+      font:{ name:'Arial', bold:true, color:{ rgb:XS.WHITE }, sz:9 },
+      alignment:{ horizontal: ci===0?'left':'right', vertical:'center' },
+      border:{ bottom:{ style:'medium', color:{ rgb:borderColor } } },
+    }};
+  });
+};
+
+// Map flattenTreeForExcel row → style based on label prefix and flags
+const rowStyle = (row, colIdx, isLabelCol) => {
+  const lvl = row.level || 0;
+  const isRoot = lvl === 0 && row.isSection;
+  const isTotalRoot = lvl === 0 && row.isTotal;
+  const isSubtotal = row.isTotal && lvl > 0;
+  const isLeaf = row.isLeaf;
+
+  if (isRoot) {
+    const bg = XS.SECT1;
+    return XS.cell(bg, XS.ORANGE, true, isLabelCol?'left':'right', 10, colIdx>0?XS.NUM:null, 'medium', XS.ORANGE, 'thin', '374151');
+  }
+  if (isTotalRoot) {
+    return XS.cell(XS.BLACK, XS.AMBER, true, isLabelCol?'left':'right', 10, colIdx>0?XS.NUM:null, 'medium', XS.ORANGE, 'thin', '374151');
+  }
+  if (isSubtotal) {
+    const bgs = [XS.TOT1, XS.TOT2, XS.TOT3, 'F9FAFB'];
+    const bg = bgs[Math.min(lvl-1, 3)];
+    return XS.cell(bg, XS.BLACK, true, isLabelCol?'left':'right', 9, colIdx>0?XS.NUM:null, 'thin', '9CA3AF', 'thin', '9CA3AF');
+  }
+  if (row.isSection) {
+    const bgs = [XS.SECT1, XS.SECT2, XS.SECT3, 'F9FAFB', 'FFFFFF'];
+    const fgs = [XS.ORANGE, XS.BLACK, XS.BLACK, XS.BLACK, XS.BLACK];
+    const idx = Math.min(lvl, 4);
+    return XS.cell(bgs[idx], fgs[idx], true, isLabelCol?'left':'right', 9, colIdx>0?XS.NUM:null);
+  }
+  // leaf — alternating
+  return XS.cell('FFFFFF', (row.u < 0 && !isLabelCol) ? XS.RED : XS.BLACK, false, isLabelCol?'left':'right', 9, colIdx>0?XS.NUM:null, null,null,'hair','E5E7EB');
+};
+
+// Core: build a styled worksheet from flat rows
+const buildStyledSheet = (XL, flatRows, colHeaders, nCols, extraFooterRows=[]) => {
+  const ws = {};
+  const HEADER_ROW = 9;
+  const DATA_START  = 10;
+
+  // Ref will be updated as we go
+  let maxRow = DATA_START;
+
+  // Letterhead placeholder (filled by applyLetterhead after)
+  for (let r=1; r<=8; r++) {
+    for (let c=0; c<nCols; c++) {
+      const addr = String.fromCharCode(65+c)+r;
+      ws[addr] = mkCell('', {});
+    }
+  }
+
+  // Column headers
+  applyHeaderRow(ws, HEADER_ROW, colHeaders);
+
+  // Data rows
+  flatRows.forEach((row, i) => {
+    const rowIdx = DATA_START + i;
+    const vals = row._vals; // array of values matching nCols
+    vals.forEach((v, ci) => {
+      const addr = String.fromCharCode(65+ci)+rowIdx;
+      ws[addr] = { v: v??'', t: typeof v==='number'?'n':'s',
+                   s: rowStyle(row, ci, ci===0) };
+    });
+    maxRow = rowIdx;
+  });
+
+  // Footer rows
+  extraFooterRows.forEach((frow, i) => {
+    const rowIdx = maxRow + 2 + i;
+    frow.forEach((cell, ci) => {
+      const addr = String.fromCharCode(65+ci)+rowIdx;
+      ws[addr] = cell;
+    });
+    maxRow = rowIdx;
+  });
+
+  ws['!ref'] = `A1:${String.fromCharCode(65+nCols-1)}${maxRow}`;
+  ws['!rows'] = [];
+  // Row heights
+  for (let r=1; r<=8; r++) ws['!rows'][r-1] = { hpx: r===1?28:14 };
+  ws['!rows'][HEADER_ROW-1] = { hpx: 18 };
+  flatRows.forEach((row, i) => {
+    const isRoot = row.level===0;
+    const isTot0 = row.isTotal && row.level===0;
+    ws['!rows'][DATA_START+i-1] = { hpx: isRoot||isTot0 ? 20 : (row.isTotal?16:14) };
+  });
+
+  return ws;
+};
+
+// Uniform letterhead builder (plain data for aoa fallback)
 const buildLetterheadRows = (title, subtitle) => [
   ['Supply G&B', '', '', '', 'SERVICIOS JIRET G&B, C.A.'],
   ['',           '', '', '', 'RIF: J-412309374'          ],
@@ -275,237 +441,362 @@ const buildLetterheadRows = (title, subtitle) => [
   [],
 ];
 
-// Flat row list respecting collapse state (only emit visible rows)
-// openStates: Set of node labels currently open (if undefined = all open)
+// Flat row list respecting collapse state
 const flattenTreeForExcel = (nodes, openStates, level = 0, rows = []) => {
   nodes.forEach(n => {
     const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
-
     if (!n.isLeaf && n.c?.length) {
       if (!isAccountNode) {
-        rows.push({ label: '  '.repeat(level) + n.n, level, isSection: true, u: null, b: null });
+        rows.push({ label: n.n, level, isSection: true, u: null, b: null });
         flattenTreeForExcel(n.c, openStates, level + 1, rows);
-        rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
+        rows.push({ label: 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
       } else {
-        rows.push({ label: '  '.repeat(level) + n.n, level, isLeaf: true, u: n.u, b: n.b });
+        rows.push({ label: n.n, level, isLeaf: true, u: n.u, b: n.b });
         const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
         if (isOpen) {
           flattenTreeForExcel(n.c, openStates, level + 1, rows);
-          rows.push({ label: '  '.repeat(level) + 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
+          rows.push({ label: 'TOTAL ' + n.n, level, isTotal: true, u: n.u, b: n.b });
         }
       }
     } else {
-      rows.push({ label: '  '.repeat(level + 1) + n.n, level, isLeaf: true, u: n.u, b: n.b });
+      rows.push({ label: n.n, level, isLeaf: true, u: n.u, b: n.b });
     }
   });
   return rows;
 };
 
-const LETTERHEAD_ROWS = 8; // rows before data header
-
-// Style the letterhead block and column header row
-const styleWorksheet = (ws, nDataCols, headerRow, titleRow, dataStartRow, numRowsData, colsUSD, colsBS) => {
-  const alpha = i => String.fromCharCode(65+i);
-  // Logo
-  if (ws['A1']) ws['A1'].s = { font:{bold:true,sz:13,color:{rgb:'D4500A'}} };
-  // Company name
-  const cn = alpha(nDataCols-1)+'1';
-  if (ws[cn]) ws[cn].s = { font:{bold:true,sz:10}, alignment:{horizontal:'right'} };
-  // Title
-  if (ws[`A${titleRow}`]) ws[`A${titleRow}`].s = { font:{bold:true,sz:12,color:{rgb:'111111'}} };
-  // Column header row
-  for (let c=0; c<nDataCols; c++) {
-    const addr = alpha(c)+headerRow;
-    if (!ws[addr]) ws[addr] = {v:'',t:'s'};
-    ws[addr].s = { font:{bold:true,color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'111111'}}, alignment:{horizontal: c===0?'left':'right'} };
+// Helper: footer total row cells (black bg, colored value)
+const footerCell = (v, colorRgb, isNum=false, h='left') => ({
+  v: v??'', t: typeof v==='number'?'n':'s',
+  s: {
+    fill:{ patternType:'solid', fgColor:{ rgb:XS.BLACK } },
+    font:{ name:'Arial', bold:true, color:{ rgb:colorRgb }, sz:10 },
+    alignment:{ horizontal:h, vertical:'center' },
+    border:{ top:{ style:'medium', color:{ rgb:XS.ORANGE } },
+             bottom:{ style:'thin', color:{ rgb:'374151' } } },
+    ...(isNum ? { numFmt:XS.NUM } : {}),
   }
-  // USD columns
-  colsUSD.forEach(c => {
-    for (let r=dataStartRow; r<dataStartRow+numRowsData; r++) {
-      const addr = alpha(c)+r;
-      if (!ws[addr]) return;
-      if (!ws[addr].s) ws[addr].s = {};
-      ws[addr].s.numFmt = '#,##0.00';
-      ws[addr].s.alignment = {horizontal:'right'};
-    }
-  });
-  // Bs columns
-  colsBS.forEach(c => {
-    for (let r=dataStartRow; r<dataStartRow+numRowsData; r++) {
-      const addr = alpha(c)+r;
-      if (!ws[addr]) return;
-      if (!ws[addr].s) ws[addr].s = {};
-      ws[addr].s.numFmt = '#,##0.00';
-      ws[addr].s.alignment = {horizontal:'right'};
-    }
-  });
-};
+});
 
-// exportBalanceExcel — respects expand/collapse via openNodes set
+// ── exportBalanceExcel ────────────────────────────────────────────────────────
 const exportBalanceExcel = async (tree, selectedMonth, tasa, totalActivos, totalPasPat, balanceDiff, openNodes, currency='both') => {
   try {
     const XL = await loadSheetJS();
-    const n = (v) => v != null && !isNaN(v) ? parseFloat(v.toFixed(2)) : 0;
+    const n = v => v != null && !isNaN(v) ? parseFloat(Math.abs(v).toFixed(2)) : null;
     const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
-    const letterhead = buildLetterheadRows('BALANCE DE SITUACIÓN FINANCIERA', `Corte: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`);
-    const COLS = ['Cuenta / Descripción', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[])];
-    const dataRows = flattenTreeForExcel(tree, openNodes);
-    const totalPasPat_abs = Math.abs(totalPasPat);
-    const sheetData = [
-      ...letterhead,
-      COLS,
-      ...dataRows.map(r => [r.label, ...(showUSD?[r.u != null ? n(Math.abs(r.u)) : '']:[]), ...(showBS?[r.b != null ? n(Math.abs(r.b)) : '']:[])]),
-      [],
-      ['TOTAL PASIVO Y PATRIMONIO', ...(showUSD?[n(totalPasPat_abs)]:[]), ...(showBS?['']:[])],
-      ['TOTAL ACTIVOS',             ...(showUSD?[n(totalActivos)]:[]),    ...(showBS?['']:[])],
-      ['ACTIVO − (PASIVO+PATRIMONIO)', ...(showUSD?[n(balanceDiff)]:[]), ...(showBS?['']:[])],
+    const colHeaders = ['CUENTA / DESCRIPCIÓN', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[])];
+    const nCols = colHeaders.length;
+
+    const flatRows = flattenTreeForExcel(tree, openNodes);
+    flatRows.forEach(r => {
+      r._vals = [r.label, ...(showUSD?[r.u!=null?n(r.u):null]:[]), ...(showBS?[r.b!=null?n(r.b):null]:[])];
+    });
+
+    const ab = n(Math.abs(totalPasPat));
+    const tb = n(totalActivos);
+    const diff = parseFloat((totalActivos - Math.abs(totalPasPat)).toFixed(2));
+    const footerRows = [
+      [footerCell('TOTAL PASIVO Y PATRIMONIO',XS.AMBER,false,'left'),
+       ...(showUSD?[footerCell(ab,'F59E0B',true,'right')]:[] ),
+       ...(showBS?[footerCell('','F59E0B',false,'right')]:[] )],
+      [footerCell('TOTAL ACTIVOS','F97316',false,'left'),
+       ...(showUSD?[footerCell(tb,'F97316',true,'right')]:[] ),
+       ...(showBS?[footerCell('','F97316',false,'right')]:[] )],
+      [footerCell('ACTIVO − (PASIVO+PATRIMONIO)', Math.abs(diff)<0.01?'10B981':XS.RED,false,'left'),
+       ...(showUSD?[footerCell(Math.abs(diff), Math.abs(diff)<0.01?'10B981':XS.RED, true,'right')]:[] ),
+       ...(showBS?[footerCell(Math.abs(diff)<0.01?'✓ CUADRADO':'','10B981',false,'right')]:[] )],
     ];
-    const ws = XL.utils.aoa_to_sheet(sheetData, {cellDates:false});
-    ws['!cols'] = [{ wch: 58 }, ...(showUSD?[{ wch: 20 }]:[]), ...(showBS?[{ wch: 22 }]:[])];
+
+    const ws = buildStyledSheet(XL, flatRows, colHeaders, nCols, footerRows);
+    applyLetterhead(ws, 'BALANCE DE SITUACIÓN FINANCIERA', `Corte: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`, nCols);
+    ws['!cols'] = [{ wch:60 }, ...(showUSD?[{wch:20}]:[]), ...(showBS?[{wch:22}]:[])];
     const wb = XL.utils.book_new();
     XL.utils.book_append_sheet(wb, ws, 'Balance General');
     XL.writeFile(wb, `Balance_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
-  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+  } catch(e) { console.error(e); alert('Error exportar Balance: '+e.message); }
 };
 
-// exportResultadoExcel — respects expand/collapse
+// ── exportResultadoExcel ──────────────────────────────────────────────────────
 const exportResultadoExcel = async (tree, selectedMonth, totalUSD, openNodes, currency='both') => {
   try {
     const XL = await loadSheetJS();
-    const n = (v) => v != null && !isNaN(v) ? parseFloat(v.toFixed(2)) : 0;
     const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
-    const letterhead = buildLetterheadRows('ESTADO DE RESULTADO', `Período: ${selectedMonth === 'General' ? 'Acumulado' : selectedMonth}`);
-    const COLS = ['Cuenta / Descripción', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[]), '% Ventas'];
-    const baseVentas = tree.reduce((s, nd) => nd.n.toUpperCase().includes('INGRESO')||nd.n.toUpperCase().includes('VENTA')||nd.n.startsWith('4') ? s + Math.abs(nd.u) : s, 0) || 1;
-    const fmtPct = (u) => u != null ? parseFloat((Math.abs(u)/Math.abs(baseVentas)*100).toFixed(2)) : '';
-    const dataRows = flattenTreeForExcel(tree, openNodes);
-    const sheetData = [
-      ...letterhead,
-      COLS,
-      ...dataRows.map(r => [r.label, ...(showUSD?[r.u != null ? n(Math.abs(r.u)) : '']:[]), ...(showBS?[r.b != null ? n(Math.abs(r.b)) : '']:[]), r.u != null ? fmtPct(r.u) : '']),
-      [],
-      ['RESULTADO DEL EJERCICIO', ...(showUSD?[n(totalUSD)]:[]), ...(showBS?['']:[]), fmtPct(totalUSD)],
-    ];
-    const ws = XL.utils.aoa_to_sheet(sheetData);
-    ws['!cols'] = [{ wch: 58 }, ...(showUSD?[{ wch: 18 }]:[]), ...(showBS?[{ wch: 22 }]:[]), { wch: 12 }];
+    const n = v => v != null && !isNaN(v) ? parseFloat(Math.abs(v).toFixed(2)) : null;
+    const baseVentas = tree.reduce((s,nd)=>nd.n.toUpperCase().includes('INGRESO')||nd.n.toUpperCase().includes('VENTA')||nd.n.startsWith('4')?s+Math.abs(nd.u):s,0)||1;
+    const fmtPct = u => u!=null ? parseFloat((Math.abs(u)/Math.abs(baseVentas)*100).toFixed(2)) : null;
+    const colHeaders = ['CUENTA / DESCRIPCIÓN', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[]), '%'];
+    const nCols = colHeaders.length;
+
+    const flatRows = flattenTreeForExcel(tree, openNodes);
+    flatRows.forEach(r => {
+      r._vals = [r.label, ...(showUSD?[r.u!=null?n(r.u):null]:[]), ...(showBS?[r.b!=null?n(r.b):null]:[]), r.u!=null?fmtPct(r.u):null];
+    });
+
+    const pct = fmtPct(totalUSD);
+    const isLoss = totalUSD < 0;
+    const resultColor = isLoss ? XS.RED : '10B981';
+    const footerRows = [[
+      footerCell('RESULTADO DEL EJERCICIO', resultColor, false, 'left'),
+      ...(showUSD?[footerCell(n(totalUSD), resultColor, true, 'right')]:[]),
+      ...(showBS?[footerCell('', resultColor, false, 'right')]:[]),
+      footerCell(pct!=null?`${pct}%`:'', resultColor, false, 'right'),
+    ]];
+
+    const ws = buildStyledSheet(XL, flatRows, colHeaders, nCols, footerRows);
+    applyLetterhead(ws, 'ESTADO DE RESULTADO', `Período: ${selectedMonth==='General'?'Acumulado':selectedMonth}`, nCols);
+    ws['!cols'] = [{wch:60},...(showUSD?[{wch:18}]:[]),...(showBS?[{wch:22}]:[]),{wch:10}];
     const wb = XL.utils.book_new();
     XL.utils.book_append_sheet(wb, ws, 'Estado de Resultado');
     XL.writeFile(wb, `EstadoResultado_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
-  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+  } catch(e) { console.error(e); alert('Error exportar Estado: '+e.message); }
 };
 
-// exportComparativoExcel
+// ── exportComparativoExcel ────────────────────────────────────────────────────
 const exportComparativoExcel = async (tree, month1, month2, total_m1, total_m2) => {
   try {
     const XL = await loadSheetJS();
     const n = v => parseFloat((v||0).toFixed(2));
     const pct = (v, base) => base ? `${Math.abs(v/Math.abs(base)*100).toFixed(2)}%` : '—';
+    const nCols = 5;
+    const colHeaders = ['ESTRUCTURA', month1, month2, 'VAR. ABSOLUTA', 'VAR. %'];
+
     const letterhead = buildLetterheadRows('ANÁLISIS COMPARATIVO DE VARIACIONES', `${month1} vs ${month2}`);
-    const COLS = ['Estructura', month1, month2, 'Var. Absoluta', 'Var. %'];
-    const dataRows = [];
-    tree.forEach(cat => {
-      dataRows.push([cat.n, n(cat.m1_u), n(cat.m2_u), n(cat.m2_u-cat.m1_u), pct(cat.m2_u-cat.m1_u, cat.m1_u)]);
+    const SECT_COLORS = ['1F2937','374151','4B5563'];
+    let sectIdx = 0;
+
+    const sheetRows = [];
+    tree.forEach((cat, ci) => {
+      // Category header
+      const bg = SECT_COLORS[ci % 3];
+      const catStyle = (h='left') => ({
+        fill:{patternType:'solid',fgColor:{rgb:bg}},
+        font:{name:'Arial',bold:true,color:{rgb:XS.ORANGE},sz:10},
+        alignment:{horizontal:h,vertical:'center'},
+        border:{top:{style:'medium',color:{rgb:XS.ORANGE}},bottom:{style:'thin',color:{rgb:'374151'}}},
+        numFmt:h!=='left'?XS.NUM:undefined,
+      });
+      sheetRows.push({ _vals:[cat.n,n(cat.m1_u),n(cat.m2_u),n(cat.m2_u-cat.m1_u),pct(cat.m2_u-cat.m1_u,cat.m1_u)], level:0, isSection:true, _forceSt: catStyle });
+
       [...cat.c].sort((a,b)=>a.n.localeCompare(b.n)).forEach(acc => {
         const varAbs = acc.m2_u - acc.m1_u;
-        dataRows.push(['  '+acc.n, n(acc.m1_u), n(acc.m2_u), n(varAbs), pct(varAbs, acc.m1_u)]);
+        const color = varAbs > 0 ? XS.GREEN : varAbs < 0 ? XS.RED : XS.GREY;
+        sheetRows.push({ _vals:['  '+acc.n,n(acc.m1_u),n(acc.m2_u),n(varAbs),pct(varAbs,acc.m1_u)], level:1, isLeaf:true, _varColor:color });
       });
-      dataRows.push(['TOTAL '+cat.n, n(cat.m1_u), n(cat.m2_u), n(cat.m2_u-cat.m1_u), pct(cat.m2_u-cat.m1_u,cat.m1_u)]);
-      dataRows.push([]);
+      sheetRows.push({ _vals:['TOTAL '+cat.n,n(cat.m1_u),n(cat.m2_u),n(cat.m2_u-cat.m1_u),pct(cat.m2_u-cat.m1_u,cat.m1_u)], level:1, isTotal:true });
+      sheetRows.push({ _vals:['','','','',''], level:0, isSection:false, _empty:true });
     });
+
     const varTotal = total_m2 - total_m1;
-    const sheetData = [...letterhead, COLS, ...dataRows, [], ['RESULTADO DEL EJERCICIO', n(total_m1), n(total_m2), n(varTotal), pct(varTotal, total_m1)]];
-    const ws = XL.utils.aoa_to_sheet(sheetData);
-    ws['!cols'] = [{ wch: 50 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 12 }];
+    const isLoss = total_m2 < total_m1;
+    const footerRows = [[
+      footerCell('RESULTADO DEL EJERCICIO',XS.AMBER,false,'left'),
+      footerCell(n(total_m1),XS.AMBER,true,'right'),
+      footerCell(n(total_m2),XS.AMBER,true,'right'),
+      footerCell(n(varTotal),isLoss?XS.RED:'10B981',true,'right'),
+      footerCell(pct(varTotal,total_m1),isLoss?XS.RED:'10B981',false,'right'),
+    ]];
+
+    // Build custom ws
+    const ws = {};
+    let r = 1;
+    // Letterhead 8 rows
+    for (let i=0;i<8;i++) {
+      for (let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+(r)]=mkCell('',{});
+      r++;
+    }
+    applyHeaderRow(ws, r, colHeaders, XS.ORANGE);
+    r++;
+    const dataStart = r;
+
+    sheetRows.forEach(row => {
+      if (row._empty) { for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]=mkCell('',{}); r++; return; }
+      row._vals.forEach((v, ci) => {
+        const addr = String.fromCharCode(65+ci)+r;
+        let st;
+        if (row._forceSt) { st = row._forceSt(ci===0?'left':'right'); }
+        else if (row.isTotal) { st = XS.cell(XS.TOT2,ci>0&&ci<4?(v<0?XS.RED:XS.BLACK):XS.GREY,true,ci===0?'left':'right',9,ci>0&&ci<4?XS.NUM:null,'thin','9CA3AF','thin','9CA3AF'); }
+        else { st = XS.cell(ci%2===0?'FFFFFF':'FAFAFA', ci>0?(v<0?XS.RED:XS.BLACK):XS.BLACK, false, ci===0?'left':'right', 9, (ci>0&&ci<4)?XS.NUM:null, null,null,'hair','E5E7EB'); }
+        ws[addr] = { v:v??'', t:typeof v==='number'?'n':'s', s:st };
+      });
+      r++;
+    });
+    footerRows.forEach(frow => {
+      frow.forEach((cell,ci) => { ws[String.fromCharCode(65+ci)+r]=cell; }); r++;
+    });
+    ws['!ref'] = `A1:${String.fromCharCode(65+nCols-1)}${r}`;
+    ws['!cols'] = [{wch:50},{wch:18},{wch:18},{wch:18},{wch:12}];
+    applyLetterhead(ws, 'ANÁLISIS COMPARATIVO DE VARIACIONES', `${month1} vs ${month2}`, nCols);
     const wb = XL.utils.book_new();
     XL.utils.book_append_sheet(wb, ws, 'Comparativo');
     XL.writeFile(wb, `Comparativo_${month1}_vs_${month2}.xlsx`);
-  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+  } catch(e) { console.error(e); alert('Error exportar Comparativo: '+e.message); }
 };
 
-// exportAuxiliarExcel
+// ── exportAuxiliarExcel ───────────────────────────────────────────────────────
 const exportAuxiliarExcel = async (byClient, total, mapInfo, accountCode, isCxC) => {
   try {
     const XL = await loadSheetJS();
-    const letterhead = buildLetterheadRows(
-      isCxC ? 'AUXILIAR DE CUENTAS POR COBRAR' : 'AUXILIAR DE CUENTAS POR PAGAR',
-      `Cuenta: ${accountCode} — ${mapInfo.label}`
-    );
-    const COLS = ['Cód.', 'Nombre', 'Operación', 'Emisión', 'Vencimiento', 'Días', 'No. Documento', 'Descripción', 'Monto USD', 'Cuenta Contable'];
-    const dataRows = [];
-    byClient.forEach(([nombre, group]) => {
-      group.records.forEach(item => {
-        dataRows.push([group.cod, nombre, item.operacion||'-', item.emision, item.vence, item.dias, item.doc, item.descripcion||'-', parseFloat((item.monto||0).toFixed(2)), item.cuentaContable||'-']);
-      });
-      dataRows.push(['', 'SUBTOTAL ' + nombre, '', '', '', '', '', '', parseFloat(group.subtotal.toFixed(2)), '']);
-      dataRows.push([]);
+    const nCols = 10;
+    const colHeaders = ['Cód.','Nombre','Operación','Emisión','Vencimiento','Días','No. Documento','Descripción','Monto USD','Cuenta Contable'];
+    const accentColor = isCxC ? '1D4ED8' : 'B91C1C';
+    const ws = {};
+    let r = 1;
+    for(let i=0;i<8;i++){ for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]=mkCell('',{}); r++; }
+    applyHeaderRow(ws, r, colHeaders, accentColor); r++;
+
+    const nameStyle = (bg='FFFFFF') => XS.cell(bg,XS.BLACK,false,'left',9,null,null,null,'hair','E5E7EB');
+    const numStyle  = (bg='FFFFFF') => ({...XS.cell(bg,isCxC?'1D4ED8':'B91C1C',false,'right',9,XS.NUM,null,null,'hair','E5E7EB')});
+    const clientHdr = () => ({
+      fill:{patternType:'solid',fgColor:{rgb:isCxC?'1E3A5F':'3B1219'}},
+      font:{name:'Arial',bold:true,color:{rgb:isCxC?'93C5FD':'FCA5A5'},sz:10},
+      alignment:{horizontal:'left',vertical:'center'},
+      border:{top:{style:'medium',color:{rgb:accentColor}},bottom:{style:'thin',color:{rgb:'374151'}}},
     });
-    dataRows.push(['', 'TOTAL GENERAL', '', '', '', '', '', '', parseFloat(total.toFixed(2)), '']);
-    const sheetData = [...letterhead, COLS, ...dataRows];
-    const ws = XL.utils.aoa_to_sheet(sheetData);
-    ws['!cols'] = [{wch:8},{wch:35},{wch:12},{wch:12},{wch:12},{wch:7},{wch:15},{wch:25},{wch:16},{wch:30}];
-    const wb = XL.utils.book_new();
-    XL.utils.book_append_sheet(wb, ws, isCxC ? 'CxC' : 'CxP');
-    XL.writeFile(wb, `Auxiliar_${accountCode}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
-  } catch(e) { console.error('Export error:', e); alert('Error al exportar: ' + e.message); }
+
+    let odd = true;
+    byClient.forEach(([nombre, group]) => {
+      // Client header spanning all columns
+      ws['A'+r] = {v:nombre,t:'s',s:clientHdr()};
+      for(let c=1;c<nCols;c++) ws[String.fromCharCode(65+c)+r]={v:'',t:'s',s:clientHdr()};
+      r++;
+      group.records.forEach(item => {
+        const bg = odd?'FFFFFF':'F9FAFB'; odd=!odd;
+        const rowVals = [group.cod,nombre,item.operacion||'-',item.emision,item.vence,item.dias,item.doc,item.descripcion||'-',parseFloat((item.monto||0).toFixed(2)),item.cuentaContable||'-'];
+        rowVals.forEach((v,ci) => {
+          ws[String.fromCharCode(65+ci)+r] = {v:v??'',t:typeof v==='number'?'n':'s',
+            s:ci===8?numStyle(bg):nameStyle(bg)};
+        });
+        r++;
+      });
+      // Subtotal
+      const stSt = XS.cell(isCxC?'EFF6FF':'FFF1F2',accentColor,true,'left',9);
+      for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]={v:'',t:'s',s:stSt};
+      ws['B'+r]={v:'SUBTOTAL '+nombre,t:'s',s:stSt};
+      ws['I'+r]={v:parseFloat(group.subtotal.toFixed(2)),t:'n',s:{...stSt,alignment:{horizontal:'right'},numFmt:XS.NUM}};
+      r++;
+    });
+    r++; // blank
+    // Grand total
+    for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]=footerCell('',XS.AMBER);
+    ws['B'+r]=footerCell('TOTAL GENERAL',XS.AMBER,false,'left');
+    ws['I'+r]=footerCell(parseFloat(total.toFixed(2)),XS.AMBER,true,'right');
+    r++;
+    ws['!ref']=`A1:J${r}`;
+    ws['!cols']=[{wch:8},{wch:32},{wch:12},{wch:12},{wch:12},{wch:7},{wch:15},{wch:28},{wch:16},{wch:32}];
+    applyLetterhead(ws, isCxC?'AUXILIAR DE CUENTAS POR COBRAR':'AUXILIAR DE CUENTAS POR PAGAR', `Cuenta: ${accountCode} — ${mapInfo.label}`, nCols);
+    const wb=XL.utils.book_new();
+    XL.utils.book_append_sheet(wb,ws,isCxC?'CxC':'CxP');
+    XL.writeFile(wb,`Auxiliar_${accountCode}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
+  } catch(e){console.error(e);alert('Error exportar Auxiliar: '+e.message);}
 };
 
-// exportActivosFijosExcel — grouped by category with subtotals
+// ── exportActivosFijosExcelGrouped ────────────────────────────────────────────
 const exportActivosFijosExcelGrouped = async (records, getRubo, fileName, mesCorte, getDepAcumFn, getNetoFn, fmt) => {
   try {
     const XL = await loadSheetJS();
     const n = v => parseFloat((v||0).toFixed(2));
-    const letterhead = [
-      ['Supply G&B', '', '', '', '', '', '', '', '', '', '', 'SERVICIOS JIRET G&B, C.A.'],
-      ['',           '', '', '', '', '', '', '', '', '', '', 'RIF: J-412309374'],
-      ['',           '', '', '', '', '', '', '', '', '', '', 'AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB'],
-      ['',           '', '', '', '', '', '', '', '', '', '', 'SECTOR EL TREBOL MARACAIBO-ZULIA'],
-      [],
-      ['REGISTRO DE ACTIVOS FIJOS'],
-      [`Corte: ${mesCorte}  —  ${new Date().toLocaleDateString('es-VE')}`],
-      [],
-    ];
-    const headers = ['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum Bs.','Val.Neto Bs.','Dep.Mensual Bs.','Tasa'];
-    const sheetData = [...letterhead];
+    const nCols = 12;
+    const ws = {};
+    let r = 1;
+    for(let i=0;i<8;i++){for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]=mkCell('',{}); r++;}
+    const hdrs=['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum Bs.','Val.Neto Bs.','Dep.Mensual Bs.','Tasa'];
+    const grupos={};
+    records.forEach(rec=>{const g=getRubo(rec);if(!grupos[g])grupos[g]=[];grupos[g].push(rec);});
+    const RUBRO_ORDER=['MOBILIARIO Y EQUIPO DE OFICINA','EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES','HERRAMIENTAS MENORES','MAQUINARIA Y EQUIPOS','PLANTA ELÉCTRICA','GALPÓN E INMUEBLES','VEHÍCULOS'];
+    const RUBRO_COLORS={
+      'MOBILIARIO Y EQUIPO DE OFICINA':               ['B45309','FEF3C7'],
+      'EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES':  ['1D4ED8','EFF6FF'],
+      'HERRAMIENTAS MENORES':                         ['92400E','FFFBEB'],
+      'MAQUINARIA Y EQUIPOS':                         ['6D28D9','F5F3FF'],
+      'PLANTA ELÉCTRICA':                             ['BE123C','FFF1F2'],
+      'GALPÓN E INMUEBLES':                           ['065F46','ECFDF5'],
+      'VEHÍCULOS':                                    ['1E40AF','EFF6FF'],
+    };
+    const orderedRubros=RUBRO_ORDER.filter(r=>grupos[r]).concat(Object.keys(grupos).filter(r2=>!RUBRO_ORDER.includes(r2)));
 
-    // Group by rubro
-    const grupos = {};
-    records.forEach(r => {
-      const g = getRubo(r);
-      if (!grupos[g]) grupos[g] = [];
-      grupos[g].push(r);
+    orderedRubros.forEach(rubro=>{
+      const [fgRgb, bgRgb] = RUBRO_COLORS[rubro]||['374151','F9FAFB'];
+      const items=grupos[rubro];
+      // Rubro header
+      const rubSt={fill:{patternType:'solid',fgColor:{rgb:'111827'}},
+        font:{name:'Arial',bold:true,color:{rgb:fgRgb},sz:11},
+        alignment:{horizontal:'left',vertical:'center'},
+        border:{top:{style:'medium',color:{rgb:XS.ORANGE}},bottom:{style:'thin',color:{rgb:'374151'}}}};
+      for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]={v:c===0?rubro:'',t:'s',s:rubSt};
+      r++;
+      // Column headers
+      hdrs.forEach((h,ci)=>{
+        const addr=String.fromCharCode(65+ci)+r;
+        const hSt={fill:{patternType:'solid',fgColor:{rgb:'1F2937'}},
+          font:{name:'Arial',bold:true,color:{rgb:'D1FAE5'},sz:8},
+          alignment:{horizontal:ci<2||ci===3?'left':'right',vertical:'center'},
+          border:{bottom:{style:'thin',color:{rgb:fgRgb}}}};
+        ws[addr]={v:h,t:'s',s:hSt};
+      });
+      r++;
+      // Data rows
+      let odd=true;
+      items.forEach(rec=>{
+        const bg=odd?'FFFFFF':bgRgb; odd=!odd;
+        const vals=[rec.cant,rec.descripcion,rec.sede,rec.fechaAdq,rec.vidaUtilAsig,rec.vidaUtilTrans,n(rec.costoUSD),n(rec.costoBS),n(getDepAcumFn(rec)),n(getNetoFn(rec)),n(rec.depreMensual),n(rec.tasa)];
+        const isNumCol=[false,false,false,false,false,false,true,true,true,true,true,true];
+        vals.forEach((v,ci)=>{
+          const addr=String.fromCharCode(65+ci)+r;
+          const st={fill:{patternType:'solid',fgColor:{rgb:bg}},
+            font:{name:'Arial',bold:ci===9,color:{rgb:ci===9?fgRgb:XS.BLACK},sz:9},
+            alignment:{horizontal:isNumCol[ci]?'right':ci===1?'left':'center',vertical:'center'},
+            border:{bottom:{style:'hair',color:{rgb:'E5E7EB'}}},
+            ...(isNumCol[ci]?{numFmt:XS.NUM}:{})};
+          ws[addr]={v:v??'',t:typeof v==='number'?'n':'s',s:st};
+        });
+        r++;
+      });
+      // Subtotal
+      const sUSD=items.reduce((s,rec)=>s+rec.costoUSD,0);
+      const sBS=items.reduce((s,rec)=>s+rec.costoBS,0);
+      const sDA=items.reduce((s,rec)=>s+getDepAcumFn(rec),0);
+      const sN=items.reduce((s,rec)=>s+getNetoFn(rec),0);
+      const sM=items.reduce((s,rec)=>s+rec.depreMensual,0);
+      const stotSt={fill:{patternType:'solid',fgColor:{rgb:bgRgb}},
+        font:{name:'Arial',bold:true,color:{rgb:fgRgb},sz:9},
+        alignment:{horizontal:'right',vertical:'center'},
+        border:{top:{style:'thin',color:{rgb:'9CA3AF'}},bottom:{style:'medium',color:{rgb:fgRgb}}},
+        numFmt:XS.NUM};
+      const stotVals=['','','','','','',n(sUSD),n(sBS),n(sDA),n(sN),n(sM),''];
+      stotVals.forEach((v,ci)=>{
+        const addr=String.fromCharCode(65+ci)+r;
+        const ist={...stotSt,alignment:{horizontal:ci<6?'left':'right'}};
+        if(ci===0){ws[addr]={v:'SUBTOTAL '+rubro,t:'s',s:{...ist,alignment:{horizontal:'left'}}};}
+        else ws[addr]={v:v??'',t:typeof v==='number'?'n':'s',s:ist};
+      });
+      r++;
+      r++; // blank
     });
 
-    const RUBRO_ORDER = ['MOBILIARIO Y EQUIPO DE OFICINA','EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES','HERRAMIENTAS MENORES','MAQUINARIA Y EQUIPOS','PLANTA ELÉCTRICA','GALPÓN E INMUEBLES','VEHÍCULOS'];
-    const orderedRubros = RUBRO_ORDER.filter(r=>grupos[r]).concat(Object.keys(grupos).filter(r=>!RUBRO_ORDER.includes(r)));
-
-    orderedRubros.forEach(rubro => {
-      const items = grupos[rubro];
-      sheetData.push([rubro.toUpperCase()]);  // category header row
-      sheetData.push(headers);
-      items.forEach(r => sheetData.push([r.cant, r.descripcion, r.sede, r.fechaAdq, r.vidaUtilAsig, r.vidaUtilTrans, n(r.costoUSD), n(r.costoBS), n(getDepAcumFn(r)), n(getNetoFn(r)), n(r.depreMensual), n(r.tasa)]));
-      const sUSD = items.reduce((s,r)=>s+r.costoUSD,0);
-      const sBS  = items.reduce((s,r)=>s+r.costoBS,0);
-      const sDA  = items.reduce((s,r)=>s+getDepAcumFn(r),0);
-      const sN   = items.reduce((s,r)=>s+getNetoFn(r),0);
-      const sM   = items.reduce((s,r)=>s+r.depreMensual,0);
-      sheetData.push(['SUBTOTAL '+rubro,'','','','','',n(sUSD),n(sBS),n(sDA),n(sN),n(sM),'']);
-      sheetData.push([]);
+    // Grand total
+    const totUSD=records.reduce((s,rec)=>s+rec.costoUSD,0);
+    const totBS=records.reduce((s,rec)=>s+rec.costoBS,0);
+    const totDA=records.reduce((s,rec)=>s+getDepAcumFn(rec),0);
+    const totN=records.reduce((s,rec)=>s+getNetoFn(rec),0);
+    const totM=records.reduce((s,rec)=>s+rec.depreMensual,0);
+    const totVals=['','','','','','',n(totUSD),n(totBS),n(totDA),n(totN),n(totM),''];
+    totVals.forEach((v,ci)=>{
+      const addr=String.fromCharCode(65+ci)+r;
+      const ft=footerCell(v, ci===6?'60A5FA':ci===7?'D1FAE5':ci===8?'FCA5A5':ci===9?XS.AMBER:ci===10?'86EFAC':XS.WHITE, ci>=6&&ci<=10);
+      if(ci===0) ws[addr]=footerCell('TOTAL GENERAL',XS.WHITE,false,'left');
+      else ws[addr]=ft;
     });
 
-    const totUSD = records.reduce((s,r)=>s+r.costoUSD,0);
-    const totBS  = records.reduce((s,r)=>s+r.costoBS,0);
-    const totDA  = records.reduce((s,r)=>s+getDepAcumFn(r),0);
-    const totN   = records.reduce((s,r)=>s+getNetoFn(r),0);
-    const totM   = records.reduce((s,r)=>s+r.depreMensual,0);
-    sheetData.push(['TOTAL GENERAL','','','','','',n(totUSD),n(totBS),n(totDA),n(totN),n(totM),'']);
-
-    const ws = XL.utils.aoa_to_sheet(sheetData);
-    ws['!cols'] = [5,38,12,14,10,10,16,16,16,16,16,8].map(w=>({wch:w}));
-    const wb = XL.utils.book_new();
-    XL.utils.book_append_sheet(wb, ws, 'Activos Fijos');
-    XL.writeFile(wb, `${fileName}.xlsx`);
-  } catch(e) { console.error('Export error:', e); alert('Error: '+e.message); }
+    ws['!ref']=`A1:L${r}`;
+    ws['!cols']=[5,38,12,14,10,10,16,16,16,16,16,8].map(w=>({wch:w}));
+    applyLetterhead(ws,'REGISTRO DE ACTIVOS FIJOS',`Corte: ${mesCorte}  —  ${new Date().toLocaleDateString('es-VE')}`,nCols);
+    const wb=XL.utils.book_new();
+    XL.utils.book_append_sheet(wb,ws,'Activos Fijos');
+    XL.writeFile(wb,`${fileName}.xlsx`);
+  } catch(e){console.error(e);alert('Error: '+e.message);}
 };
+
+// Print / PDF helper
 
 // Print / PDF helper — opens a print-ready HTML window
 const printReport = (titleHtml, contentHtml) => {
@@ -2433,6 +2724,271 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
 }
 
 // ============================================================================
+// 10. VISTA: BALANCE DE COMPROBACIÓN
+// ============================================================================
+function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
+  const MESES_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+  // Meses que tienen datos de balance (cuentas 1/2/3)
+  const balanceMeses = useMemo(() => {
+    const ms = [...new Set(dbData.filter(d=>/^[123]/.test(d.name)).map(d=>d.month))];
+    return ms.sort((a,b) => (MESES_ORDER.indexOf(a)+1||99) - (MESES_ORDER.indexOf(b)+1||99));
+  }, [dbData]);
+
+  // Meses que tienen datos de resultados (cuentas 4/5/6)
+  const resultMeses = useMemo(() => {
+    const ms = [...new Set(dbData.filter(d=>/^[456]/.test(d.name)).map(d=>d.month))];
+    return ms.sort((a,b) => (MESES_ORDER.indexOf(a)+1||99) - (MESES_ORDER.indexOf(b)+1||99));
+  }, [dbData]);
+
+  const allMeses = useMemo(() => {
+    const s = new Set([...balanceMeses, ...resultMeses]);
+    return [...s].sort((a,b) => (MESES_ORDER.indexOf(a)+1||99) - (MESES_ORDER.indexOf(b)+1||99));
+  }, [balanceMeses, resultMeses]);
+
+  const [selectedMonth, setSelectedMonth] = useState(allMeses[0] || 'Abril');
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all'); // 'all' | '1' | '2' | '3' | '4' | '5' | '6'
+
+  const tasa = tasaByMonth[selectedMonth] || 1;
+  const fmtR = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+
+  // Build trial balance for selected month
+  const rows = useMemo(() => {
+    const monthData = dbData.filter(d => d.month === selectedMonth);
+    const map = {};
+    monthData.forEach(item => {
+      const code = item.name.match(/^(\d[\d\.]+)/)?.[1] || null;
+      if (!code) return;
+      const key = item.name.trim();
+      if (!map[key]) map[key] = { name: key, code, usd: 0, bs: 0 };
+      map[key].usd += item.usd || 0;
+      map[key].bs  += item.bs  || 0;
+    });
+
+    return Object.values(map)
+      .filter(r => r.usd !== 0 || r.bs !== 0)
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, {numeric:true}));
+  }, [dbData, selectedMonth]);
+
+  // Filtered rows
+  const filtered = useMemo(() => {
+    let rs = rows;
+    if (filterType !== 'all') rs = rs.filter(r => r.code.startsWith(filterType));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rs = rs.filter(r => r.name.toLowerCase().includes(q));
+    }
+    return rs;
+  }, [rows, filterType, search]);
+
+  // Totals
+  const totDeudorUSD  = filtered.filter(r=>r.usd>0).reduce((s,r)=>s+r.usd,0);
+  const totAcreedUSD  = filtered.filter(r=>r.usd<0).reduce((s,r)=>s+Math.abs(r.usd),0);
+  const totDeudorBS   = filtered.filter(r=>r.bs>0).reduce((s,r)=>s+r.bs,0);
+  const totAcreedBS   = filtered.filter(r=>r.bs<0).reduce((s,r)=>s+Math.abs(r.bs),0);
+  const cuadra = Math.abs(totDeudorUSD - totAcreedUSD) < 0.10;
+
+  const groupLabel = {
+    '1':'ACTIVOS (1)','2':'PASIVOS (2)','3':'PATRIMONIO (3)',
+    '4':'INGRESOS (4)','5':'COSTOS (5)','6':'GASTOS (6)',
+  };
+
+  const exportComprobacionExcel = async () => {
+    try {
+      const XL = await loadSheetJS();
+      const n = v => parseFloat((v||0).toFixed(2));
+      const letterhead = buildLetterheadRows('BALANCE DE COMPROBACIÓN', `Período: ${selectedMonth}  |  Tasa: ${tasa} Bs/USD`);
+      const COLS = ['Código', 'Cuenta / Descripción', 'Saldo Deudor USD', 'Saldo Acreedor USD', 'Saldo Deudor Bs.', 'Saldo Acreedor Bs.'];
+      const dataRows = filtered.map(r => [
+        r.code,
+        r.name,
+        r.usd > 0 ? n(r.usd)  : '',
+        r.usd < 0 ? n(Math.abs(r.usd)) : '',
+        r.bs  > 0 ? n(r.bs)   : '',
+        r.bs  < 0 ? n(Math.abs(r.bs))  : '',
+      ]);
+      const sheetData = [
+        ...letterhead, COLS, ...dataRows, [],
+        ['', 'TOTAL DEUDOR',   n(totDeudorUSD), '',              n(totDeudorBS),  ''],
+        ['', 'TOTAL ACREEDOR', '',              n(totAcreedUSD), '',              n(totAcreedBS)],
+        ['', 'DIFERENCIA',     n(totDeudorUSD-totAcreedUSD), '', n(totDeudorBS-totAcreedBS), ''],
+      ];
+      const ws = XL.utils.aoa_to_sheet(sheetData);
+      ws['!cols'] = [{wch:18},{wch:55},{wch:18},{wch:18},{wch:20},{wch:20}];
+      const wb = XL.utils.book_new();
+      XL.utils.book_append_sheet(wb, ws, 'Balance de Comprobación');
+      XL.writeFile(wb, `BalanceComprobacion_${selectedMonth}_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.xlsx`);
+    } catch(e) { alert('Error: '+e.message); }
+  };
+
+  const handlePrint = () => {
+    const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+    let prev = '';
+    const rows_html = filtered.map(r => {
+      const grp = r.code[0];
+      let sep = '';
+      if (grp !== prev) { sep = `<tr class="section"><td colspan="6">${groupLabel[grp]||grp}</td></tr>`; prev=grp; }
+      return `${sep}<tr>
+        <td style="font-size:8pt;color:#666">${r.code}</td>
+        <td>${r.name.replace(/^\d[\d\.]*-/,'')}</td>
+        <td style="text-align:right">${r.usd>0?fmtP(r.usd):''}</td>
+        <td style="text-align:right">${r.usd<0?fmtP(Math.abs(r.usd)):''}</td>
+        <td style="text-align:right">${r.bs>0?fmtP(r.bs):''}</td>
+        <td style="text-align:right">${r.bs<0?fmtP(Math.abs(r.bs)):''}</td>
+      </tr>`;
+    }).join('');
+    printReport(
+      `<h1>Balance de Comprobación</h1><h2>Período: ${selectedMonth} | Tasa: ${tasa} Bs/USD</h2>`,
+      `<table>
+        <thead><tr><th>Código</th><th>Cuenta / Descripción</th><th>Deudor USD</th><th>Acreedor USD</th><th>Deudor Bs.</th><th>Acreedor Bs.</th></tr></thead>
+        <tbody>${rows_html}
+        <tr class="grand-total"><td colspan="2">TOTAL DEUDOR</td><td style="text-align:right">${fmtP(totDeudorUSD)}</td><td></td><td style="text-align:right">${fmtP(totDeudorBS)}</td><td></td></tr>
+        <tr class="grand-total"><td colspan="2">TOTAL ACREEDOR</td><td></td><td style="text-align:right">${fmtP(totAcreedUSD)}</td><td></td><td style="text-align:right">${fmtP(totAcreedBS)}</td></tr>
+        </tbody>
+      </table>`
+    );
+  };
+
+  return (
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      <header className="bg-[#111111] border-b-4 border-teal-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-teal-400"><ArrowLeft size={16}/> Panel</button>
+          <div className="flex items-center gap-2 border-l-2 border-slate-700 pl-4">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Período:</span>
+            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-teal-500/10 border border-teal-500/40 text-teal-300 text-xs rounded-lg p-1.5 font-black uppercase cursor-pointer outline-none">
+              {allMeses.length > 0 ? allMeses.map(m=><option key={m}>{m}</option>) : <option>Sin datos</option>}
+            </select>
+          </div>
+          <div className="relative border-l-2 border-slate-700 pl-4">
+            <Search size={11} className="absolute left-7 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar cuenta..." className="pl-8 pr-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs outline-none w-40"/>
+          </div>
+          <select value={filterType} onChange={e=>setFilterType(e.target.value)} className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg p-1.5 outline-none">
+            <option value="all">Todas las cuentas</option>
+            {['1','2','3','4','5','6'].map(k=><option key={k} value={k}>{groupLabel[k]}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={exportComprobacionExcel} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileSpreadsheet size={13}/> Excel
+          </button>
+          <button onClick={handlePrint} className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
+            <FileText size={13}/> PDF
+          </button>
+        </div>
+      </header>
+
+      <main className="p-4 md:p-8 max-w-7xl mx-auto pb-16">
+        {/* Header card */}
+        <div className="bg-white px-8 py-6 border-t-4 border-teal-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500 mb-1">Servicios Jiret G&B, C.A.</p>
+          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Balance de Comprobación</h1>
+          <p className="text-teal-600 font-black uppercase bg-teal-50 px-5 py-1.5 rounded-full text-[10px] border border-teal-200 mt-2">
+            Período: {selectedMonth} {tasa > 1 ? `· Tasa: ${tasa} Bs/USD` : ''}
+          </p>
+        </div>
+
+        {/* KPI cards */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+          {[
+            {label:'Total Deudor USD',   val:`USD ${fmtR(totDeudorUSD)}`,  color:'text-teal-700',  bg:'bg-teal-50 border-teal-200'},
+            {label:'Total Acreedor USD', val:`USD ${fmtR(totAcreedUSD)}`,  color:'text-orange-700',bg:'bg-orange-50 border-orange-200'},
+            {label:'Total Deudor Bs.',   val:`Bs. ${fmtR(totDeudorBS)}`,   color:'text-slate-700', bg:'bg-white border-slate-200'},
+            {label:'Total Acreedor Bs.', val:`Bs. ${fmtR(totAcreedBS)}`,   color:'text-slate-700', bg:'bg-white border-slate-200'},
+            {label:'Diferencia USD',     val:cuadra?'✓ CUADRADO':`USD ${fmtR(totDeudorUSD-totAcreedUSD)}`,
+             color:cuadra?'text-emerald-600':'text-red-600', bg:cuadra?'bg-emerald-50 border-emerald-200':'bg-red-50 border-red-200'},
+          ].map(k=>(
+            <div key={k.label} className={`rounded-xl p-4 border ${k.bg} shadow-sm`}>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p>
+              <p className={`text-sm font-black font-mono ${k.color}`}>{k.val}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Table */}
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-[#111111] text-[9px] uppercase font-black text-slate-300 sticky top-0">
+              <tr>
+                <th className="px-3 py-4 w-[32%]">Cuenta / Descripción</th>
+                <th className="px-3 py-4 text-right text-teal-400 w-[14%]">Deudor USD</th>
+                <th className="px-3 py-4 text-right text-orange-400 w-[14%]">Acreedor USD</th>
+                <th className="px-3 py-4 text-right text-teal-300 w-[16%] hidden md:table-cell">Deudor Bs.</th>
+                <th className="px-3 py-4 text-right text-orange-300 w-[16%] hidden md:table-cell">Acreedor Bs.</th>
+                <th className="px-3 py-4 text-right text-slate-400 w-[8%]">Nat.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                let prevGrp = '';
+                return filtered.map((row, i) => {
+                  const grp = row.code[0];
+                  const showGrpHeader = grp !== prevGrp;
+                  prevGrp = grp;
+                  const isDeudor = row.usd >= 0;
+                  const grpColors = {'1':'bg-blue-900','2':'bg-red-900','3':'bg-purple-900','4':'bg-emerald-900','5':'bg-amber-900','6':'bg-orange-900'};
+                  const grpText = {'1':'text-blue-300','2':'text-red-300','3':'text-purple-300','4':'text-emerald-300','5':'text-amber-300','6':'text-orange-300'};
+                  return (
+                    <React.Fragment key={i}>
+                      {showGrpHeader && (
+                        <tr className={`${grpColors[grp]||'bg-slate-800'}`}>
+                          <td colSpan={6} className={`px-4 py-2 font-black text-[10px] uppercase tracking-widest ${grpText[grp]||'text-slate-300'}`}>
+                            {groupLabel[grp] || `GRUPO ${grp}`}
+                          </td>
+                        </tr>
+                      )}
+                      <tr className={`border-b border-slate-100 hover:bg-teal-50/30 transition-colors ${i%2===0?'bg-white':'bg-slate-50/40'}`}>
+                        <td className="px-3 py-2.5 text-[10px] font-bold text-slate-800 uppercase truncate max-w-[300px]" title={row.name}>
+                          <span className="text-slate-400 mr-1.5 font-mono text-[9px]">{row.code}</span>
+                          {row.name.replace(/^\d[\d\.]*-?/,'').trim()}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-teal-700 font-bold">
+                          {row.usd > 0 ? fmtR(row.usd) : ''}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[11px] text-orange-700 font-bold">
+                          {row.usd < 0 ? fmtR(Math.abs(row.usd)) : ''}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[10px] text-teal-600 hidden md:table-cell">
+                          {row.bs > 0 ? fmtR(row.bs) : ''}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-[10px] text-orange-600 hidden md:table-cell">
+                          {row.bs < 0 ? fmtR(Math.abs(row.bs)) : ''}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${isDeudor?'bg-teal-100 text-teal-700':'bg-orange-100 text-orange-700'}`}>
+                            {isDeudor?'D':'A'}
+                          </span>
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                });
+              })()}
+              {/* Totals row */}
+              <tr className="bg-[#111111] text-white font-black border-t-4 border-teal-500">
+                <td className="px-4 py-5 text-sm uppercase tracking-widest">TOTALES</td>
+                <td className="px-3 py-5 text-right font-mono text-teal-400 text-sm">{fmtR(totDeudorUSD)}</td>
+                <td className="px-3 py-5 text-right font-mono text-orange-400 text-sm">{fmtR(totAcreedUSD)}</td>
+                <td className="px-3 py-5 text-right font-mono text-teal-300 hidden md:table-cell">{fmtR(totDeudorBS)}</td>
+                <td className="px-3 py-5 text-right font-mono text-orange-300 hidden md:table-cell">{fmtR(totAcreedBS)}</td>
+                <td className="px-3 py-5 text-center">
+                  <span className={`text-[9px] font-black px-2 py-1 rounded ${cuadra?'bg-emerald-500':'bg-red-500'}`}>
+                    {cuadra?'✓':'✗'}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-4">{filtered.length} cuentas · {rows.length} total</p>
+      </main>
+    </div>
+  );
+}
+
+// ============================================================================
 // 9. APP PRINCIPAL / DASHBOARD
 // ============================================================================
 function ReportesFinancierosApp() {
@@ -2563,10 +3119,11 @@ function ReportesFinancierosApp() {
     return () => clearInterval(id);
   }, []);
 
-  if (view === 'resultado')   return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={getAfForMonth('General') || activosFijosData}/>;
-  if (view === 'comparativo') return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
-  if (view === 'balance')     return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxByMonth={auxByMonth} afByMonth={afByMonth} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData} tasaByMonth={tasaByMonth} onSaveTasa={saveTasa}/>;
-  if (view === 'inversiones') return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={getAfForMonth(configMes)} setActivosFijosData={(d)=>setAfByMonth(prev=>({...prev,[configMes]:d}))}/>;
+  if (view === 'resultado')     return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={getAfForMonth('General') || activosFijosData}/>;
+  if (view === 'comparativo')   return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
+  if (view === 'balance')       return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxByMonth={auxByMonth} afByMonth={afByMonth} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData} tasaByMonth={tasaByMonth} onSaveTasa={saveTasa}/>;
+  if (view === 'comprobacion')  return <BalanceComprobacionView onBack={()=>setView('dashboard')} dbData={dbData} tasaByMonth={tasaByMonth}/>;
+  if (view === 'inversiones')   return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={getAfForMonth(configMes)} setActivosFijosData={(d)=>setAfByMonth(prev=>({...prev,[configMes]:d}))}/>;
 
   if (view === 'configuracion') return (
     <div className="min-h-screen bg-[#111111]">
@@ -2655,29 +3212,29 @@ function ReportesFinancierosApp() {
 
   // ── DASHBOARD PRINCIPAL — diseño SaaS light ────────────────────────────────
   const modules = [
-    { id:'resultado',   title:'Estado de Resultados',   desc:'P&L mensual y acumulado por cuentas',
+    { id:'resultado',     title:'Estado de Resultados',      desc:'P&L mensual y acumulado por cuentas',
       iconBg:'bg-slate-800', icon:<LineChart size={22} className="text-white"/>,
       preview: <svg viewBox="0 0 120 40" className="w-full h-10 mt-3 opacity-70"><polyline points="0,38 20,28 40,32 60,18 80,22 100,10 120,14" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinejoin="round"/><polyline points="0,38 20,34 40,30 60,24 80,20 100,16 120,12" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinejoin="round" strokeDasharray="3 2"/></svg>,
       onClick:()=>dbData.length>0?setView('resultado'):alert('Carga datos en Configuración.') },
-    { id:'balance',     title:'Balance General',         desc:'Situación financiera multimoneda USD / Bs.',
+    { id:'balance',       title:'Balance General',            desc:'Situación financiera multimoneda USD / Bs.',
       iconBg:'bg-blue-600', icon:<Scale size={22} className="text-white"/>,
       preview: <svg viewBox="0 0 120 40" className="w-full h-10 mt-3 opacity-70">{[10,25,20,35,28,40,32,38].map((h,i)=><rect key={i} x={i*15+2} y={40-h} width="11" height={h} fill="#f97316" rx="2"/>)}</svg>,
       onClick:()=>dbData.length>0?setView('balance'):alert('Carga datos en Configuración.') },
-    { id:'comparativo', title:'Análisis de Variaciones', desc:'Comparativo mes a mes de resultados',
+    { id:'comprobacion',  title:'Balance de Comprobación',   desc:'Saldos deudores y acreedores por mes',
+      iconBg:'bg-teal-600', icon:<BookOpen size={22} className="text-white"/>,
+      preview: <div className="mt-3 space-y-1 opacity-70">{['Activos','Pasivos','Patrimonio'].map((t,i)=><div key={i} className="flex items-center justify-between"><span className="text-[9px] text-slate-500 font-bold uppercase">{t}</span><div className="h-1.5 rounded-full bg-orange-400" style={{width:`${[80,60,40][i]}%`}}/></div>)}</div>,
+      onClick:()=>dbData.length>0?setView('comprobacion'):alert('Carga datos en Configuración.') },
+    { id:'comparativo',   title:'Análisis de Variaciones',   desc:'Comparativo mes a mes de resultados',
       iconBg:'bg-purple-600', icon:<GitCompare size={22} className="text-white"/>,
       preview: <svg viewBox="0 0 120 40" className="w-full h-10 mt-3 opacity-70">{[20,15,22,18,24,16,20,14].map((h,i)=>[<rect key={`a${i}`} x={i*15+1} y={40-h} width="6" height={h} fill="#f97316" rx="1"/>,<rect key={`b${i}`} x={i*15+8} y={40-h*0.7} width="6" height={h*0.7} fill="#94a3b8" rx="1"/>])}</svg>,
       onClick:()=>dbData.length>=2?setView('comparativo'):alert('Necesitas al menos 2 meses.') },
-    { id:'inversiones', title:'Activos Fijos',           desc:'Registro y depreciación de activos fijos',
+    { id:'inversiones',   title:'Activos Fijos',              desc:'Registro y depreciación de activos fijos',
       iconBg:'bg-emerald-600', icon:<Landmark size={22} className="text-white"/>,
       preview: <div className="mt-3 flex gap-1 items-end h-10">{[60,80,70,90,75,85].map((h,i)=><div key={i} className="flex-1 rounded-t" style={{height:`${h}%`,background: i===3?'#f97316':'#e2e8f0'}}/>)}</div>,
       onClick:()=>setView('inversiones') },
-    { id:'diario',      title:'Libro Diario',            desc:'Asientos y movimientos contables',
-      iconBg:'bg-amber-500', icon:<BookOpen size={22} className="text-white"/>,
-      preview: <div className="mt-3 space-y-1.5 opacity-50">{['Asiento de nómina','Factura de compra','Factura de compra'].map((t,i)=><div key={i} className="flex items-center gap-2"><div className="w-3 h-3 rounded border-2 border-green-500 flex items-center justify-center"><div className="w-1.5 h-1.5 bg-green-500 rounded-sm"/></div><span className="text-[9px] text-slate-500">{t}</span></div>)}</div>,
-      disabled:true },
-    { id:'config',      title:'Configuración',           desc:'Plan · Meses · Auxiliares · Activos',
+    { id:'config',        title:'Configuración',              desc:'Plan · Meses · Auxiliares · Activos',
       iconBg:'bg-slate-500', icon:<Database size={22} className="text-white"/>,
-      preview: <div className="mt-3 text-[10px] text-slate-500 space-y-0.5"><p>Plan: {hasPlan?<span className="text-emerald-600 font-bold">Cargado</span>:'—'} <span className="mx-1">|</span> Meses: {loadedMonths.length}</p><p>CxC: {(auxDataConfig?.cxc_general?.length||0)} reg. <span className="mx-1">|</span> CxP: {(auxDataConfig?.cxp_general?.length||0)} reg.</p><p>Activos: {afCount} <span className="mx-1">|</span> Base: {dbData.length}</p></div>,
+      preview: <div className="mt-3 text-[10px] text-slate-500 space-y-0.5"><p>Plan: {hasPlan?<span className="text-emerald-600 font-bold">Cargado</span>:'—'} <span className="mx-1">|</span> Meses: {loadedMonths.length}</p><p>CxC: {(getAuxForMonth(configMes)?.cxc_general?.length||0)} reg. <span className="mx-1">|</span> CxP: {(getAuxForMonth(configMes)?.cxp_general?.length||0)} reg.</p><p>Activos: {afCount} <span className="mx-1">|</span> Base: {dbData.length}</p></div>,
       onClick:()=>setView('configuracion') },
   ];
 
