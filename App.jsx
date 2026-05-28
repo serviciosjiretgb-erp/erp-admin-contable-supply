@@ -920,15 +920,23 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
       const depByCtaGasto = {};
       afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
         const rubro = getRubro(r);
-        // Usar la cuenta real del auxiliar; sólo usar fallback si está vacía
-        const ctaGasto = (r.cuentaGasto && r.cuentaGasto !== '-' && r.cuentaGasto.length > 3)
-          ? r.cuentaGasto
-          : `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
-        const perMesBs = r.depreMensual; // ya es el monto mensual en Bs
+        const map = RUBRO_DEPR_MAP[rubro];
+        const perMesBs = r.depreMensual;
         const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
-        if (!depByCtaGasto[ctaGasto]) depByCtaGasto[ctaGasto] = { montoBs: 0, montoUSD: 0 };
-        depByCtaGasto[ctaGasto].montoBs  += perMesBs  * numMeses;
-        depByCtaGasto[ctaGasto].montoUSD += perMesUSD * numMeses;
+        const nDebe = map ? map.debe.length : 1;
+        if (map) {
+          map.debe.forEach(d => {
+            const label = `${d.cta}-${d.nombre}`;
+            if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
+            depByCtaGasto[label].montoBs  += (perMesBs  / nDebe) * numMeses;
+            depByCtaGasto[label].montoUSD += (perMesUSD / nDebe) * numMeses;
+          });
+        } else {
+          const label = `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+          if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
+          depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
+          depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
+        }
       });
 
       // Insertar como hojas bajo COSTOS Y GASTOS OPERATIVOS > GASTOS DE DEPRECIACIÓN
@@ -1143,7 +1151,48 @@ const DEP_ACUM_ACCOUNT_MAP = {
   'VEHICULO':         '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
 };
 
-// ─── Mapa canónico de prefijo de cuenta → jerarquía del Balance ───────────────
+// ─── Mapa de cuentas contables de depreciación por rubro ─────────────────────
+// DEBE = gasto/costo, HABER = depreciación acumulada
+// Algunos rubros tienen partida operativa (OP) y administrativa (ADM)
+const RUBRO_DEPR_MAP = {
+  'GALPÓN E INMUEBLES': {
+    debe:  [{ cta: '5.1.03.05.009', nombre: 'DEPRECIACIÓN GALPON (OP)' }],
+    haber: [{ cta: '1.1.06.01.002', nombre: 'DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)' }],
+  },
+  'MAQUINARIA Y EQUIPOS': {
+    debe:  [{ cta: '5.1.03.05.010', nombre: 'DEPRECIACIÓN MAQUINARIA Y EQUIPOS (OP)' }],
+    haber: [{ cta: '1.1.06.01.004', nombre: 'DEP. ACUMULADA MAQUINARIA Y EQUIPOS' }],
+  },
+  'HERRAMIENTAS MENORES': {
+    debe:  [{ cta: '5.1.03.05.013', nombre: 'DEPRECIACIÓN MONTACARGAS (OP)' }],
+    haber: [{ cta: '1.1.06.01.004', nombre: 'DEP. ACUMULADA MAQUINARIA Y EQUIPOS' }],
+  },
+  'MOBILIARIO Y EQUIPO DE OFICINA': {
+    debe:  [
+      { cta: '5.1.03.05.011', nombre: 'DEPRECIACIÓN MOBILIARIO Y EQUIPO (OP)' },
+      { cta: '6.2.02.02.006', nombre: 'DEP. MOBILIARIO' },
+    ],
+    haber: [{ cta: '1.1.06.01.013', nombre: 'DEP. ACUMULADA MOBILIARIO' }],
+  },
+  'VEHÍCULOS': {
+    debe:  [
+      { cta: '5.1.03.05.012', nombre: 'DEPRECIACIÓN VEHÍCULOS DE OPERACIONES (OP)' },
+      { cta: '6.2.02.02.004', nombre: 'DEP. VEHÍCULOS' },
+    ],
+    haber: [{ cta: '1.1.06.01.009', nombre: 'DEP. ACUMULADA VEHÍCULOS' }],
+  },
+  'PLANTA ELÉCTRICA': {
+    debe:  [{ cta: '5.1.03.05.014', nombre: 'DEPRECIACIÓN PLANTA ELECTRICA (OP)' }],
+    haber: [{ cta: '1.1.06.01.017', nombre: 'DEP. ACUMULADA PLANTA ELECTRICA' }],
+  },
+  'EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES': {
+    debe:  [
+      { cta: '5.1.03.05.015', nombre: 'DEP. EQUIPOS DE COMPUTACIÓN (OP)' },
+      { cta: '6.2.02.02.003', nombre: 'DEP. EQUIPOS DE COMPUTACIÓN' },
+    ],
+    haber: [{ cta: '1.1.06.01.007', nombre: 'DEP. ACUMULADA EQUIPOS DE COMPUTACIÓN' }],
+  },
+};
 const BALANCE_ACCOUNT_PATH = {
   '1.1.01.01': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','CAJA MONEDA EXTRANJERA'],
   '1.1.01.02': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','BANCOS NACIONALES'],
@@ -1513,29 +1562,32 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const totalNeto     = filteredValid.reduce((s,r)=>s+getValorNetoActual(r),0);
   const totalMensual  = filteredValid.reduce((s,r)=>s+r.depreMensual,0);
 
-  // Asientos de depreciación mensual por mes
+  // Asientos de depreciación mensual por mes — usa RUBRO_DEPR_MAP como fuente de verdad
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const asientosPorMes = useMemo(() => {
-    // Agrupar por (cuentaGasto, cuentaDepAcum) para consolidar líneas del asiento
     const result = {};
     MESES.forEach(mes => {
-      const lineas = [];
-      const byKey = {};
+      const montoPorRubro = {};
       records.filter(r => r.costoUSD > 0 && r.depreMensual > 0).forEach(r => {
         const rubro = getRubro(r);
-        const ctaGasto = (r.cuentaGasto && r.cuentaGasto !== '-' && r.cuentaGasto.length > 3)
-          ? r.cuentaGasto
-          : `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
-        // Cuenta HABER (depreciación acumulada)
-        const ctaAcum  = (r.cuentaDepAcum && r.cuentaDepAcum !== '-' && r.cuentaDepAcum.length > 3)
-          ? r.cuentaDepAcum
-          : `1.1.06.xx.xxx-DEP. ACUMULADA ${rubro}`;
-        const key = `${ctaGasto}|||${ctaAcum}`;
-        if (!byKey[key]) byKey[key] = { ctaGasto, ctaAcum, rubro, montoBs: 0 };
-        byKey[key].montoBs += r.depreMensual;
+        montoPorRubro[rubro] = (montoPorRubro[rubro] || 0) + r.depreMensual;
       });
-      Object.values(byKey).forEach(v => lineas.push(v));
-      result[mes] = lineas;
+      const debeLines = [], haberLines = [];
+      Object.entries(montoPorRubro).forEach(([rubro, totalBs]) => {
+        if (totalBs <= 0) return;
+        const map = RUBRO_DEPR_MAP[rubro];
+        if (!map) {
+          debeLines.push({ cta: `5.x.xx.xx.xxx`, nombre: `DEPRECIACIÓN ${rubro}`, montoBs: totalBs });
+          haberLines.push({ cta: `1.1.06.xx.xxx`, nombre: `DEP. ACUMULADA ${rubro}`, montoBs: totalBs });
+          return;
+        }
+        const nDebe = map.debe.length;
+        map.debe.forEach(d => debeLines.push({ cta: d.cta, nombre: d.nombre, montoBs: totalBs / nDebe }));
+        map.haber.forEach(h => haberLines.push({ cta: h.cta, nombre: h.nombre, montoBs: totalBs / map.haber.length }));
+      });
+      const totalDebe  = debeLines.reduce((s,l)=>s+l.montoBs, 0);
+      const totalHaber = haberLines.reduce((s,l)=>s+l.montoBs, 0);
+      result[mes] = { debeLines, haberLines, totalDebe, totalHaber };
     });
     return result;
   }, [records]);
@@ -1543,24 +1595,24 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const exportAsientoExcel = async (mes) => {
     try {
       const XL = await loadSheetJS();
-      const lineas = asientosPorMes[mes] || [];
-      const totalBs = lineas.reduce((s,l)=>s+l.montoBs, 0);
+      const { debeLines, haberLines, totalDebe, totalHaber } = asientosPorMes[mes] || { debeLines:[], haberLines:[], totalDebe:0, totalHaber:0 };
+      const fmtN = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(v);
       const letterhead = [
         ['Supply G&B','','','','SERVICIOS JIRET G&B, C.A.'],
         ['','','','','RIF: J-412309374'],
         ['','','','','AV CIRCUNVALACION NRO 02 C.C EL DIVIDIVI LOCAL G-9 NIVEL PB'],
         ['','','','','SECTOR EL TREBOL MARACAIBO-ZULIA'],
         [],
-        [`ASIENTO CONTABLE — DEPRECIACIÓN ${mes.toUpperCase()}`],
+        [`ASIENTO CONTABLE DE DEPRECIACIÓN — ${mes.toUpperCase()}`],
+        ['(Expresado en Bs.)'],
         [],
+        ['Código de Cuenta','Nombre de la Cuenta','Debe (Bs.)','Haber (Bs.)'],
       ];
-      const COLS = ['Cta.','Descripción Cuenta','Rubro','DEBE Bs.','HABER Bs.'];
-      const debeRows = lineas.map(l => [l.ctaGasto, `DEPRECIACIÓN — ${l.rubro}`, l.rubro, new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(l.montoBs), '']);
-      const haberRows = lineas.map(l => [l.ctaAcum, `DEP. ACUMULADA — ${l.rubro}`, l.rubro, '', new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(l.montoBs)]);
-      const fmtT = new Intl.NumberFormat('es-VE',{minimumFractionDigits:2}).format(totalBs);
-      const sheetData = [...letterhead, COLS, ...debeRows, ...haberRows, [], ['TOTAL','','',fmtT,fmtT]];
+      const debeRows  = debeLines.map(l  => [l.cta,  l.nombre,  fmtN(l.montoBs), '']);
+      const haberRows = haberLines.map(l => [l.cta,  l.nombre,  '',              fmtN(l.montoBs)]);
+      const sheetData = [...letterhead, ...debeRows, ...haberRows, [], ['TOTALES','',fmtN(totalDebe),fmtN(totalHaber)]];
       const ws = XL.utils.aoa_to_sheet(sheetData);
-      ws['!cols'] = [{wch:40},{wch:45},{wch:30},{wch:20},{wch:20}];
+      ws['!cols'] = [{wch:22},{wch:50},{wch:20},{wch:20}];
       const wb = XL.utils.book_new();
       XL.utils.book_append_sheet(wb, ws, `Depreciacion ${mes}`);
       XL.writeFile(wb, `Asiento_Depreciacion_${mes}.xlsx`);
@@ -1818,12 +1870,10 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                 </thead>
                 <tbody>
                   {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(mes => {
-                    const lineas = asientosPorMes[mes] || [];
-                    const totalBs = lineas.reduce((s,l)=>s+l.montoBs,0);
-                    if (!lineas.length) return null;
+                    const { debeLines=[], haberLines=[], totalDebe=0, totalHaber=0 } = asientosPorMes[mes] || {};
+                    if (!debeLines.length) return null;
                     return (
                       <React.Fragment key={mes}>
-                        {/* Encabezado del mes */}
                         <tr className="bg-violet-50/80 border-t-2 border-violet-200">
                           <td colSpan={4} className="px-4 py-2 font-black text-violet-700 text-[10px] uppercase tracking-widest">{mes}</td>
                           <td className="px-3 py-2 text-right text-[9px] font-black text-violet-500"></td>
@@ -1833,33 +1883,30 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                             </button>
                           </td>
                         </tr>
-                        {/* Líneas DEBE */}
-                        {lineas.map((l,i) => (
+                        {debeLines.map((l,i) => (
                           <tr key={`d${i}`} className="border-b border-slate-50 hover:bg-emerald-50/30">
                             <td className="px-4 py-1.5 text-center"><span className="text-[8px] font-black text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">DEBE</span></td>
-                            <td className="px-4 py-1.5 font-mono text-[10px] text-slate-700">{l.ctaGasto}</td>
-                            <td className="px-3 py-1.5 text-[9px] text-slate-400 truncate max-w-[140px]">{l.rubro}</td>
+                            <td className="px-4 py-1.5 font-mono text-[10px] text-slate-700"><span className="font-black text-slate-900">{l.cta}</span> — {l.nombre}</td>
+                            <td className="px-3 py-1.5 text-[9px] text-slate-400"></td>
                             <td className="px-3 py-1.5 text-right font-mono font-bold text-[10px] text-emerald-700">Bs. {fmt(l.montoBs)}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-[10px] text-slate-300">—</td>
                             <td/>
                           </tr>
                         ))}
-                        {/* Líneas HABER */}
-                        {lineas.map((l,i) => (
+                        {haberLines.map((l,i) => (
                           <tr key={`h${i}`} className="border-b border-slate-50 hover:bg-red-50/30">
                             <td className="px-4 py-1.5 text-center"><span className="text-[8px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded">HABER</span></td>
-                            <td className="px-4 py-1.5 font-mono text-[10px] text-slate-700 pl-10">{l.ctaAcum}</td>
-                            <td className="px-3 py-1.5 text-[9px] text-slate-400 truncate max-w-[140px]">{l.rubro}</td>
+                            <td className="px-4 py-1.5 font-mono text-[10px] text-slate-700 pl-10"><span className="font-black text-slate-900">{l.cta}</span> — {l.nombre}</td>
+                            <td className="px-3 py-1.5 text-[9px] text-slate-400"></td>
                             <td className="px-3 py-1.5 text-right font-mono text-[10px] text-slate-300">—</td>
                             <td className="px-3 py-1.5 text-right font-mono font-bold text-[10px] text-red-600">Bs. {fmt(l.montoBs)}</td>
                             <td/>
                           </tr>
                         ))}
-                        {/* Subtotal del mes */}
                         <tr className="bg-violet-50 border-t border-violet-200">
-                          <td colSpan={3} className="px-4 py-2 text-[9px] font-black text-violet-600 uppercase">Total {mes}</td>
-                          <td className="px-3 py-2 text-right font-mono font-black text-[10px] text-emerald-700">Bs. {fmt(totalBs)}</td>
-                          <td className="px-3 py-2 text-right font-mono font-black text-[10px] text-red-600">Bs. {fmt(totalBs)}</td>
+                          <td colSpan={3} className="px-4 py-2 text-[9px] font-black text-violet-600 uppercase">TOTALES {mes}</td>
+                          <td className="px-3 py-2 text-right font-mono font-black text-[10px] text-emerald-700">Bs. {fmt(totalDebe)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-black text-[10px] text-red-600">Bs. {fmt(totalHaber)}</td>
                           <td/>
                         </tr>
                       </React.Fragment>
