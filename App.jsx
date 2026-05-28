@@ -939,9 +939,25 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
         }
       });
 
-      // Insertar como hojas bajo COSTOS Y GASTOS OPERATIVOS > GASTOS DE DEPRECIACIÓN
-      const pathDep = ['COSTOS Y GASTOS OPERATIVOS', 'GASTOS DE DEPRECIACIÓN'];
+      // Insertar hojas según prefijo de cuenta:
+      // cuentas 5.x → bajo la sección COSTOS del Estado de Resultado (buscar nodo existente que inicie con "COSTO")
+      // cuentas 6.x → bajo la sección GASTOS (buscar nodo existente que inicie con "GASTO")
+      const getDepPath = (ctaLabel) => {
+        const firstChar = ctaLabel.trim()[0];
+        if (firstChar === '6') {
+          // Buscar rama GASTOS existente en root, si no crear
+          const gastoNode = root.find(n => /^(GASTOS|GASTO)/i.test(n.n.trim()));
+          const gastoName = gastoNode ? gastoNode.n : 'GASTOS OPERATIVOS Y ADMINISTRATIVOS';
+          return [gastoName, 'GASTOS DE DEPRECIACIÓN'];
+        }
+        // Default 5.x → COSTOS
+        const costoNode = root.find(n => /^(COSTO)/i.test(n.n.trim()));
+        const costoName = costoNode ? costoNode.n : 'COSTOS Y GASTOS OPERATIVOS';
+        return [costoName, 'DEPRECIACIÓN'];
+      };
+
       Object.entries(depByCtaGasto).forEach(([ctaGasto, vals]) => {
+        const pathDep = getDepPath(ctaGasto);
         let cur = root;
         pathDep.forEach(folderName => {
           const key = normKey(folderName);
