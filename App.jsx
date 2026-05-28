@@ -551,10 +551,15 @@ const processActivosFijosExcel = async (files) => {
       }
       const hRow=raw[hIdx].map(c=>nk(String(c||'')));
       const ci=(...ns)=>{for(const n of ns){const i=hRow.findIndex(h=>h===n||h.includes(n));if(i!==-1)return i;}return -1;};
-      const iCant=ci('cant','cantidad'); const iDesc=ci('mobiliario y equipo','mobiliario','descripcion','activo','bien');
-      const iSede=ci('sede'); const iCuenta=ci('cuenta contable del activo','cuenta del activo','cuenta activo','cuenta');
-      const iCuentaGasto=ci('cuenta gasto depreciacion','cuenta gasto','gasto depreciacion','cuenta debito');
-      const iCuentaDepAcum=ci('cuenta depreciacion acumulada','cuenta dep acum','cuenta credito','dep acumulada cuenta');
+      const iCant=ci('cant','cantidad'); 
+      const iDesc=ci('mobiliario y equipo','mobiliario','descripcion','activo','bien');
+      const iSede=ci('sede'); 
+      // La columna "CUENTA" del activo (costo) suele ser la primera que menciona "cuenta"
+      const iCuenta=ci('cuenta contable del activo','cuenta del activo','cuenta activo','cuenta del bien','cuentaactivo');
+      // Buscar columnas de cuentas de depreciación por nombre o por posición relativa
+      // En muchos auxiliares venezolanos: col N = cuenta gasto dep, col N+1 = cuenta dep. acum
+      const iCuentaGasto   = ci('cuenta gasto depreciacion','cuenta gasto dep','gasto depreciacion','cuenta debito','ctadebito','cta gasto','cta debito');
+      const iCuentaDepAcum = ci('cuenta depreciacion acumulada','cuenta dep acum','cuenta acumulada','cuenta credito','ctacredito','cta haber','cta acum');
       const iDeprMet=hRow.findIndex(h=>h.includes('depreciacion')&&!h.includes('acum'));
       const iDepAcum1=hRow.findIndex(h=>h.includes('depreciacion')&&h.includes('acum'));
       const iFecha=ci('fecha de adquisicion','fecha adquisicion','fecha');
@@ -567,6 +572,14 @@ const processActivosFijosExcel = async (files) => {
       const iNeto=ci('valor neto libros','valor neto');
       const iMes=ci('depre mensual','dep mensual','depreciacion mensual','depre  mensual');
       const iTasa=ci('tasa');
+
+      // Fallback posicional: las columnas "cuenta" aparecen juntas en el encabezado
+      // Si no se encontraron por nombre, buscar todas las columnas que incluyan "cuenta"
+      const allCuentaCols = hRow.reduce((a,h,i)=>{ if(h.includes('cuenta')) a.push(i); return a; }, []);
+      // iCuenta debería ser la primera; iCuentaGasto la siguiente "cuenta" distinta; iCuentaDepAcum la siguiente
+      const resolvedCuenta     = iCuenta     >= 0 ? iCuenta     : (allCuentaCols[0] ?? -1);
+      const resolvedCtaGasto   = iCuentaGasto   >= 0 ? iCuentaGasto   : (allCuentaCols.find(i=>i>resolvedCuenta) ?? -1);
+      const resolvedCtaDepAcum = iCuentaDepAcum >= 0 ? iCuentaDepAcum : (allCuentaCols.find(i=>i>resolvedCtaGasto&&i!==resolvedCtaGasto) ?? -1);
       const g=(row,i)=>i>=0&&i<row.length?row[i]:null;
       for (let ri=hIdx+1;ri<raw.length;ri++){
         const row=raw[ri];
@@ -578,9 +591,9 @@ const processActivosFijosExcel = async (files) => {
         if (/^(total|subtotal|gran total)/i.test(descRaw)) continue;
         records.push({
           cant:parseVal(g(row,iCant))||1, descripcion:descRaw, sede:String(g(row,iSede)||'-').trim(),
-          cuenta:String(g(row,iCuenta)||'-').trim(),
-          cuentaGasto:   iCuentaGasto   >= 0 ? String(g(row,iCuentaGasto)||'').trim()   : '',
-          cuentaDepAcum: iCuentaDepAcum >= 0 ? String(g(row,iCuentaDepAcum)||'').trim() : '',
+          cuenta:String(g(row,resolvedCuenta)||'-').trim(),
+          cuentaGasto:   resolvedCtaGasto   >= 0 ? String(g(row,resolvedCtaGasto)||'').trim()   : '',
+          cuentaDepAcum: resolvedCtaDepAcum >= 0 ? String(g(row,resolvedCtaDepAcum)||'').trim() : '',
           depreciacion:String(g(row,iDeprMet)||'-').trim(),
           depreciacionAcum:String(g(row,iDepAcum1)||"-").trim(),
           fechaAdq:fmtXLDate(g(row,iFecha)),
@@ -893,33 +906,44 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     const afRecords = activosFijosData?.records || [];
     if (afRecords.length > 0) {
       const MONTH_ORDER = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      const BASE_M = 4;
+      const BASE_M = 4; // Abril es el mes base del auxiliar
+
+      // Para "General": sumar 1 mes por cada mes disponible en dbData
+      // Para un mes específico: exactamente 1 mes (la depreciación mensual)
+      // NUNCA multiplicar por monthsToProcess.length de forma plana porque acumula incorrectamente
       const monthsToProcess = selectedMonth === 'General'
         ? [...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes')
         : [selectedMonth];
-      // Agrupar depreciación mensual por cuenta de gasto
+      const numMeses = monthsToProcess.length; // 1 para mes puntual, N para acumulado
+
+      // Agrupar depreciación por cuenta de gasto — 1 mes por período
       const depByCtaGasto = {};
       afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
         const rubro = getRubro(r);
-        const ctaGasto = r.cuentaGasto || `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
-        const pathDep  = ['COSTOS Y GASTOS OPERATIVOS', 'GASTOS DE DEPRECIACIÓN'];
-        if (!depByCtaGasto[ctaGasto]) depByCtaGasto[ctaGasto] = { path: pathDep, montoBs: 0 };
-        depByCtaGasto[ctaGasto].montoBs += r.depreMensual * monthsToProcess.length;
+        // Usar la cuenta real del auxiliar; sólo usar fallback si está vacía
+        const ctaGasto = (r.cuentaGasto && r.cuentaGasto !== '-' && r.cuentaGasto.length > 3)
+          ? r.cuentaGasto
+          : `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+        const perMesBs = r.depreMensual; // ya es el monto mensual en Bs
+        const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
+        if (!depByCtaGasto[ctaGasto]) depByCtaGasto[ctaGasto] = { montoBs: 0, montoUSD: 0 };
+        depByCtaGasto[ctaGasto].montoBs  += perMesBs  * numMeses;
+        depByCtaGasto[ctaGasto].montoUSD += perMesUSD * numMeses;
       });
-      // Insertar como hojas en el árbol bajo COSTOS Y GASTOS OPERATIVOS > GASTOS DE DEPRECIACIÓN
-      Object.entries(depByCtaGasto).forEach(([ctaGasto, info]) => {
+
+      // Insertar como hojas bajo COSTOS Y GASTOS OPERATIVOS > GASTOS DE DEPRECIACIÓN
+      const pathDep = ['COSTOS Y GASTOS OPERATIVOS', 'GASTOS DE DEPRECIACIÓN'];
+      Object.entries(depByCtaGasto).forEach(([ctaGasto, vals]) => {
         let cur = root;
-        info.path.forEach(folderName => {
+        pathDep.forEach(folderName => {
           const key = normKey(folderName);
           let folder = cur.find(n => normKey(n.n) === key);
           if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
           cur = folder.c;
         });
-        const tasa = afRecords.find(r=>r.tasa>0)?.tasa || 1;
-        const usdVal = tasa > 0 ? info.montoBs / tasa : 0;
         let leaf = cur.find(n => normKey(n.n)===normKey(ctaGasto)&&n.isLeaf);
-        if (!leaf) cur.push({ n: ctaGasto, u: usdVal, b: info.montoBs, isLeaf: true });
-        else { leaf.u += usdVal; leaf.b += info.montoBs; }
+        if (!leaf) cur.push({ n: ctaGasto, u: vals.montoUSD, b: vals.montoBs, isLeaf: true });
+        else { leaf.u += vals.montoUSD; leaf.b += vals.montoBs; }
       });
     }
 
@@ -1499,10 +1523,13 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
       const byKey = {};
       records.filter(r => r.costoUSD > 0 && r.depreMensual > 0).forEach(r => {
         const rubro = getRubro(r);
-        // Cuenta DEBE (gasto/costo de depreciación)
-        const ctaGasto = r.cuentaGasto || `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+        const ctaGasto = (r.cuentaGasto && r.cuentaGasto !== '-' && r.cuentaGasto.length > 3)
+          ? r.cuentaGasto
+          : `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
         // Cuenta HABER (depreciación acumulada)
-        const ctaAcum  = r.cuentaDepAcum || `1.1.06.xx.xxx-DEP. ACUMULADA ${rubro}`;
+        const ctaAcum  = (r.cuentaDepAcum && r.cuentaDepAcum !== '-' && r.cuentaDepAcum.length > 3)
+          ? r.cuentaDepAcum
+          : `1.1.06.xx.xxx-DEP. ACUMULADA ${rubro}`;
         const key = `${ctaGasto}|||${ctaAcum}`;
         if (!byKey[key]) byKey[key] = { ctaGasto, ctaAcum, rubro, montoBs: 0 };
         byKey[key].montoBs += r.depreMensual;
