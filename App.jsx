@@ -3004,29 +3004,63 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
     return exact||dbData.some(d=>d.month==='Saldos Iniciales'&&isBalRecord(d));
   },[dbData,mes]);
 
+  // Build same tree as EstadoResultadoView and extract totals from root nodes
   const calcPL = (m) => {
-    const mn=m.toLowerCase();
-    // Use exact same filter as EstadoResultadoView: path-based, not account-code
-    const d=dbData.filter(x=>x.month?.toLowerCase()===mn&&isResRecord(x));
-    let ingresos=0,costoVentas=0,costosOp=0,gastos=0;
-    d.forEach(x=>{
-      const v=Math.abs(x.usd||0);
-      const up=pathUp(x);   // path hierarchy e.g. "INGRESOS>VENTAS BRUTAS"
-      const nm=(x.name||'').toUpperCase();
-      // 1st priority: account code prefix (most reliable)
-      if(/^4[\d.]/.test(x.name)||/^4$/.test(x.name.split('-')[0].trim())) { ingresos+=v; }
-      else if(/^5\.1\.01/.test(x.name)) { costoVentas+=v; }
-      else if(/^5[\d.]/.test(x.name)) { costosOp+=v; }
-      else if(/^6[\d.]/.test(x.name)) { gastos+=v; }
-      // 2nd priority: path hierarchy (when no account code)
-      else if(up.includes('INGRESO')||up.includes('VENTA BRUTA')||nm.includes('INGRESO')||nm.includes('VENTA')) { ingresos+=v; }
-      else if(up.includes('COSTO DE VENTA')||up.includes('COSTO VENTA')||up.includes('COSTO VENTAS')) { costoVentas+=v; }
-      else if(up.includes('COSTO')) { costosOp+=v; }
-      else { gastos+=v; }
+    const mn = m.toLowerCase();
+    const resData = dbData.filter(x => x.month?.toLowerCase() === mn && isResRecord(x));
+    if (!resData.length) return {ingresos:0,costoVentas:0,costosOp:0,costos:0,gastos:0,utilBruta:0,utilOp:0,resultado:0,margenBruto:0,margenOp:0,margenNeto:0};
+
+    // Build hierarchy tree (same as EstadoResultadoView)
+    const root = [];
+    const normKey = s => (s||'').trim().replace(/\s+/g,' ').toUpperCase();
+    resData.forEach(item => {
+      const pathArray = (item.path||'').split('>').filter(Boolean);
+      let cur = root;
+      pathArray.forEach(folderName => {
+        const key = normKey(folderName);
+        let folder = cur.find(n => normKey(n.n) === key);
+        if (!folder) { folder = {n:folderName.trim(), c:[], u:0, b:0}; cur.push(folder); }
+        cur = folder.c;
+      });
+      let leaf = cur.find(n => normKey(n.n) === normKey(item.name) && n.isLeaf);
+      if (!leaf) cur.push({n:item.name.trim(), u:item.usd, b:item.bs, isLeaf:true});
+      else { leaf.u += item.usd; leaf.b += item.bs; }
     });
-    const costos=costoVentas+costosOp,utilBruta=ingresos-costoVentas,utilOp=utilBruta-costosOp,resultado=utilOp-gastos;
-    return {ingresos,costoVentas,costosOp,costos,gastos,utilBruta,utilOp,resultado,
-      margenBruto:ingresos?utilBruta/ingresos*100:0,margenOp:ingresos?utilOp/ingresos*100:0,margenNeto:ingresos?resultado/ingresos*100:0};
+
+    // Compute each node's total from leaf descendants
+    const sumNode = (node) => {
+      if (node.isLeaf) return { u: node.u, b: node.b };
+      let u = 0, b = 0;
+      (node.c||[]).forEach(child => { const s = sumNode(child); u += s.u; b += s.b; });
+      node.u = u; node.b = b;
+      return { u, b };
+    };
+    root.forEach(sumNode);
+
+    // Classify each root section the same way EstadoResultadoView does
+    let ingresos = 0, costoVentas = 0, costosOp = 0, gastos = 0;
+    root.forEach(n => {
+      const up = (n.n||'').toUpperCase();
+      const v = Math.abs(n.u);
+      if (up.includes('INGRESO') || up.startsWith('4')) {
+        ingresos += v;
+      } else if (up.includes('COSTO DE VENTA') || up.includes('COSTO VENTA') || up.includes('OTROS COSTO')) {
+        costoVentas += v;
+      } else if (up.includes('COSTO') || up.startsWith('5')) {
+        costosOp += v;
+      } else {
+        gastos += v;
+      }
+    });
+
+    const costos = costoVentas + costosOp;
+    const utilBruta = ingresos - costoVentas;
+    const utilOp = utilBruta - costosOp;
+    const resultado = utilOp - gastos;
+    return {ingresos, costoVentas, costosOp, costos, gastos, utilBruta, utilOp, resultado,
+      margenBruto: ingresos ? utilBruta/ingresos*100 : 0,
+      margenOp:    ingresos ? utilOp/ingresos*100 : 0,
+      margenNeto:  ingresos ? resultado/ingresos*100 : 0};
   };
 
   const calcBal = (m) => {
