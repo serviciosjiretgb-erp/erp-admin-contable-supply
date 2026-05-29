@@ -3882,7 +3882,19 @@ function ReportesFinancierosApp() {
     return {records:[]};
   };
 
-  const handleUploadResultados = async (e) => { if (!e.target.files.length) return; try { const newData=await processFiles(e.target.files); setDbData(prev=>{const nm=[...new Set(newData.map(d=>d.month))];return [...prev.filter(d=>!nm.includes(d.month)),...newData];}); alert("✅ Resultados cargados."); } catch(err){alert("Error.");} };
+  const handleUploadResultados = async (e) => {
+    if (!e.target.files.length) return;
+    try {
+      const newData = await processFiles(e.target.files);
+      const newMonths = [...new Set(newData.map(d => d.month))];
+      setDbData(prev => {
+        // Solo reemplaza los meses que vienen en el archivo nuevo
+        // Los meses existentes (Enero, Febrero, etc.) NO se tocan
+        return [...prev.filter(d => !newMonths.includes(d.month)), ...newData];
+      });
+      alert(`✅ Estado de Resultado cargado para: ${newMonths.join(', ')}\n\nLos demás meses permanecen sin cambios.`);
+    } catch(err) { alert("Error: " + err.message); }
+  };
   const handleUploadPlan = async (e) => { if (!e.target.files.length) return; try { const plan=await processPlanCuentas(e.target.files[0]); setPlanCuentas(plan); alert("✅ Plan de cuentas cargado."); } catch(err){alert("Error.");} };
   const handleUploadSaldos = async (e) => {
     if (!e.target.files.length) return;
@@ -3954,10 +3966,7 @@ function ReportesFinancierosApp() {
 
   const loadedMonths = [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes');
   const hasPlan = Object.keys(planCuentas).length > 0;
-  const cxcTotal = (getAuxForMonth(configMes)?.cxc_general?.length||0)+(getAuxForMonth(configMes)?.cxc_zuliana?.length||0);
-  const cxpTotal = (getAuxForMonth(configMes)?.cxp_general?.length||0)+(getAuxForMonth(configMes)?.cxp_surepack?.length||0)+(getAuxForMonth(configMes)?.cxp_autototal?.length||0)+(getAuxForMonth(configMes)?.cxp_pacomela?.length||0)+(getAuxForMonth(configMes)?.cxp_yancarlos?.length||0);
-  const hasAuxData = Object.keys(auxByMonth).length > 0 || Object.keys(auxDataConfig).length > 0;
-  const auxTotal = cxcTotal + cxpTotal;
+
   // Contadores ESTRICTOS para configuración — solo lo realmente guardado en configMes (sin fallbacks)
   const isResDataForConfig = (d) => !( d.path?.toUpperCase().includes('ACTIVO') || d.path?.toUpperCase().includes('PASIVO') || d.path?.toUpperCase().includes('PATRIMONIO') ) && !/^[123]/.test(d.name);
   const afCount     = afByMonth[configMes]?.records?.length || 0;
@@ -4072,7 +4081,87 @@ function ReportesFinancierosApp() {
           </div>
         </div>
 
-        {/* Archivos del mes */}
+        {/* Meses con Estado de Resultado cargado */}
+        {(() => {
+          const resMonths = [...new Set(dbData.filter(d=>isResDataForConfig(d)&&d.month!=='Sin Mes').map(d=>d.month))];
+          if (!resMonths.length) return null;
+          return (
+            <div className="bg-emerald-950/30 border border-emerald-700/40 rounded-2xl px-5 py-3 flex items-start gap-3">
+              <CheckCircle size={14} className="text-emerald-500 flex-shrink-0 mt-0.5"/>
+              <div>
+                <p className="text-emerald-300 text-[10px] font-black uppercase tracking-wider mb-1">Estado de Resultado — Meses ya en memoria (no se pierden)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {resMonths.map(m=>(
+                    <span key={m} className={`text-[9px] font-black px-2 py-1 rounded border ${m===configMes?'bg-orange-900/60 border-orange-600 text-orange-300':'bg-emerald-900/50 border-emerald-700 text-emerald-300'}`}>
+                      {m.toUpperCase()}{m===configMes?' ← ACTIVO':''}
+                    </span>
+                  ))}
+                  {!resMonths.includes(configMes) && (
+                    <span className="text-[9px] font-black px-2 py-1 rounded border bg-slate-800 border-dashed border-slate-600 text-slate-400">{configMes.toUpperCase()} — pendiente</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+        {/* ── PAQUETE DE DATOS — Exportar / Importar ──────────────────────── */}
+        <div className="bg-[#1a1a1a] rounded-2xl border border-indigo-700/50 p-5">
+          <h2 className="text-white font-black text-sm uppercase tracking-widest flex items-center gap-2 mb-2">
+            <FileOutput size={14} className="text-indigo-400"/> Compartir con Directivos
+          </h2>
+          <p className="text-slate-400 text-[10px] mb-4 leading-relaxed">
+            Exporta <span className="text-white font-bold">todos los datos cargados</span> en un archivo .json.
+            Los directivos lo importan una sola vez y ven la información actualizada — sin adjuntar ningún archivo contable.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button onClick={() => {
+              const pkg = {
+                version:'2.0', exportDate:new Date().toISOString(), exportedBy:'Servicios Jiret G&B, C.A.',
+                data:{
+                  dbData:      JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]'),
+                  planCuentas: JSON.parse(localStorage.getItem('jiret_plan_cuentas')||'{}'),
+                  tasaByMonth: JSON.parse(localStorage.getItem('jiret_tasa_by_month')||'{}'),
+                  auxByMonth:  JSON.parse(localStorage.getItem('jiret_aux_by_month')||'{}'),
+                  afByMonth:   JSON.parse(localStorage.getItem('jiret_af_by_month')||'{}'),
+                },
+              };
+              const months=[...new Set(pkg.data.dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes');
+              const now=new Date();
+              const fn=`JIRET_DATOS_${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}.json`;
+              const blob=new Blob([JSON.stringify(pkg,null,2)],{type:'application/json'});
+              const url=URL.createObjectURL(blob);
+              const a=document.createElement('a'); a.href=url; a.download=fn; a.click(); URL.revokeObjectURL(url);
+              alert(`✅ Paquete exportado\n\n📁 ${fn}\n📊 ${pkg.data.dbData.length} registros\n📅 Meses: ${months.join(', ')}\n\nComparte este archivo con los directivos.`);
+            }} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors shadow-lg">
+              <FileOutput size={14}/> Exportar Paquete
+            </button>
+            <label className="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors cursor-pointer shadow-lg">
+              <Upload size={14}/> Importar Paquete
+              <input type="file" accept=".json" className="hidden" onChange={async(e)=>{
+                if(!e.target.files.length) return;
+                try {
+                  const text=await e.target.files[0].text();
+                  const pkg=JSON.parse(text);
+                  if(!pkg.data||!pkg.data.dbData){alert('❌ Archivo inválido.');return;}
+                  const months=[...new Set(pkg.data.dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes');
+                  if(!window.confirm(`¿Importar paquete?\n\n📅 Meses: ${months.join(', ')}\n📊 ${pkg.data.dbData.length} registros\n📆 Exportado: ${pkg.exportDate?new Date(pkg.exportDate).toLocaleString('es-VE'):'N/A'}\n\n⚠️ Esto reemplaza todos tus datos actuales.`)) return;
+                  localStorage.setItem('jiret_erp_db_data',  JSON.stringify(pkg.data.dbData));
+                  localStorage.setItem('jiret_plan_cuentas', JSON.stringify(pkg.data.planCuentas||{}));
+                  localStorage.setItem('jiret_tasa_by_month',JSON.stringify(pkg.data.tasaByMonth||{}));
+                  localStorage.setItem('jiret_aux_by_month', JSON.stringify(pkg.data.auxByMonth||{}));
+                  localStorage.setItem('jiret_af_by_month',  JSON.stringify(pkg.data.afByMonth||{}));
+                  alert(`✅ Datos importados.\nMeses: ${months.join(', ')}\n\nLa página se recargará.`);
+                  window.location.reload();
+                } catch(err){alert('❌ Error: '+err.message);}
+                e.target.value='';
+              }}/>
+            </label>
+          </div>
+          <p className="text-slate-600 text-[9px] mt-3 text-center uppercase tracking-wider">
+            Incluye: Balance · Estado de Resultado · CxC · CxP · Activos Fijos · Tasas · Plan de Cuentas
+          </p>
+        </div>
+
         <div className="bg-[#1a1a1a] rounded-2xl border border-slate-700 p-6 space-y-3">
           <h2 className="text-white font-black text-sm uppercase tracking-widest flex items-center gap-2 mb-4">
             <Database size={14} className="text-orange-500"/> Archivos — {configMes}
@@ -4080,7 +4169,12 @@ function ReportesFinancierosApp() {
           {[
             { num:'01', icon:'📋', label:'Plan de Cuentas', sub:'Aplica a todos los meses', status:hasPlan?`✓ ${Object.keys(planCuentas).length} cuentas cargadas`:'Sin cargar', ok:hasPlan, accept:'.txt', handler:handleUploadPlan, global:true },
             { num:'02', icon:'⚖️', label:`Balance General — ${configMes}`, sub:'Saldos de cuentas 1,2,3 del balance', status:hasBalanceConfigMes?'✓ Cargado':'Sin cargar', ok:hasBalanceConfigMes, accept:'.xlsx,.xls,.xlsm,.txt', handler:handleUploadSaldos },
-            { num:'03', icon:'📊', label:`Estado de Resultado — ${configMes}`, sub:'Cuentas 4,5,6 de ingresos, costos y gastos', status:hasResultadoConfigMes?'✓ Cargado':'Sin cargar', ok:hasResultadoConfigMes, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler:handleUploadResultados, multiple:true },
+            { num:'03', icon:'📊', label:`Estado de Resultado — ${configMes}`, sub: (() => {
+                const existing = [...new Set(dbData.filter(d=>isResDataForConfig(d)&&d.month!==configMes&&d.month!=='Sin Mes').map(d=>d.month))];
+                return existing.length > 0
+                  ? `Ya cargados: ${existing.join(', ')} · Solo se agrega ${configMes}`
+                  : 'Cuentas 4,5,6 de ingresos, costos y gastos';
+              })(), status:hasResultadoConfigMes?'✓ Cargado':'Sin cargar', ok:hasResultadoConfigMes, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler:handleUploadResultados, multiple:true },
             { num:'04', icon:'🔵', label:`Auxiliar CxC — ${configMes}`, sub:'Cuentas por cobrar de clientes', status:cxcTotal>0?`✓ ${cxcTotal} registros`:'Sin cargar', ok:cxcTotal>0, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler:handleUploadCxC, multiple:true, color:'blue' },
             { num:'05', icon:'🔴', label:`Auxiliar CxP — ${configMes}`, sub:'Cuentas por pagar a proveedores', status:cxpTotal>0?`✓ ${cxpTotal} registros`:'Sin cargar', ok:cxpTotal>0, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler:handleUploadCxP, multiple:true, color:'red' },
             { num:'06', icon:'🏭', label:`Activos Fijos — ${configMes}`, sub:'Inventario de activos fijos y depreciación', status:afCount>0?`✓ ${afCount} activos`:'Sin cargar', ok:afCount>0, accept:'.xlsx,.xls,.xlsm', handler:handleUploadActivosFijos, multiple:true },
