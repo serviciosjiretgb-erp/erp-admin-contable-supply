@@ -1424,9 +1424,11 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
             } else {
               // Rubros con 2 cuentas (VEHÍCULOS, MOBILIARIO, EQUIPOS):
               // Clasificar por keywords del activo para determinar si es operativo (5.x) o administrativo (6.x)
-              const desc = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
-              const esAdm = /JAC|T6|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI|PERSONAL/.test(desc);
-              // Cuentas 5.x = operativo (default), 6.x = administrativo
+              // Sede C2 = administrativo → 6.x; C1 u otros = operativo → 5.x
+              const sede2 = (r.sede||'').toUpperCase().trim();
+              const desc2 = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
+              const esAdm = sede2 === 'C2' || /\bC2\b/.test(sede2) ||
+                /JAC\b|\bT6\b|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI/.test(desc2);
               const ctaElegida = esAdm
                 ? map.debe.find(d => /^6/.test(d.cta)) || map.debe[0]
                 : map.debe.find(d => /^5/.test(d.cta)) || map.debe[0];
@@ -1896,8 +1898,8 @@ const AF_CATEGORY_MAP_BY_CODE = {
   '1.1.06.01.003': 'MAQUINARIAS Y EQUIPOS',   // costo
   '1.1.06.01.004': 'MAQUINARIAS Y EQUIPOS',   // dep. acum.
   '1.1.06.01.005': 'EQUIPOS DE COMPUTACIÓN',  // costo
-  '1.1.06.01.006': 'EQUIPOS DE COMPUTACIÓN',  // dep. acum.
-  '1.1.06.01.007': 'EQUIPOS DE COMPUTACIÓN',
+  '1.1.06.01.006': 'EQUIPOS DE COMPUTACIÓN',  // dep. acum. (algunas versiones)
+  '1.1.06.01.007': 'EQUIPOS DE COMPUTACIÓN',  // dep. acum. (cuenta correcta, verificada),
   '1.1.06.01.008': 'VEHÍCULOS',               // costo
   '1.1.06.01.009': 'VEHÍCULOS',               // dep. acum.
   '1.1.06.01.010': 'VEHÍCULOS',
@@ -2054,6 +2056,12 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 
       // Activos Fijos desde auxiliar de inversiones (siempre, es la fuente autoritativa)
       if (currentAF?.records?.length) {
+        // Meses transcurridos desde la base del auxiliar (Abril = mes 4)
+        const BASE_MONTH_NUM = 4;
+        const MNUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+        const mesNum = MNUM[selectedMonth] || MNUM['Abril'];
+        const extraM = Math.max(0, mesNum - BASE_MONTH_NUM);
+
         const getRubroBalance = (r) => {
           const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
           if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
@@ -2070,34 +2078,48 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           'VEHÍCULOS':              '1.1.06.01.008-VEHÍCULOS',
           'PLANTA ELÉCTRICA':       '1.1.06.01.017-PLANTA ELÉCTRICA',
         };
+        // Cuentas de depreciación acumulada (verificadas contra el Balance General real)
         const AF_DEP_LABEL = {
           'INMUEBLE (GALPON)':      '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
           'MOBILIARIO':             '1.1.06.01.013-DEP. ACUMULADA MOBILIARIO',
           'MAQUINARIAS Y EQUIPOS':  '1.1.06.01.004-DEP. ACUMULADA MAQUINARIA Y EQUIPOS',
-          'EQUIPOS DE COMPUTACIÓN': '1.1.06.01.006-DEP. ACUMULADA EQUIPOS DE COMPUTACION',
+          'EQUIPOS DE COMPUTACIÓN': '1.1.06.01.007-DEP. ACUMULADA EQUIPOS DE COMPUTACIÓN',  // ← 007 correcto
           'VEHÍCULOS':              '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
-          'PLANTA ELÉCTRICA':       '1.1.06.01.017-DEP. ACUMULADA PLANTA ELÉCTRICA',
+          'PLANTA ELÉCTRICA':       '1.1.06.01.017-DEP. ACUMULADA PLANTA ELECTRICA',
         };
-        const costoByRubro = {}, depBsByRubro = {};
+        // Agrupar costos por rubro para balance, dep acum por cuenta contable exacta
+        const costoByRubro = {};
+        // Dep acum agrupada por CUENTA (no por rubro) para máxima precisión
+        // Permite que activos nuevos contribuyan automáticamente a la cuenta correcta
+        const depByAccount = {};  // key = cuenta haber (e.g. '1.1.06.01.004')
+
         currentAF.records.forEach(r => {
           const rubro = getRubroBalance(r);
           if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
           costoByRubro[rubro].usd += r.costoUSD || 0;
           costoByRubro[rubro].bs  += r.costoBS  || 0;
-          // Use depAcum from auxiliary (historical cost in Bs) — NOT computed from monthly rate
-          // depAcum already contains the accumulated depreciation as of the balance date
-          const depHist = r.depAcum || 0;
-          depBsByRubro[rubro] = (depBsByRubro[rubro] || 0) + depHist;
+
+          // Dep acumulada = valor base del auxiliar + meses transcurridos × depreciación mensual
+          // Automático: si se agrega un activo nuevo con su depAcum y depreMensual, se acumula solo
+          const depActual = (r.depAcum || 0) + extraM * (r.depreMensual || 0);
+          if (depActual > 0) {
+            // Determinar la cuenta haber exacta para este activo
+            const ctaHaber = AF_DEP_LABEL[rubro] || `DEP. ACUMULADA ${rubro}`;
+            if (!depByAccount[ctaHaber]) depByAccount[ctaHaber] = { bs: 0, rubro };
+            depByAccount[ctaHaber].bs += depActual;
+          }
         });
+
         Object.entries(costoByRubro).forEach(([rubro, v]) => {
-          // Costo USD: viene del auxiliar (no cambia)
-          // Costo Bs: se recalcula con la tasa actual del balance
           if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.usd * tasa);
         });
-        Object.entries(depBsByRubro).forEach(([rubro, depBs]) => {
-          // depBs viene directamente del auxiliar (valor histórico real en Bs)
-          // USD = depBs / tasa actual
-          if (depBs > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_DEP_LABEL[rubro]||`DEP. ACUMULADA ${rubro}`, -(depBs / tasa), -depBs);
+        Object.entries(depByAccount).forEach(([ctaLabel, info]) => {
+          // ctaLabel = '1.1.06.01.007-DEP. ACUMULADA EQUIPOS DE COMPUTACIÓN'
+          const codeMatch = ctaLabel.match(/^(\d[\d.]+)/);
+          const depAcctCode = codeMatch ? codeMatch[1] : '';
+          const rubroPath = info.rubro;
+          // Insertar con signo negativo (reduce el total de activos fijos)
+          insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubroPath], ctaLabel, -(info.bs / tasa), -info.bs);
         });
       }
     }
@@ -3109,8 +3131,10 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {}, afByMonth =
               depByLabel[label].bs  += perMesBs;
               depByLabel[label].usd += perMesUSD;
             } else {
-              const desc = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
-              const esAdm = /JAC|T6|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI|PERSONAL/.test(desc);
+              const sede2 = (r.sede||'').toUpperCase().trim();
+              const desc2 = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
+              const esAdm = sede2 === 'C2' || /\bC2\b/.test(sede2) ||
+                /JAC\b|\bT6\b|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI/.test(desc2);
               const ctaElegida = esAdm
                 ? map.debe.find(d => /^6/.test(d.cta)) || map.debe[0]
                 : map.debe.find(d => /^5/.test(d.cta)) || map.debe[0];
