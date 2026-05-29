@@ -2975,68 +2975,79 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
   const fmtN = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
   const pctFmt = v => (v||0).toFixed(1)+'%';
 
-  const resMeses = useMemo(()=>{
-    const ms=[...new Set(dbData.filter(d=>/^[456]/.test(d.name)).map(d=>d.month))].filter(m=>m!=='Sin Mes');
-    return ms.sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
+  // All months across all data types
+  // Helper: isRes = same filter as EstadoResultadoView (path-based, not account-code)
+  const pathUp = (d) => (d.path||'').toUpperCase();
+  const isResRecord = (d) => !pathUp(d).includes('ACTIVO')&&!pathUp(d).includes('PASIVO')&&!pathUp(d).includes('PATRIMONIO')&&!/^[123]/.test(d.name);
+  const isBalRecord = (d) => /^[123]/.test(d.name)||pathUp(d).includes('ACTIVO')||pathUp(d).includes('PASIVO')||pathUp(d).includes('PATRIMONIO');
+
+  const allMeses = useMemo(()=>{
+    const combined = new Set([
+      ...dbData.filter(d=>isResRecord(d)).map(d=>d.month),
+      ...dbData.filter(d=>isBalRecord(d)&&d.month!=='Saldos Iniciales').map(d=>d.month),
+    ]);
+    return [...combined].filter(m=>m&&m!=='Sin Mes')
+      .sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
   },[dbData]);
 
-  const balMeses = useMemo(()=>{
-    const ms=[...new Set(dbData.filter(d=>/^[123]/.test(d.name)).map(d=>d.month))].filter(m=>m!=='Sin Mes'&&m!=='Saldos Iniciales');
-    if(!ms.length && dbData.some(d=>d.month==='Saldos Iniciales'&&/^[123]/.test(d.name))) ms.push('Abril');
-    return ms.sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
-  },[dbData]);
+  const [selectedMes, setSelectedMes] = useState('');
+  useEffect(()=>{
+    if(allMeses.length>0) {
+      setSelectedMes(prev=>(prev&&allMeses.includes(prev))?prev:allMeses[allMeses.length-1]);
+    }
+  },[allMeses]);
+  const mes = selectedMes || allMeses[allMeses.length-1] || 'Abril';
 
-  const [resMes, setResMes] = useState(()=>resMeses[resMeses.length-1]||'Abril');
-  const [balMes, setBalMes] = useState(()=>balMeses[balMeses.length-1]||'Abril');
+  const hasPL  = useMemo(()=>dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isResRecord(d)),[dbData,mes]);
+  const hasBal = useMemo(()=>{
+    const exact=dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isBalRecord(d));
+    return exact||dbData.some(d=>d.month==='Saldos Iniciales'&&isBalRecord(d));
+  },[dbData,mes]);
 
-  const calcPL = (mes) => {
-    const mesNorm = mes.toLowerCase();
-    const d=dbData.filter(x=>x.month?.toLowerCase()===mesNorm&&/^[456]/.test(x.name));
-    let ingresos=0, costoVentas=0, costosOp=0, gastos=0;
+  const calcPL = (m) => {
+    const mn=m.toLowerCase();
+    // Use exact same filter as EstadoResultadoView: path-based, not account-code
+    const d=dbData.filter(x=>x.month?.toLowerCase()===mn&&isResRecord(x));
+    let ingresos=0,costoVentas=0,costosOp=0,gastos=0;
     d.forEach(x=>{
       const v=Math.abs(x.usd||0);
-      if(/^4/.test(x.name))       ingresos   += v;
-      else if(/^5\.1\.01/.test(x.name)) costoVentas += v;  // Costo de Ventas
-      else if(/^5/.test(x.name))   costosOp   += v;  // Costos Operativos (depreciación, otros 5.x)
-      else                          gastos     += v;  // Gastos 6.x
+      const up=pathUp(x);   // path hierarchy e.g. "INGRESOS>VENTAS BRUTAS"
+      const nm=(x.name||'').toUpperCase();
+      // 1st priority: account code prefix (most reliable)
+      if(/^4[\d.]/.test(x.name)||/^4$/.test(x.name.split('-')[0].trim())) { ingresos+=v; }
+      else if(/^5\.1\.01/.test(x.name)) { costoVentas+=v; }
+      else if(/^5[\d.]/.test(x.name)) { costosOp+=v; }
+      else if(/^6[\d.]/.test(x.name)) { gastos+=v; }
+      // 2nd priority: path hierarchy (when no account code)
+      else if(up.includes('INGRESO')||up.includes('VENTA BRUTA')||nm.includes('INGRESO')||nm.includes('VENTA')) { ingresos+=v; }
+      else if(up.includes('COSTO DE VENTA')||up.includes('COSTO VENTA')||up.includes('COSTO VENTAS')) { costoVentas+=v; }
+      else if(up.includes('COSTO')) { costosOp+=v; }
+      else { gastos+=v; }
     });
-    const costos    = costoVentas + costosOp;
-    const utilBruta = ingresos - costoVentas;
-    const utilOp    = utilBruta - costosOp;
-    const resultado = utilOp - gastos;
-    return { ingresos, costoVentas, costosOp, costos, gastos, utilBruta, utilOp, resultado,
-      margenBruto: ingresos?utilBruta/ingresos*100:0,
-      margenOp:    ingresos?utilOp/ingresos*100:0,
-      margenNeto:  ingresos?resultado/ingresos*100:0 };
+    const costos=costoVentas+costosOp,utilBruta=ingresos-costoVentas,utilOp=utilBruta-costosOp,resultado=utilOp-gastos;
+    return {ingresos,costoVentas,costosOp,costos,gastos,utilBruta,utilOp,resultado,
+      margenBruto:ingresos?utilBruta/ingresos*100:0,margenOp:ingresos?utilOp/ingresos*100:0,margenNeto:ingresos?resultado/ingresos*100:0};
   };
 
-  const calcBal = (mes) => {
-    const mesNorm = mes.toLowerCase();
-    // Fallback to Saldos Iniciales if no exact month balance exists
-    const hasExact = dbData.some(d=>d.month?.toLowerCase()===mesNorm&&/^[123]/.test(d.name));
-    const targetMes = hasExact ? mes : 'Saldos Iniciales';
-    const d=dbData.filter(x=>x.month?.toLowerCase()===targetMes.toLowerCase()&&/^[123]/.test(x.name));
+  const calcBal = (m) => {
+    const mn=m.toLowerCase();
+    const hasExact=dbData.some(d=>d.month?.toLowerCase()===mn&&isBalRecord(d));
+    const target=hasExact?m:'Saldos Iniciales';
+    const d=dbData.filter(x=>x.month?.toLowerCase()===target.toLowerCase()&&isBalRecord(x));
     let activos=0,pasivos=0,patrimonio=0;
-    d.forEach(x=>{ const v=Math.abs(x.usd||0); if(/^1/.test(x.name))activos+=v; else if(/^2/.test(x.name))pasivos+=v; else patrimonio+=v; });
-    return { activos,pasivos,patrimonio, razonCte:pasivos>0?activos/pasivos:0, endeudam:activos>0?pasivos/activos*100:0 };
+    d.forEach(x=>{const v=Math.abs(x.usd||0);if(/^1/.test(x.name))activos+=v;else if(/^2/.test(x.name))pasivos+=v;else patrimonio+=v;});
+    return {activos,pasivos,patrimonio,razonCte:pasivos>0?activos/pasivos:0,endeudam:activos>0?pasivos/activos*100:0};
   };
 
-  const pl  = useMemo(()=>calcPL(resMes),  [dbData,resMes]);
-  const bal = useMemo(()=>calcBal(balMes), [dbData,balMes]);
-  const tasa = tasaByMonth[balMes]||1;
+  const pl  = useMemo(()=>calcPL(mes), [dbData,mes]); // eslint-disable-line
+  const bal = useMemo(()=>calcBal(mes),[dbData,mes]); // eslint-disable-line
+  const tasa = tasaByMonth[mes]||1;
+
+  const resMeses = useMemo(()=>[...new Set(dbData.filter(d=>isResRecord(d)).map(d=>d.month))].filter(m=>m&&m!=='Sin Mes').sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99)),[dbData]);
 
   const trendData = useMemo(()=>resMeses.map(m=>{
     const p=calcPL(m);
-    return {
-      mes:m.slice(0,3).toUpperCase(),
-      ingresos:    parseFloat(p.ingresos.toFixed(2)),
-      costoVentas: parseFloat(p.costoVentas.toFixed(2)),
-      costosOp:    parseFloat(p.costosOp.toFixed(2)),
-      gastos:      parseFloat(p.gastos.toFixed(2)),
-      resultado:   parseFloat(p.resultado.toFixed(2)),
-      margenBruto: parseFloat(p.margenBruto.toFixed(1)),
-      margenOp:    parseFloat(p.margenOp.toFixed(1)),
-    };
+    return {mes:m.slice(0,3).toUpperCase(),ingresos:+p.ingresos.toFixed(2),costoVentas:+p.costoVentas.toFixed(2),costosOp:+p.costosOp.toFixed(2),gastos:+p.gastos.toFixed(2),resultado:+p.resultado.toFixed(2),margenBruto:+p.margenBruto.toFixed(1),margenOp:+p.margenOp.toFixed(1)};
   }),[dbData,resMeses.join(',')]); // eslint-disable-line
 
   const ACTIVO_GROUPS=[
@@ -3044,12 +3055,11 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
     {label:'INVENTARIOS',re:/^1\.1\.03/},{label:'OTROS CORR.',re:/^1\.1\.(04|05)/},{label:'ACTIVOS FIJOS',re:/^1\.1\.06/},
   ];
   const activosPie = useMemo(()=>{
-    const mesNorm=balMes.toLowerCase();
-    const hasExact=dbData.some(d=>d.month?.toLowerCase()===mesNorm&&/^1/.test(d.name));
-    const target=hasExact?balMes:'Saldos Iniciales';
-    const d=dbData.filter(x=>x.month?.toLowerCase()===target.toLowerCase()&&/^1/.test(x.name));
-    return ACTIVO_GROUPS.map(g=>({name:g.label,value:parseFloat(d.filter(x=>g.re.test(x.name)).reduce((s,x)=>s+Math.abs(x.usd||0),0).toFixed(2))})).filter(g=>g.value>0);
-  },[dbData,balMes]);
+    const mn=mes.toLowerCase();
+    const target=dbData.some(d=>d.month?.toLowerCase()===mn&&(/^1/.test(d.name)||pathUp(d).includes('ACTIVO')))?mes:'Saldos Iniciales';
+    const d=dbData.filter(x=>x.month?.toLowerCase()===target.toLowerCase()&&(/^1/.test(x.name)||x.path?.toUpperCase().includes('ACTIVO')));
+    return ACTIVO_GROUPS.map(g=>({name:g.label,value:+d.filter(x=>g.re.test(x.name)).reduce((s,x)=>s+Math.abs(x.usd||0),0).toFixed(2)})).filter(g=>g.value>0);
+  },[dbData,mes]); // eslint-disable-line
 
   const Kpi = ({label,val,sub,color,icon,trend})=>(
     <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col gap-1">
@@ -3061,7 +3071,6 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
       {sub && <p className="text-[9px] text-slate-400 font-bold truncate">{sub}</p>}
     </div>
   );
-
   return (
     <div className="min-h-screen" style={{background:'#f1f5f9',backgroundImage:'radial-gradient(circle,#cbd5e1 1px,transparent 1px)',backgroundSize:'24px 24px'}}>
       <header className="bg-[#0f172a] border-b-4 border-indigo-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-xl flex-wrap gap-3">
@@ -3072,35 +3081,33 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
             <span className="text-white font-black text-sm uppercase tracking-widest">DASHBOARD FINANCIERO</span>
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5">
-            <TrendingUp size={12} className="text-emerald-400"/>
-            <span className="text-[10px] font-black text-slate-400 uppercase">P&L:</span>
-            <select value={resMes} onChange={e=>setResMes(e.target.value)} className="bg-transparent text-emerald-300 text-xs font-black uppercase cursor-pointer outline-none">
-              {resMeses.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
-              {!resMeses.length&&<option>ABRIL</option>}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-800 border border-indigo-500/40 rounded-xl px-4 py-2">
+            <CalendarDays size={13} className="text-indigo-400"/>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">PERÍODO:</span>
+            <select value={mes} onChange={e=>setSelectedMes(e.target.value)} className="bg-transparent text-indigo-300 text-sm font-black uppercase cursor-pointer outline-none">
+              {allMeses.length > 0
+                ? allMeses.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)
+                : <option value="Abril">ABRIL</option>}
             </select>
           </div>
-          <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5">
-            <Scale size={12} className="text-indigo-400"/>
-            <span className="text-[10px] font-black text-slate-400 uppercase">BALANCE:</span>
-            <select value={balMes} onChange={e=>setBalMes(e.target.value)} className="bg-transparent text-indigo-300 text-xs font-black uppercase cursor-pointer outline-none">
-              {balMeses.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
-              {!balMeses.length&&<option>ABRIL</option>}
-            </select>
+          <div className="flex gap-2 text-[9px]">
+            {hasPL  && <span className="bg-emerald-900/60 text-emerald-300 font-black px-2 py-1 rounded-lg border border-emerald-700 uppercase">P&L ✓</span>}
+            {hasBal && <span className="bg-indigo-900/60 text-indigo-300 font-black px-2 py-1 rounded-lg border border-indigo-700 uppercase">Balance ✓</span>}
+            {!hasPL && !hasBal && <span className="bg-slate-800 text-slate-500 font-black px-2 py-1 rounded-lg border border-slate-700 uppercase">SIN DATOS</span>}
           </div>
         </div>
       </header>
 
       <main className="p-5 md:p-8 max-w-[1400px] mx-auto pb-16 space-y-8">
         {/* ── ESTADO DE RESULTADO ──────────────────────────────────────── */}
-        <section>
+        {hasPL ? <section>
           <div className="bg-white rounded-2xl border-t-4 border-emerald-500 px-6 py-4 shadow-sm mb-5 flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">ESTADO DE RESULTADO</p>
-              <h2 className="text-xl font-black text-slate-900 uppercase">PERÍODO: {resMes.toUpperCase()}</h2>
+              <h2 className="text-xl font-black text-slate-900 uppercase">PERÍODO: {mes.toUpperCase()}</h2>
             </div>
-            <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1.5 rounded-lg">{resMeses.length} {resMeses.length===1?'MES':'MESES'} CARGADOS</span>
+            <span className="text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">{resMeses.length} {resMeses.length===1?'MES':'MESES'} EN TENDENCIA</span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
@@ -3163,7 +3170,7 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
           </div>
           {/* Tabla resumen P&L mes seleccionado */}
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm mt-5">
-            <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">RESUMEN ESTADO DE RESULTADO — {resMes.toUpperCase()}</p>
+            <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">RESUMEN ESTADO DE RESULTADO — {mes.toUpperCase()}</p>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[11px]">
                 <thead><tr className="bg-slate-50 border-b-2 border-slate-200">
@@ -3197,14 +3204,14 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
               </table>
             </div>
           </div>
-        </section>
+        </section> : <div className="bg-white rounded-2xl border-t-4 border-slate-200 px-6 py-12 text-center shadow-sm"><p className="text-slate-400 font-black uppercase text-sm">SIN DATOS DE ESTADO DE RESULTADO PARA {mes.toUpperCase()}</p></div>}
 
         {/* ── BALANCE GENERAL ─────────────────────────────────────────── */}
-        <section>
+        {hasBal ? <section>
           <div className="bg-white rounded-2xl border-t-4 border-indigo-500 px-6 py-4 shadow-sm mb-5 flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">BALANCE GENERAL</p>
-              <h2 className="text-xl font-black text-slate-900 uppercase">CORTE: {balMes.toUpperCase()} {tasa>1?`· TASA: ${tasa} Bs/USD`:''}</h2>
+              <h2 className="text-xl font-black text-slate-900 uppercase">CORTE: {mes.toUpperCase()} {tasa>1?`· TASA: ${tasa} Bs/USD`:''}</h2>
             </div>
             <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase ${Math.abs(bal.activos-(bal.pasivos+bal.patrimonio))<1?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>
               {Math.abs(bal.activos-(bal.pasivos+bal.patrimonio))<1?'✓ ECUACIÓN CUADRADA':'⚠ REVISAR ECUACIÓN'}
@@ -3279,7 +3286,7 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
               </div>
             ))}
           </div>
-        </section>
+        </section> : <div className="bg-white rounded-2xl border-t-4 border-slate-200 px-6 py-12 text-center shadow-sm"><p className="text-slate-400 font-black uppercase text-sm">NO HAY BALANCE PARA {mes.toUpperCase()}</p></div>}
       </main>
     </div>
   );
