@@ -5,11 +5,6 @@ import {
   FileText, Users, Briefcase, Search, BookOpen, Database, FileOutput, CornerDownRight,
   BarChart2, TrendingUp, TrendingDown, DollarSign, Activity, PieChart as PieIcon
 } from 'lucide-react';
-import {
-  ResponsiveContainer, BarChart, Bar, LineChart as ReLineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
-  AreaChart, Area, ReferenceLine
-} from 'recharts';
 
 // ============================================================================
 // 1. LÓGICA DE PROCESAMIENTO DE ARCHIVOS
@@ -2722,264 +2717,417 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
 // ============================================================================
 // 10. VISTA: DASHBOARD FINANCIERO
 // ============================================================================
+// ── Pure-SVG chart helpers ────────────────────────────────────────────────────
+const SVG_W = 480, SVG_H = 220, PAD = { t:10, r:16, b:32, l:56 };
+const cw = SVG_W - PAD.l - PAD.r;
+const ch = SVG_H - PAD.t - PAD.b;
+
+function SvgTooltip({ x, y, lines }) {
+  if (!lines?.length) return null;
+  const w = 140, lh = 16, ph = 8;
+  const h = lines.length * lh + ph * 2;
+  const tx = Math.min(x + 10, SVG_W - w - 4);
+  const ty = Math.max(y - h / 2, 4);
+  return (
+    <g>
+      <rect x={tx} y={ty} width={w} height={h} rx={6} fill="#0f172a" opacity={0.93}/>
+      {lines.map((l, i) => (
+        <text key={i} x={tx + 8} y={ty + ph + (i + 0.75) * lh}
+          fontSize={9} fontWeight={700} fill={l.color || '#e2e8f0'}>{l.text}</text>
+      ))}
+    </g>
+  );
+}
+
+// Area / Line chart
+function SvgAreaChart({ data, series, height = 220, refLine }) {
+  const [tip, setTip] = useState(null);
+  if (!data?.length) return <div className="h-full flex items-center justify-center text-slate-400 text-xs font-bold uppercase">SIN DATOS</div>;
+  const H = height; const inner_h = H - PAD.t - PAD.b;
+  const allVals = series.flatMap(s => data.map(d => d[s.key] || 0));
+  const maxV = Math.max(...allVals, 1);
+  const minV = Math.min(...allVals, 0);
+  const rangeV = maxV - minV || 1;
+  const xScale = i => PAD.l + (i / (data.length - 1)) * cw;
+  const yScale = v => PAD.t + inner_h - ((v - minV) / rangeV) * inner_h;
+  const fmtK = v => { const a = Math.abs(v); if (a >= 1e6) return (v/1e6).toFixed(1)+'M'; if (a >= 1e3) return (v/1e3).toFixed(0)+'K'; return v.toFixed(0); };
+  const yTicks = 4;
+
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${H}`} className="w-full" style={{height}}>
+      {/* Grid */}
+      {Array.from({length: yTicks + 1}, (_, i) => {
+        const v = minV + (rangeV / yTicks) * i;
+        const y = yScale(v);
+        return <g key={i}>
+          <line x1={PAD.l} y1={y} x2={SVG_W - PAD.r} y2={y} stroke="#f1f5f9" strokeWidth={1}/>
+          <text x={PAD.l - 4} y={y + 3} fontSize={8} fill="#94a3b8" textAnchor="end">{fmtK(v)}</text>
+        </g>;
+      })}
+      {/* Reference line */}
+      {refLine != null && <line x1={PAD.l} y1={yScale(refLine)} x2={SVG_W-PAD.r} y2={yScale(refLine)} stroke="#10b981" strokeWidth={1} strokeDasharray="4 2"/>}
+      {/* Areas */}
+      {series.filter(s => s.area).map(s => {
+        const pts = data.map((d, i) => `${xScale(i)},${yScale(d[s.key] || 0)}`).join(' ');
+        const last = data.length - 1;
+        return <polygon key={s.key} points={`${xScale(0)},${yScale(minV)} ${pts} ${xScale(last)},${yScale(minV)}`} fill={s.color} opacity={0.15}/>;
+      })}
+      {/* Lines */}
+      {series.map(s => {
+        const pts = data.map((d, i) => `${xScale(i)},${yScale(d[s.key] || 0)}`).join(' ');
+        return <polyline key={s.key} points={pts} fill="none" stroke={s.color} strokeWidth={s.width || 2} strokeDasharray={s.dash || ''}/>;
+      })}
+      {/* Dots + hover */}
+      {data.map((d, i) => (
+        <rect key={i} x={xScale(i) - 8} y={PAD.t} width={16} height={inner_h + PAD.b}
+          fill="transparent"
+          onMouseEnter={() => setTip({ x: xScale(i), y: PAD.t + inner_h / 2, lines: [{ text: d.mes, color: '#f97316' }, ...series.map(s => ({ text: `${s.label}: ${fmtK(d[s.key] || 0)}`, color: s.color }))] })}
+          onMouseLeave={() => setTip(null)}/>
+      ))}
+      {/* X axis labels */}
+      {data.map((d, i) => (
+        <text key={i} x={xScale(i)} y={H - 6} fontSize={8} fill="#94a3b8" fontWeight={700} textAnchor="middle">{d.mes}</text>
+      ))}
+      {tip && <SvgTooltip {...tip}/>}
+    </svg>
+  );
+}
+
+// Bar chart (vertical)
+function SvgBarChart({ data, series, height = 220, refLine }) {
+  const [tip, setTip] = useState(null);
+  if (!data?.length) return <div className="flex items-center justify-center text-slate-400 text-xs font-bold uppercase" style={{height}}>SIN DATOS</div>;
+  const H = height; const inner_h = H - PAD.t - PAD.b;
+  const allVals = series.flatMap(s => data.map(d => d[s.key] || 0));
+  const maxV = Math.max(...allVals.map(Math.abs), 1);
+  const minV = Math.min(...allVals, 0);
+  const rangeV = maxV - minV || 1;
+  const barW = Math.max(6, Math.min(32, cw / data.length / series.length - 4));
+  const groupW = barW * series.length + 4;
+  const xCenter = i => PAD.l + (i + 0.5) * (cw / data.length);
+  const yScale = v => PAD.t + inner_h - ((v - minV) / rangeV) * inner_h;
+  const y0 = yScale(0);
+  const fmtK = v => { const a = Math.abs(v); if (a >= 1e6) return (v/1e6).toFixed(1)+'M'; if (a >= 1e3) return (v/1e3).toFixed(0)+'K'; return v.toFixed(0); };
+
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${H}`} className="w-full" style={{height}}>
+      {Array.from({length: 5}, (_, i) => {
+        const v = minV + (rangeV / 4) * i;
+        const y = yScale(v);
+        return <g key={i}>
+          <line x1={PAD.l} y1={y} x2={SVG_W-PAD.r} y2={y} stroke="#f1f5f9" strokeWidth={1}/>
+          <text x={PAD.l-4} y={y+3} fontSize={8} fill="#94a3b8" textAnchor="end">{fmtK(v)}</text>
+        </g>;
+      })}
+      {refLine != null && <line x1={PAD.l} y1={y0} x2={SVG_W-PAD.r} y2={y0} stroke="#64748b" strokeWidth={1} strokeDasharray="3 3"/>}
+      {data.map((d, i) => {
+        const cx = xCenter(i);
+        return <g key={i}>
+          {series.map((s, si) => {
+            const v = d[s.key] || 0;
+            const y = yScale(v); const rectH = Math.abs(y - y0);
+            const x = cx - groupW/2 + si * (barW + 2);
+            const fill = typeof s.color === 'function' ? s.color(v) : s.color;
+            return <rect key={si} x={x} y={v >= 0 ? y : y0} width={barW} height={Math.max(rectH, 1)}
+              fill={fill} rx={2}
+              onMouseEnter={() => setTip({ x: cx, y: PAD.t + inner_h/2, lines: [{ text: d.mes, color:'#f97316' }, { text: `${s.label}: ${fmtK(v)}`, color: typeof s.color==='function'?s.color(v):s.color }] })}
+              onMouseLeave={() => setTip(null)}/>;
+          })}
+          <text x={cx} y={H-6} fontSize={8} fill="#94a3b8" fontWeight={700} textAnchor="middle">{d.mes}</text>
+        </g>;
+      })}
+      {tip && <SvgTooltip {...tip}/>}
+    </svg>
+  );
+}
+
+// Horizontal bar (for balance)
+function SvgHBar({ data, height = 220 }) {
+  if (!data?.length) return null;
+  const maxV = Math.max(...data.map(d => d.valor), 1);
+  const bH = 22; const gap = 12;
+  const total_h = data.length * (bH + gap) + 20;
+  const fmtK = v => { const a=Math.abs(v); if(a>=1e6)return (v/1e6).toFixed(2)+'M'; if(a>=1e3)return (v/1e3).toFixed(1)+'K'; return v.toFixed(0); };
+  const xLabel = 80, xBar = xLabel + 8, barW = SVG_W - xBar - 64;
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${total_h}`} className="w-full" style={{height: Math.min(height, total_h)}}>
+      {data.map((d, i) => {
+        const y = 10 + i * (bH + gap);
+        const w = (d.valor / maxV) * barW;
+        return <g key={i}>
+          <text x={xLabel} y={y + bH/2 + 3} fontSize={9} fill="#374151" fontWeight={700} textAnchor="end">{d.name}</text>
+          <rect x={xBar} y={y} width={Math.max(w, 2)} height={bH} fill={d.fill} rx={4}/>
+          <text x={xBar + Math.max(w,2) + 6} y={y + bH/2 + 3} fontSize={9} fill="#374151" fontWeight={700}>{fmtK(d.valor)}</text>
+        </g>;
+      })}
+    </svg>
+  );
+}
+
+// Donut / Pie
+function SvgDonut({ data, size = 200 }) {
+  const [hov, setHov] = useState(null);
+  if (!data?.length) return <div className="flex items-center justify-center text-slate-400 text-xs font-bold uppercase" style={{height:size}}>SIN DATOS</div>;
+  const PIE_COLORS = ['#6366f1','#f97316','#10b981','#f59e0b','#3b82f6','#8b5cf6','#ec4899'];
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const cx = size/2, cy = size/2, R = size*0.36, r = size*0.20;
+  let angle = -Math.PI / 2;
+  const fmtK = v => { const a=Math.abs(v); if(a>=1e6)return (v/1e6).toFixed(1)+'M'; if(a>=1e3)return (v/1e3).toFixed(0)+'K'; return v.toFixed(0); };
+  const slices = data.map((d, i) => {
+    const sweep = (d.value / total) * Math.PI * 2;
+    const x1 = cx + R * Math.cos(angle);
+    const y1 = cy + R * Math.sin(angle);
+    angle += sweep;
+    const x2 = cx + R * Math.cos(angle);
+    const y2 = cy + R * Math.sin(angle);
+    const lf = sweep > Math.PI ? 1 : 0;
+    const ix1 = cx + r * Math.cos(angle - sweep);
+    const iy1 = cy + r * Math.sin(angle - sweep);
+    const ix2 = cx + r * Math.cos(angle);
+    const iy2 = cy + r * Math.sin(angle);
+    const path = `M${x1},${y1} A${R},${R},0,${lf},1,${x2},${y2} L${ix2},${iy2} A${r},${r},0,${lf},0,${ix1},${iy1} Z`;
+    return { path, color: PIE_COLORS[i % PIE_COLORS.length], label: d.name, value: d.value };
+  });
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="flex-shrink-0">
+        {slices.map((s, i) => (
+          <path key={i} d={s.path} fill={s.color}
+            opacity={hov === null || hov === i ? 1 : 0.5}
+            stroke="#fff" strokeWidth={2}
+            onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}/>
+        ))}
+        {hov !== null && (
+          <text x={cx} y={cy-6} textAnchor="middle" fontSize={8} fill="#374151" fontWeight={700}>{slices[hov]?.label}</text>
+        )}
+        {hov !== null && (
+          <text x={cx} y={cy+8} textAnchor="middle" fontSize={9} fill="#6366f1" fontWeight={900}>{fmtK(slices[hov]?.value)}</text>
+        )}
+      </svg>
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+        {slices.map((s, i) => (
+          <div key={i} className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:s.color}}/>
+            <span className="text-[8px] font-bold text-slate-600 uppercase">{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Stacked bar
+function SvgStackedBar({ data, series, height = 180 }) {
+  const [tip, setTip] = useState(null);
+  if (!data?.length) return null;
+  const H = height; const inner_h = H - PAD.t - PAD.b;
+  const maxV = Math.max(...data.map(d => series.reduce((s, sr) => s + Math.abs(d[sr.key]||0), 0)), 1);
+  const barW = Math.max(8, Math.min(40, cw / data.length - 8));
+  const xCenter = i => PAD.l + (i + 0.5) * (cw / data.length);
+  const yScale = v => PAD.t + inner_h - (v / maxV) * inner_h;
+  const fmtK = v => { const a=Math.abs(v); if(a>=1e6)return (v/1e6).toFixed(1)+'M'; if(a>=1e3)return (v/1e3).toFixed(0)+'K'; return v.toFixed(0); };
+
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${H}`} className="w-full" style={{height}}>
+      {Array.from({length:5},(_,i)=>{
+        const v=maxV/4*i; const y=yScale(v);
+        return <g key={i}><line x1={PAD.l} y1={y} x2={SVG_W-PAD.r} y2={y} stroke="#f1f5f9" strokeWidth={1}/><text x={PAD.l-4} y={y+3} fontSize={8} fill="#94a3b8" textAnchor="end">{fmtK(v)}</text></g>;
+      })}
+      {data.map((d, i) => {
+        const cx = xCenter(i);
+        let cumCost = 0;
+        return <g key={i}>
+          {series.map((s, si) => {
+            const v = Math.abs(d[s.key] || 0);
+            const y = yScale(cumCost + v);
+            const rectH = yScale(cumCost) - y;
+            cumCost += v;
+            return <rect key={si} x={cx - barW/2} y={y} width={barW} height={Math.max(rectH,1)}
+              fill={s.color} rx={si===series.length-1?2:0}
+              onMouseEnter={()=>setTip({x:cx,y:PAD.t+inner_h/2,lines:[{text:d.mes,color:'#f97316'},...series.map(sr=>({text:`${sr.label}: ${fmtK(d[sr.key]||0)}`,color:sr.color}))]})}
+              onMouseLeave={()=>setTip(null)}/>;
+          })}
+          <text x={cx} y={H-6} fontSize={8} fill="#94a3b8" fontWeight={700} textAnchor="middle">{d.mes}</text>
+        </g>;
+      })}
+      {tip && <SvgTooltip {...tip}/>}
+    </svg>
+  );
+}
+
+// Legend helper
+function ChartLegend({ items }) {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+      {items.map(item => (
+        <div key={item.label} className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{background:item.color}}/>
+          <span className="text-[9px] font-bold text-slate-500 uppercase">{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
   const MESES_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const fmtK = v => { const a=Math.abs(v||0); if(a>=1e6)return (v/1e6).toFixed(2)+'M'; if(a>=1e3)return (v/1e3).toFixed(1)+'K'; return v.toFixed(0); };
+  const fmtK = v => { const a=Math.abs(v||0); if(a>=1e6)return (v/1e6).toFixed(2)+'M'; if(a>=1e3)return (v/1e3).toFixed(1)+'K'; return (v||0).toFixed(0); };
   const fmtN = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
   const pctFmt = v => (v||0).toFixed(1)+'%';
 
-  // Meses disponibles de resultados (4/5/6) y balance (1/2/3)
   const resMeses = useMemo(()=>{
     const ms=[...new Set(dbData.filter(d=>/^[456]/.test(d.name)).map(d=>d.month))].filter(m=>m!=='Sin Mes');
     return ms.sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
   },[dbData]);
+
   const balMeses = useMemo(()=>{
     const ms=[...new Set(dbData.filter(d=>/^[123]/.test(d.name)).map(d=>d.month))].filter(m=>m!=='Sin Mes'&&m!=='Saldos Iniciales');
     if(!ms.length && dbData.some(d=>d.month==='Saldos Iniciales'&&/^[123]/.test(d.name))) ms.push('Abril');
     return ms.sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
   },[dbData]);
 
-  const [resMes,  setResMes]  = useState(()=>resMeses[resMeses.length-1]||'Abril');
-  const [balMes,  setBalMes]  = useState(()=>balMeses[balMeses.length-1]||'Abril');
+  const [resMes, setResMes] = useState(()=>resMeses[resMeses.length-1]||'Abril');
+  const [balMes, setBalMes] = useState(()=>balMeses[balMeses.length-1]||'Abril');
 
-  // ── Compute P&L for one month ─────────────────────────────────────────────
   const calcPL = (mes) => {
-    const d = dbData.filter(x=>x.month===mes&&/^[456]/.test(x.name));
-    let ingresos=0, costos=0, gastos=0;
+    const d=dbData.filter(x=>x.month===mes&&/^[456]/.test(x.name));
+    let ingresos=0,costos=0,gastos=0;
     d.forEach(x=>{
       if(/^4/.test(x.name)) ingresos+=Math.abs(x.usd||0);
       else if(/^5/.test(x.name)) costos+=Math.abs(x.usd||0);
       else gastos+=Math.abs(x.usd||0);
     });
-    const utilBruta = ingresos - costos;
-    const resultado = utilBruta - gastos;
-    const margenBruto = ingresos?utilBruta/ingresos*100:0;
-    const margenNeto  = ingresos?resultado/ingresos*100:0;
-    return { ingresos, costos, gastos, utilBruta, resultado, margenBruto, margenNeto };
+    const utilBruta=ingresos-costos;
+    const resultado=utilBruta-gastos;
+    return { ingresos, costos, gastos, utilBruta, resultado,
+      margenBruto: ingresos?utilBruta/ingresos*100:0,
+      margenNeto:  ingresos?resultado/ingresos*100:0 };
   };
 
-  // ── Compute Balance for one month ─────────────────────────────────────────
   const calcBal = (mes) => {
-    const mes2 = (mes==='Abril'&&!dbData.some(d=>d.month===mes&&/^[123]/.test(d.name)))?'Saldos Iniciales':mes;
-    const d = dbData.filter(x=>x.month===mes2&&/^[123]/.test(x.name));
-    let activos=0, pasivos=0, patrimonio=0;
-    d.forEach(x=>{
-      const v=Math.abs(x.usd||0);
-      if(/^1/.test(x.name)) activos+=v;
-      else if(/^2/.test(x.name)) pasivos+=v;
-      else patrimonio+=v;
-    });
-    const razonCte = pasivos>0?activos/pasivos:0;
-    const endeudam = activos>0?pasivos/activos*100:0;
-    return { activos, pasivos, patrimonio, razonCte, endeudam };
+    const mes2=(mes==='Abril'&&!dbData.some(d=>d.month===mes&&/^[123]/.test(d.name)))?'Saldos Iniciales':mes;
+    const d=dbData.filter(x=>x.month===mes2&&/^[123]/.test(x.name));
+    let activos=0,pasivos=0,patrimonio=0;
+    d.forEach(x=>{ const v=Math.abs(x.usd||0); if(/^1/.test(x.name))activos+=v; else if(/^2/.test(x.name))pasivos+=v; else patrimonio+=v; });
+    return { activos,pasivos,patrimonio, razonCte:pasivos>0?activos/pasivos:0, endeudam:activos>0?pasivos/activos*100:0 };
   };
 
-  const pl  = useMemo(()=>calcPL(resMes),  [dbData, resMes]);
-  const bal = useMemo(()=>calcBal(balMes), [dbData, balMes]);
-  const tasa = tasaByMonth[balMes] || 1;
+  const pl  = useMemo(()=>calcPL(resMes),  [dbData,resMes]);
+  const bal = useMemo(()=>calcBal(balMes), [dbData,balMes]);
+  const tasa = tasaByMonth[balMes]||1;
 
-  // ── Trend data (all result months) ────────────────────────────────────────
   const trendData = useMemo(()=>resMeses.map(m=>{
     const p=calcPL(m);
-    return { mes:m.slice(0,3).toUpperCase(), ingresos:p.ingresos, costos:p.costos, gastos:p.gastos, resultado:p.resultado, margenBruto:parseFloat(p.margenBruto.toFixed(1)) };
-  }),[dbData, resMeses]);
+    return { mes:m.slice(0,3).toUpperCase(), ingresos:parseFloat(p.ingresos.toFixed(2)), costos:parseFloat(p.costos.toFixed(2)), gastos:parseFloat(p.gastos.toFixed(2)), resultado:parseFloat(p.resultado.toFixed(2)), margenBruto:parseFloat(p.margenBruto.toFixed(1)) };
+  }),[dbData,resMeses]);
 
-  // ── Pie data for Balance ──────────────────────────────────────────────────
-  const ACTIVO_GROUPS = [
-    { label:'DISPONIBLE',     re:/^1\.1\.01/ },
-    { label:'CxC',            re:/^1\.1\.02/ },
-    { label:'INVENTARIOS',    re:/^1\.1\.03/ },
-    { label:'OTROS CORRIENTES',re:/^1\.1\.(04|05)/ },
-    { label:'ACTIVOS FIJOS',  re:/^1\.1\.06/ },
+  const ACTIVO_GROUPS=[
+    {label:'DISPONIBLE',re:/^1\.1\.01/},{label:'CxC',re:/^1\.1\.02/},
+    {label:'INVENTARIOS',re:/^1\.1\.03/},{label:'OTROS CORR.',re:/^1\.1\.(04|05)/},{label:'ACTIVOS FIJOS',re:/^1\.1\.06/},
   ];
   const activosPie = useMemo(()=>{
     const mes2=(balMes==='Abril'&&!dbData.some(d=>d.month===balMes&&/^1/.test(d.name)))?'Saldos Iniciales':balMes;
     const d=dbData.filter(x=>x.month===mes2&&/^1/.test(x.name));
-    return ACTIVO_GROUPS.map(g=>({
-      name:g.label,
-      value:parseFloat(d.filter(x=>g.re.test(x.name)).reduce((s,x)=>s+Math.abs(x.usd||0),0).toFixed(2))
-    })).filter(g=>g.value>0);
-  },[dbData, balMes]);
+    return ACTIVO_GROUPS.map(g=>({name:g.label,value:parseFloat(d.filter(x=>g.re.test(x.name)).reduce((s,x)=>s+Math.abs(x.usd||0),0).toFixed(2))})).filter(g=>g.value>0);
+  },[dbData,balMes]);
 
-  const PIE_COLORS = ['#6366f1','#f97316','#10b981','#f59e0b','#3b82f6','#8b5cf6'];
-  const CHART_COLORS = { ingresos:'#10b981', costos:'#f97316', gastos:'#f59e0b', resultado:'#6366f1', margenBruto:'#3b82f6' };
-
-  // Custom tooltip
-  const CustomTooltip = ({active, payload, label}) => {
-    if(!active||!payload?.length) return null;
-    return (
-      <div className="bg-[#111827] border border-slate-700 rounded-xl px-4 py-3 shadow-xl">
-        <p className="text-slate-400 text-[10px] font-black uppercase mb-2">{label}</p>
-        {payload.map((p,i)=>(
-          <p key={i} className="text-[11px] font-bold" style={{color:p.color}}>
-            {p.name.toUpperCase()}: USD {fmtK(p.value)}
-          </p>
-        ))}
-      </div>
-    );
-  };
-
-  const Kpi = ({label, val, sub, color, icon, trend}) => (
-    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col gap-1">
+  const Kpi = ({label,val,sub,color,icon,trend})=>(
+    <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col gap-1">
       <div className="flex items-center justify-between mb-1">
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-        <span className={`w-8 h-8 rounded-xl flex items-center justify-center ${color}`}>{icon}</span>
+        <span className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>{icon}</span>
       </div>
-      <p className={`text-xl font-black font-mono ${trend===false?'text-red-600':trend===true?'text-emerald-600':'text-slate-900'}`}>{val}</p>
-      {sub && <p className="text-[10px] text-slate-400 font-bold">{sub}</p>}
-    </div>
-  );
-
-  const SectionTitle = ({title, sub, accent='border-indigo-500'}) => (
-    <div className={`border-l-4 ${accent} pl-4 mb-5`}>
-      <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">{title}</h2>
-      {sub && <p className="text-[10px] text-slate-400 font-bold uppercase">{sub}</p>}
+      <p className={`text-lg font-black font-mono ${trend===false?'text-red-600':trend===true?'text-emerald-600':'text-slate-900'}`}>{val}</p>
+      {sub && <p className="text-[9px] text-slate-400 font-bold truncate">{sub}</p>}
     </div>
   );
 
   return (
     <div className="min-h-screen" style={{background:'#f1f5f9',backgroundImage:'radial-gradient(circle,#cbd5e1 1px,transparent 1px)',backgroundSize:'24px 24px'}}>
-      {/* Header */}
       <header className="bg-[#0f172a] border-b-4 border-indigo-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-xl flex-wrap gap-3">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-indigo-400 transition-colors"><ArrowLeft size={16}/> PANEL</button>
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-indigo-400"><ArrowLeft size={16}/> PANEL</button>
           <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
             <BarChart2 size={18} className="text-indigo-400"/>
             <span className="text-white font-black text-sm uppercase tracking-widest">DASHBOARD FINANCIERO</span>
           </div>
         </div>
-        <div className="flex items-center gap-4 flex-wrap">
-          {/* P&L month filter */}
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5">
             <TrendingUp size={12} className="text-emerald-400"/>
             <span className="text-[10px] font-black text-slate-400 uppercase">P&L:</span>
             <select value={resMes} onChange={e=>setResMes(e.target.value)} className="bg-transparent text-emerald-300 text-xs font-black uppercase cursor-pointer outline-none">
-              <option value="todos">TODOS LOS MESES</option>
               {resMeses.map(m=><option key={m}>{m.toUpperCase()}</option>)}
+              {!resMeses.length&&<option>ABRIL</option>}
             </select>
           </div>
-          {/* Balance month filter */}
           <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5">
             <Scale size={12} className="text-indigo-400"/>
             <span className="text-[10px] font-black text-slate-400 uppercase">BALANCE:</span>
             <select value={balMes} onChange={e=>setBalMes(e.target.value)} className="bg-transparent text-indigo-300 text-xs font-black uppercase cursor-pointer outline-none">
               {balMeses.map(m=><option key={m}>{m.toUpperCase()}</option>)}
-              {!balMeses.length && <option>ABRIL</option>}
+              {!balMeses.length&&<option>ABRIL</option>}
             </select>
           </div>
         </div>
       </header>
 
       <main className="p-5 md:p-8 max-w-[1400px] mx-auto pb-16 space-y-8">
-
-        {/* ── ESTADO DE RESULTADO ─────────────────────────────────────────── */}
+        {/* ── ESTADO DE RESULTADO ──────────────────────────────────────── */}
         <section>
-          <div className="bg-white rounded-2xl border-t-4 border-emerald-500 px-6 py-4 shadow-sm mb-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl border-t-4 border-emerald-500 px-6 py-4 shadow-sm mb-5 flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">ESTADO DE RESULTADO</p>
               <h2 className="text-xl font-black text-slate-900 uppercase">PERÍODO: {resMes.toUpperCase()}</h2>
             </div>
-            <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase">
-              {resMeses.length} {resMeses.length===1?'MES':'MESES'} CARGADOS
-            </div>
+            <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1.5 rounded-lg">{resMeses.length} {resMeses.length===1?'MES':'MESES'} CARGADOS</span>
           </div>
 
-          {/* P&L KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
-            <Kpi label="INGRESOS"     val={`USD ${fmtK(pl.ingresos)}`}  sub={fmtN(pl.ingresos)}   color="bg-emerald-100" icon={<DollarSign size={16} className="text-emerald-600"/>} trend={true}/>
-            <Kpi label="COSTOS"       val={`USD ${fmtK(pl.costos)}`}    sub={fmtN(pl.costos)}     color="bg-orange-100"  icon={<TrendingDown size={16} className="text-orange-600"/>} trend={false}/>
-            <Kpi label="UTIL. BRUTA"  val={`USD ${fmtK(pl.utilBruta)}`} sub={fmtN(pl.utilBruta)}  color="bg-blue-100"    icon={<Activity size={16} className="text-blue-600"/>}    trend={pl.utilBruta>=0}/>
-            <Kpi label="GASTOS"       val={`USD ${fmtK(pl.gastos)}`}    sub={fmtN(pl.gastos)}     color="bg-amber-100"   icon={<TrendingDown size={16} className="text-amber-600"/>} trend={false}/>
-            <Kpi label="RESULTADO"    val={`USD ${fmtK(pl.resultado)}`} sub={fmtN(pl.resultado)}  color="bg-indigo-100"  icon={<BarChart2 size={16} className="text-indigo-600"/>}  trend={pl.resultado>=0}/>
-            <Kpi label="MARGEN BRUTO" val={pctFmt(pl.margenBruto)}      sub="Sobre ingresos"      color="bg-teal-100"    icon={<TrendingUp size={16} className="text-teal-600"/>}   trend={pl.margenBruto>=30}/>
-            <Kpi label="MARGEN NETO"  val={pctFmt(pl.margenNeto)}       sub="Sobre ingresos"      color={pl.margenNeto>=0?"bg-emerald-100":"bg-red-100"} icon={<TrendingUp size={16} className={pl.margenNeto>=0?"text-emerald-600":"text-red-600"}/>} trend={pl.margenNeto>=0}/>
+            <Kpi label="INGRESOS"     val={`USD ${fmtK(pl.ingresos)}`}  sub={fmtN(pl.ingresos)}   color="bg-emerald-100" icon={<DollarSign size={14} className="text-emerald-600"/>} trend={true}/>
+            <Kpi label="COSTOS"       val={`USD ${fmtK(pl.costos)}`}    sub={fmtN(pl.costos)}     color="bg-orange-100"  icon={<TrendingDown size={14} className="text-orange-600"/>} trend={false}/>
+            <Kpi label="UTIL. BRUTA"  val={`USD ${fmtK(pl.utilBruta)}`} sub={fmtN(pl.utilBruta)}  color="bg-blue-100"    icon={<Activity size={14} className="text-blue-600"/>}    trend={pl.utilBruta>=0}/>
+            <Kpi label="GASTOS"       val={`USD ${fmtK(pl.gastos)}`}    sub={fmtN(pl.gastos)}     color="bg-amber-100"   icon={<TrendingDown size={14} className="text-amber-600"/>} trend={false}/>
+            <Kpi label="RESULTADO"    val={`USD ${fmtK(pl.resultado)}`} sub={fmtN(pl.resultado)}  color="bg-indigo-100"  icon={<BarChart2 size={14} className="text-indigo-600"/>}  trend={pl.resultado>=0}/>
+            <Kpi label="MARGEN BRUTO" val={pctFmt(pl.margenBruto)}      sub="SOBRE INGRESOS"      color="bg-teal-100"    icon={<TrendingUp size={14} className="text-teal-600"/>}   trend={pl.margenBruto>=30}/>
+            <Kpi label="MARGEN NETO"  val={pctFmt(pl.margenNeto)}       sub="SOBRE INGRESOS"      color={pl.margenNeto>=0?"bg-emerald-100":"bg-red-100"} icon={<TrendingUp size={14} className={pl.margenNeto>=0?"text-emerald-600":"text-red-600"}/>} trend={pl.margenNeto>=0}/>
           </div>
 
-          {/* P&L Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Ingresos vs Costos tendencia */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">TENDENCIA: INGRESOS vs COSTOS + GASTOS</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={trendData} margin={{top:5,right:10,left:0,bottom:0}}>
-                  <defs>
-                    <linearGradient id="gIng" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="gCost" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                  <XAxis dataKey="mes" tick={{fill:'#94a3b8',fontSize:9,fontWeight:700}}/>
-                  <YAxis tickFormatter={fmtK} tick={{fill:'#94a3b8',fontSize:9}} width={52}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:'10px',fontWeight:700}}/>
-                  <Area type="monotone" dataKey="ingresos" name="Ingresos" stroke="#10b981" strokeWidth={2.5} fill="url(#gIng)"/>
-                  <Area type="monotone" dataKey="costos"   name="Costos"   stroke="#f97316" strokeWidth={2}   fill="url(#gCost)"/>
-                  <Area type="monotone" dataKey="gastos"   name="Gastos"   stroke="#f59e0b" strokeWidth={1.5} fill="none" strokeDasharray="4 2"/>
-                </AreaChart>
-              </ResponsiveContainer>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">TENDENCIA: INGRESOS VS COSTOS</p>
+              <ChartLegend items={[{label:'Ingresos',color:'#10b981'},{label:'Costos',color:'#f97316'},{label:'Gastos',color:'#f59e0b'}]}/>
+              <div className="mt-3">
+                <SvgAreaChart data={trendData} series={[{key:'ingresos',label:'Ingresos',color:'#10b981',width:2.5,area:true},{key:'costos',label:'Costos',color:'#f97316',width:2,area:true},{key:'gastos',label:'Gastos',color:'#f59e0b',width:1.5,dash:'4 2'}]}/>
+              </div>
             </div>
-
-            {/* Resultado del Ejercicio por mes */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">RESULTADO DEL EJERCICIO POR MES</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={trendData} margin={{top:5,right:10,left:0,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                  <XAxis dataKey="mes" tick={{fill:'#94a3b8',fontSize:9,fontWeight:700}}/>
-                  <YAxis tickFormatter={fmtK} tick={{fill:'#94a3b8',fontSize:9}} width={52}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3"/>
-                  <Bar dataKey="resultado" name="Resultado" radius={[4,4,0,0]}>
-                    {trendData.map((entry,i)=>(
-                      <Cell key={i} fill={entry.resultado>=0?'#6366f1':'#ef4444'}/>
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">RESULTADO DEL EJERCICIO POR MES</p>
+              <ChartLegend items={[{label:'Positivo',color:'#6366f1'},{label:'Negativo',color:'#ef4444'}]}/>
+              <div className="mt-3">
+                <SvgBarChart data={trendData} series={[{key:'resultado',label:'Resultado',color:(v)=>v>=0?'#6366f1':'#ef4444'}]} refLine={0}/>
+              </div>
             </div>
-
-            {/* Margen Bruto % trend */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">EVOLUCIÓN DEL MARGEN BRUTO (%)</p>
-              <ResponsiveContainer width="100%" height={180}>
-                <ReLineChart data={trendData} margin={{top:5,right:10,left:0,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                  <XAxis dataKey="mes" tick={{fill:'#94a3b8',fontSize:9,fontWeight:700}}/>
-                  <YAxis unit="%" tick={{fill:'#94a3b8',fontSize:9}} width={45}/>
-                  <Tooltip formatter={(v)=>[`${v}%`,'Margen Bruto']}/>
-                  <ReferenceLine y={30} stroke="#10b981" strokeDasharray="4 2" label={{value:'30%',fill:'#10b981',fontSize:9}}/>
-                  <Line type="monotone" dataKey="margenBruto" name="Margen Bruto" stroke="#3b82f6" strokeWidth={3} dot={{fill:'#3b82f6',r:4}} activeDot={{r:6}}/>
-                </ReLineChart>
-              </ResponsiveContainer>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">EVOLUCIÓN DEL MARGEN BRUTO (%)</p>
+              <ChartLegend items={[{label:'Margen Bruto %',color:'#3b82f6'},{label:'Meta 30%',color:'#10b981'}]}/>
+              <div className="mt-3">
+                <SvgAreaChart data={trendData} height={180} series={[{key:'margenBruto',label:'Margen %',color:'#3b82f6',width:3}]} refLine={30}/>
+              </div>
             </div>
-
-            {/* Composición Ingresos vs Costos/Gastos barra apilada */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">ESTRUCTURA DE RESULTADOS POR MES</p>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={trendData} margin={{top:5,right:10,left:0,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                  <XAxis dataKey="mes" tick={{fill:'#94a3b8',fontSize:9,fontWeight:700}}/>
-                  <YAxis tickFormatter={fmtK} tick={{fill:'#94a3b8',fontSize:9}} width={52}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Legend iconType="square" iconSize={8} wrapperStyle={{fontSize:'9px',fontWeight:700}}/>
-                  <Bar dataKey="costos"  name="Costos"  stackId="a" fill="#f97316" radius={[0,0,0,0]}/>
-                  <Bar dataKey="gastos"  name="Gastos"  stackId="a" fill="#f59e0b" radius={[3,3,0,0]}/>
-                  <Bar dataKey="ingresos" name="Ingresos" fill="#10b981" radius={[3,3,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">ESTRUCTURA DE COSTOS Y GASTOS</p>
+              <ChartLegend items={[{label:'Costos',color:'#f97316'},{label:'Gastos',color:'#f59e0b'},{label:'Ingresos',color:'#10b981'}]}/>
+              <div className="mt-3">
+                <SvgStackedBar data={trendData} height={180} series={[{key:'costos',label:'Costos',color:'#f97316'},{key:'gastos',label:'Gastos',color:'#f59e0b'}]}/>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── BALANCE GENERAL ──────────────────────────────────────────────── */}
+        {/* ── BALANCE GENERAL ─────────────────────────────────────────── */}
         <section>
-          <div className="bg-white rounded-2xl border-t-4 border-indigo-500 px-6 py-4 shadow-sm mb-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl border-t-4 border-indigo-500 px-6 py-4 shadow-sm mb-5 flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">BALANCE GENERAL</p>
               <h2 className="text-xl font-black text-slate-900 uppercase">CORTE: {balMes.toUpperCase()} {tasa>1?`· TASA: ${tasa} Bs/USD`:''}</h2>
@@ -2989,81 +3137,52 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
             </div>
           </div>
 
-          {/* Balance KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-            <Kpi label="TOTAL ACTIVOS"    val={`USD ${fmtK(bal.activos)}`}    sub={fmtN(bal.activos)}    color="bg-indigo-100"  icon={<DollarSign size={16} className="text-indigo-600"/>}/>
-            <Kpi label="TOTAL PASIVOS"    val={`USD ${fmtK(bal.pasivos)}`}    sub={fmtN(bal.pasivos)}    color="bg-red-100"     icon={<TrendingDown size={16} className="text-red-600"/>}   trend={false}/>
-            <Kpi label="PATRIMONIO"       val={`USD ${fmtK(bal.patrimonio)}`} sub={fmtN(bal.patrimonio)} color="bg-purple-100"  icon={<Activity size={16} className="text-purple-600"/>}   trend={true}/>
-            <Kpi label="PASIVO/ACTIVO"    val={`USD ${fmtK(bal.pasivos+bal.patrimonio)}`} sub="Pas. + Patrimonio"    color="bg-blue-100"    icon={<Scale size={16} className="text-blue-600"/>}/>
-            <Kpi label="ENDEUDAMIENTO"    val={pctFmt(bal.endeudam)}           sub="Pasivo / Activo"      color={bal.endeudam<70?"bg-emerald-100":"bg-amber-100"} icon={<BarChart2 size={16} className={bal.endeudam<70?"text-emerald-600":"text-amber-600"}/>} trend={bal.endeudam<70}/>
-            <Kpi label="RAZ. CORRIENTE"   val={bal.razonCte.toFixed(2)+'x'}    sub="Activo / Pasivo"      color={bal.razonCte>=1?"bg-teal-100":"bg-red-100"} icon={<TrendingUp size={16} className={bal.razonCte>=1?"text-teal-600":"text-red-600"}/>} trend={bal.razonCte>=1}/>
+            <Kpi label="TOTAL ACTIVOS"    val={`USD ${fmtK(bal.activos)}`}    sub={fmtN(bal.activos)}    color="bg-indigo-100"  icon={<DollarSign size={14} className="text-indigo-600"/>}/>
+            <Kpi label="TOTAL PASIVOS"    val={`USD ${fmtK(bal.pasivos)}`}    sub={fmtN(bal.pasivos)}    color="bg-red-100"     icon={<TrendingDown size={14} className="text-red-600"/>}   trend={false}/>
+            <Kpi label="PATRIMONIO"       val={`USD ${fmtK(bal.patrimonio)}`} sub={fmtN(bal.patrimonio)} color="bg-purple-100"  icon={<Activity size={14} className="text-purple-600"/>}   trend={true}/>
+            <Kpi label="PAS + PATRIMONIO" val={`USD ${fmtK(bal.pasivos+bal.patrimonio)}`} sub="TOTAL FINANCIAMIENTO" color="bg-blue-100" icon={<Scale size={14} className="text-blue-600"/>}/>
+            <Kpi label="ENDEUDAMIENTO"    val={pctFmt(bal.endeudam)}           sub="PASIVO / ACTIVO"      color={bal.endeudam<70?"bg-emerald-100":"bg-amber-100"} icon={<BarChart2 size={14} className={bal.endeudam<70?"text-emerald-600":"text-amber-600"}/>} trend={bal.endeudam<70}/>
+            <Kpi label="RAZ. CORRIENTE"   val={bal.razonCte.toFixed(2)+'x'}    sub="ACTIVO / PASIVO"      color={bal.razonCte>=1?"bg-teal-100":"bg-red-100"} icon={<TrendingUp size={14} className={bal.razonCte>=1?"text-teal-600":"text-red-600"}/>} trend={bal.razonCte>=1}/>
           </div>
 
-          {/* Balance Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Ecuación patrimonial barra */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">ECUACIÓN PATRIMONIAL</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={[
-                  {name:'ACTIVOS',    valor:parseFloat(bal.activos.toFixed(2))},
-                  {name:'PASIVOS',    valor:parseFloat(bal.pasivos.toFixed(2))},
-                  {name:'PATRIMONIO', valor:parseFloat(bal.patrimonio.toFixed(2))},
-                  {name:'PAS+PAT',    valor:parseFloat((bal.pasivos+bal.patrimonio).toFixed(2))},
-                ]} margin={{top:5,right:10,left:0,bottom:5}} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                  <XAxis type="number" tickFormatter={fmtK} tick={{fill:'#94a3b8',fontSize:9}} width={55}/>
-                  <YAxis type="category" dataKey="name" tick={{fill:'#374151',fontSize:9,fontWeight:700}} width={72}/>
-                  <Tooltip formatter={(v)=>[`USD ${fmtN(v)}`,'Monto']}/>
-                  <Bar dataKey="valor" radius={[0,4,4,0]}>
-                    {[{fill:'#6366f1'},{fill:'#ef4444'},{fill:'#8b5cf6'},{fill:'#3b82f6'}].map((e,i)=><Cell key={i} fill={e.fill}/>)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3">ECUACIÓN PATRIMONIAL</p>
+              <SvgHBar height={200} data={[
+                {name:'ACTIVOS',    valor:parseFloat(bal.activos.toFixed(2)),          fill:'#6366f1'},
+                {name:'PASIVOS',    valor:parseFloat(bal.pasivos.toFixed(2)),           fill:'#ef4444'},
+                {name:'PATRIMONIO', valor:parseFloat(bal.patrimonio.toFixed(2)),        fill:'#8b5cf6'},
+                {name:'PAS+PAT',    valor:parseFloat((bal.pasivos+bal.patrimonio).toFixed(2)),fill:'#3b82f6'},
+              ]}/>
             </div>
-
-            {/* Composición de Activos pie */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">COMPOSICIÓN DE ACTIVOS</p>
-              {activosPie.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={activosPie} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                      {activosPie.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]}/>)}
-                    </Pie>
-                    <Tooltip formatter={(v)=>[`USD ${fmtN(v)}`]}/>
-                    <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:'9px',fontWeight:700}}/>
-                  </PieChart>
-                </ResponsiveContainer>
-              ):<div className="h-48 flex items-center justify-center text-slate-400 text-sm font-bold">SIN DATOS</div>}
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3">COMPOSICIÓN DE ACTIVOS</p>
+              <SvgDonut data={activosPie} size={180}/>
             </div>
-
-            {/* Estructura financiamiento */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
               <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">ESTRUCTURA DE FINANCIAMIENTO</p>
-              <div className="space-y-4 mt-2">
+              <div className="space-y-4">
                 {[
                   {label:'ACTIVOS',    v:bal.activos,    tot:bal.activos, color:'bg-indigo-500'},
                   {label:'PASIVOS',    v:bal.pasivos,    tot:bal.activos, color:'bg-red-500'},
                   {label:'PATRIMONIO', v:bal.patrimonio, tot:bal.activos, color:'bg-purple-500'},
                 ].map(({label,v,tot,color})=>{
-                  const pct2 = tot>0?(v/tot*100):0;
-                  return (
-                    <div key={label}>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[10px] font-black text-slate-600 uppercase">{label}</span>
-                        <span className="text-[10px] font-black font-mono text-slate-800">USD {fmtK(v)} <span className="text-slate-400">({pct2.toFixed(1)}%)</span></span>
-                      </div>
-                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${color} transition-all duration-700`} style={{width:`${Math.min(pct2,100)}%`}}/>
-                      </div>
+                  const pct2=tot>0?(v/tot*100):0;
+                  return <div key={label}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-[10px] font-black text-slate-600 uppercase">{label}</span>
+                      <span className="text-[10px] font-black font-mono text-slate-800">USD {fmtK(v)} <span className="text-slate-400">({pct2.toFixed(1)}%)</span></span>
                     </div>
-                  );
+                    <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${color} transition-all duration-700`} style={{width:`${Math.min(pct2,100)}%`}}/>
+                    </div>
+                  </div>;
                 })}
-                <div className="border-t border-slate-100 pt-3 mt-3">
+                <div className="border-t border-slate-100 pt-3">
                   <div className="flex justify-between">
                     <span className="text-[10px] font-black text-slate-500 uppercase">COBERTURA PATRIMONIAL</span>
-                    <span className={`text-[11px] font-black ${bal.patrimonio/Math.max(bal.activos,1)>0.3?'text-emerald-600':'text-amber-600'}`}>
+                    <span className={`text-[11px] font-black ${bal.activos>0&&bal.patrimonio/bal.activos>0.3?'text-emerald-600':'text-amber-600'}`}>
                       {bal.activos>0?(bal.patrimonio/bal.activos*100).toFixed(1):'0'}%
                     </span>
                   </div>
@@ -3072,15 +3191,14 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
             </div>
           </div>
 
-          {/* Indicadores ratios */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
             {[
-              {label:'CAPITAL DE TRABAJO', val:`USD ${fmtK(bal.activos-bal.pasivos)}`, sub:'Activos − Pasivos', color:bal.activos>bal.pasivos?'border-emerald-500':'border-red-500', bg:bal.activos>bal.pasivos?'bg-emerald-50':'bg-red-50'},
-              {label:'NIVEL DE DEUDA',     val:pctFmt(bal.endeudam),              sub:'Pasivo / Activo × 100', color:bal.endeudam<60?'border-green-500':'border-amber-500', bg:bal.endeudam<60?'bg-green-50':'bg-amber-50'},
-              {label:'FINANCIAMIENTO PROPIO', val:pctFmt(bal.activos>0?bal.patrimonio/bal.activos*100:0), sub:'Patrimonio / Activo × 100', color:'border-purple-500', bg:'bg-purple-50'},
-              {label:'SOLIDEZ PATRIMONIAL', val:bal.pasivos>0?(bal.patrimonio/bal.pasivos).toFixed(2)+'x':'—', sub:'Patrimonio / Pasivo', color:'border-indigo-500', bg:'bg-indigo-50'},
+              {label:'CAPITAL DE TRABAJO', val:`USD ${fmtK(bal.activos-bal.pasivos)}`, sub:'ACTIVOS − PASIVOS', border:bal.activos>bal.pasivos?'border-emerald-500':'border-red-500', bg:bal.activos>bal.pasivos?'bg-emerald-50':'bg-red-50'},
+              {label:'NIVEL DE DEUDA',     val:pctFmt(bal.endeudam),            sub:'PASIVO / ACTIVO × 100', border:bal.endeudam<60?'border-green-500':'border-amber-500', bg:bal.endeudam<60?'bg-green-50':'bg-amber-50'},
+              {label:'FINANCIAMIENTO PROPIO', val:pctFmt(bal.activos>0?bal.patrimonio/bal.activos*100:0), sub:'PATRIMONIO / ACTIVO × 100', border:'border-purple-500', bg:'bg-purple-50'},
+              {label:'SOLIDEZ PATRIMONIAL', val:bal.pasivos>0?(bal.patrimonio/bal.pasivos).toFixed(2)+'x':'—', sub:'PATRIMONIO / PASIVO', border:'border-indigo-500', bg:'bg-indigo-50'},
             ].map(k=>(
-              <div key={k.label} className={`${k.bg} rounded-2xl p-5 border-l-4 ${k.color} shadow-sm`}>
+              <div key={k.label} className={`${k.bg} rounded-2xl p-5 border-l-4 ${k.border} shadow-sm`}>
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-2">{k.label}</p>
                 <p className="text-2xl font-black font-mono text-slate-900">{k.val}</p>
                 <p className="text-[9px] text-slate-400 font-bold mt-1">{k.sub}</p>
@@ -3093,7 +3211,6 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
   );
 }
 
-// ============================================================================
 // 11. VISTA: BALANCE DE COMPROBACIÓN
 // ============================================================================
 function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
