@@ -1951,18 +1951,27 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
     // 2. Legacy key
     if (activosFijosData?.records?.length) return activosFijosData;
-    // 3. Para 'Saldos Iniciales' o cuando no hay exacto: buscar Abril primero, luego cualquier mes
+    // 3. Para 'Saldos Iniciales': usar el AF MÁS RECIENTE disponible (sin límite de mes)
+    if (selectedMonth === 'Saldos Iniciales' && afByMonth && Object.keys(afByMonth).length > 0) {
+      const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const sorted = Object.entries(afByMonth)
+        .filter(([, v]) => v?.records?.length)
+        .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
+      if (sorted.length > 0) return sorted[0][1];
+    }
+    // 4. Para cualquier otro mes: AF más reciente ≤ ese mes
     if (afByMonth && Object.keys(afByMonth).length > 0) {
       const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      // Ordenar por mes y tomar el más reciente disponible ≤ mes del balance
-      const mesNum = MORD2[selectedMonth] || MORD2['Abril'] || 4;
+      const mesNum = MORD2[selectedMonth] || 99;
       const candidates = Object.entries(afByMonth)
         .filter(([m, v]) => v?.records?.length && (MORD2[m]||99) <= mesNum)
         .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
       if (candidates.length > 0) return candidates[0][1];
-      // Si no hay ninguno ≤ mesNum, tomar el primero disponible
-      const any = Object.values(afByMonth).find(v => v?.records?.length);
-      if (any) return any;
+      // Si no hay ninguno ≤ mesNum, tomar el más reciente disponible
+      const any = Object.entries(afByMonth)
+        .filter(([, v]) => v?.records?.length)
+        .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
+      if (any.length > 0) return any[0][1];
     }
     return {records:[]};
   })();
@@ -3080,9 +3089,10 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {}, afByMonth =
 
   const hasPL  = useMemo(()=>dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isResRecord(d)),[dbData,mes]);
   const hasBal = useMemo(()=>{
-    // Only show balance section when there is EXACT data for the selected month
-    // Do NOT fallback to Saldos Iniciales for the visibility flag
-    return dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isBalRecord(d));
+    // Exact match OR 'Saldos Iniciales' counts as Abril balance
+    const exact = dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isBalRecord(d));
+    const siAsFallback = mes.toLowerCase()==='abril' && dbData.some(d=>d.month==='Saldos Iniciales'&&isBalRecord(d));
+    return exact || siAsFallback;
   },[dbData,mes]);
 
   // Build same tree as EstadoResultadoView and extract totals from root nodes
@@ -3856,17 +3866,18 @@ function ReportesFinancierosApp() {
     const MORD3 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
     // 1. Mes exacto en per-month store
     if (afByMonth?.[mes]?.records?.length) return afByMonth[mes];
-    // 2. Legacy key (solo para Abril/General donde se cargó originalmente)
+    // 2. Legacy key
     if ((mes === 'General' || mes === 'Abril') && activosFijosData?.records?.length) return activosFijosData;
-    // 3. Para cualquier mes: buscar el AF más reciente disponible ≤ ese mes
     if (afByMonth && Object.keys(afByMonth).length > 0) {
-      const mesNum = MORD3[mes] || 99;
-      const candidates = Object.entries(afByMonth)
-        .filter(([m, v]) => v?.records?.length && (MORD3[m]||99) <= mesNum)
+      const sorted = Object.entries(afByMonth).filter(([, v]) => v?.records?.length)
         .sort((a, b) => (MORD3[b[0]]||0) - (MORD3[a[0]]||0));
-      if (candidates.length > 0) return candidates[0][1];
-      const any = Object.values(afByMonth).find(v => v?.records?.length);
-      if (any) return any;
+      if (!sorted.length) return {records:[]};
+      // 3. Para General/Saldos Iniciales: más reciente disponible sin límite
+      if (mes === 'General' || mes === 'Saldos Iniciales') return sorted[0][1];
+      // 4. Para mes específico: más reciente ≤ ese mes, o cualquiera si no hay
+      const mesNum = MORD3[mes] || 99;
+      const cand = sorted.filter(([m]) => (MORD3[m]||99) <= mesNum);
+      return (cand.length > 0 ? cand[0] : sorted[0])[1];
     }
     return {records:[]};
   };
@@ -3931,8 +3942,8 @@ function ReportesFinancierosApp() {
   const clearSlot = (slot) => {
     const msgs = {
       '01': () => { if(window.confirm("¿Limpiar Plan de Cuentas?")) { setPlanCuentas({}); alert("Plan de Cuentas eliminado."); }},
-      '02': () => { if(window.confirm(`¿Limpiar balance de ${configMes}?`)) { setDbData(prev=>prev.filter(d=>d.month!==configMes||!/^[123]/.test(d.name))); alert(`Balance ${configMes} eliminado.`); }},
-      '03': () => { if(window.confirm("¿Limpiar todos los meses de Resultados?")) { setDbData([]); alert("Resultados eliminados."); }},
+      '02': () => { if(window.confirm(`¿Limpiar balance de ${configMes}?`)) { setDbData(prev=>prev.filter(d=>!(d.month===configMes&&/^[123]/.test(d.name)))); alert(`Balance ${configMes} eliminado.`); }},
+      '03': () => { if(window.confirm(`¿Limpiar Estado de Resultado de ${configMes}?`)) { setDbData(prev=>prev.filter(d=>!(d.month===configMes&&isResDataForConfig(d)))); alert(`Resultado ${configMes} eliminado.`); }},
       '04': () => { if(window.confirm(`¿Limpiar CxC de ${configMes}?`)) { setAuxByMonth(prev=>{const p={...prev};if(p[configMes]){p[configMes]={...p[configMes],cxc_general:[],cxc_zuliana:[]};}return p;}); alert(`CxC ${configMes} eliminado.`); }},
       '05': () => { if(window.confirm(`¿Limpiar CxP de ${configMes}?`)) { setAuxByMonth(prev=>{const p={...prev};if(p[configMes]){p[configMes]={...p[configMes],cxp_general:[],cxp_autototal:[],cxp_surepack:[],cxp_pacomela:[],cxp_yancarlos:[]};}return p;}); alert(`CxP ${configMes} eliminado.`); }},
       '06': () => { if(window.confirm(`¿Limpiar Activos Fijos de ${configMes}?`)) { setAfByMonth(prev=>{const p={...prev};delete p[configMes];return p;}); alert(`Activos Fijos ${configMes} eliminados.`); }},
@@ -3947,10 +3958,16 @@ function ReportesFinancierosApp() {
   const cxpTotal = (getAuxForMonth(configMes)?.cxp_general?.length||0)+(getAuxForMonth(configMes)?.cxp_surepack?.length||0)+(getAuxForMonth(configMes)?.cxp_autototal?.length||0)+(getAuxForMonth(configMes)?.cxp_pacomela?.length||0)+(getAuxForMonth(configMes)?.cxp_yancarlos?.length||0);
   const hasAuxData = Object.keys(auxByMonth).length > 0 || Object.keys(auxDataConfig).length > 0;
   const auxTotal = cxcTotal + cxpTotal;
-  const afCount = getAfForMonth(configMes)?.records?.length || 0;
-  // Resumen total por todos los meses para el dashboard
-  const totalAuxMeses = Object.keys(auxByMonth).length;
-  const totalAfMeses  = Object.keys(afByMonth).length;
+  // Contadores ESTRICTOS para configuración — solo lo realmente guardado en configMes (sin fallbacks)
+  const isResDataForConfig = (d) => !( d.path?.toUpperCase().includes('ACTIVO') || d.path?.toUpperCase().includes('PASIVO') || d.path?.toUpperCase().includes('PATRIMONIO') ) && !/^[123]/.test(d.name);
+  const afCount     = afByMonth[configMes]?.records?.length || 0;
+  const cxcTotal    = (auxByMonth[configMes]?.cxc_general?.length||0)+(auxByMonth[configMes]?.cxc_zuliana?.length||0);
+  const cxpTotal    = (auxByMonth[configMes]?.cxp_general?.length||0)+(auxByMonth[configMes]?.cxp_surepack?.length||0)+(auxByMonth[configMes]?.cxp_autototal?.length||0)+(auxByMonth[configMes]?.cxp_pacomela?.length||0)+(auxByMonth[configMes]?.cxp_yancarlos?.length||0);
+  // hasBalance ESTRICTO: solo si hay datos para configMes exacto (NO Saldos Iniciales fallback)
+  const hasBalanceConfigMes = dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name));
+  const hasResultadoConfigMes = dbData.some(d=>d.month===configMes&&isResDataForConfig(d));
+  const hasAuxData  = Object.keys(auxByMonth).length > 0 || Object.keys(auxDataConfig).length > 0;
+  const auxTotal    = cxcTotal + cxpTotal;
 
   // ── Clock (hook declarado antes de cualquier return condicional) ────────────
   const [clock, setClock] = useState('');
@@ -4062,8 +4079,8 @@ function ReportesFinancierosApp() {
           </h2>
           {[
             { num:'01', icon:'📋', label:'Plan de Cuentas', sub:'Aplica a todos los meses', status:hasPlan?`✓ ${Object.keys(planCuentas).length} cuentas cargadas`:'Sin cargar', ok:hasPlan, accept:'.txt', handler:handleUploadPlan, global:true },
-            { num:'02', icon:'⚖️', label:`Balance General — ${configMes}`, sub:'Saldos de cuentas 1,2,3 del balance', status:dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name))||dbData.some(d=>d.month==='Saldos Iniciales'&&/^[123]/.test(d.name))?'✓ Cargado':'Sin cargar', ok:dbData.some(d=>(d.month===configMes||d.month==='Saldos Iniciales')&&/^[123]/.test(d.name)), accept:'.xlsx,.xls,.xlsm,.txt', handler:handleUploadSaldos },
-            { num:'03', icon:'📊', label:`Estado de Resultado — ${configMes}`, sub:'Cuentas 4,5,6 de ingresos, costos y gastos', status:dbData.some(d=>d.month===configMes&&!/^[123]/.test(d.name))?'✓ Cargado':'Sin cargar', ok:dbData.some(d=>d.month===configMes&&!/^[123]/.test(d.name)), accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler:handleUploadResultados, multiple:true },
+            { num:'02', icon:'⚖️', label:`Balance General — ${configMes}`, sub:'Saldos de cuentas 1,2,3 del balance', status:hasBalanceConfigMes?'✓ Cargado':'Sin cargar', ok:hasBalanceConfigMes, accept:'.xlsx,.xls,.xlsm,.txt', handler:handleUploadSaldos },
+            { num:'03', icon:'📊', label:`Estado de Resultado — ${configMes}`, sub:'Cuentas 4,5,6 de ingresos, costos y gastos', status:hasResultadoConfigMes?'✓ Cargado':'Sin cargar', ok:hasResultadoConfigMes, accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler:handleUploadResultados, multiple:true },
             { num:'04', icon:'🔵', label:`Auxiliar CxC — ${configMes}`, sub:'Cuentas por cobrar de clientes', status:cxcTotal>0?`✓ ${cxcTotal} registros`:'Sin cargar', ok:cxcTotal>0, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler:handleUploadCxC, multiple:true, color:'blue' },
             { num:'05', icon:'🔴', label:`Auxiliar CxP — ${configMes}`, sub:'Cuentas por pagar a proveedores', status:cxpTotal>0?`✓ ${cxpTotal} registros`:'Sin cargar', ok:cxpTotal>0, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler:handleUploadCxP, multiple:true, color:'red' },
             { num:'06', icon:'🏭', label:`Activos Fijos — ${configMes}`, sub:'Inventario de activos fijos y depreciación', status:afCount>0?`✓ ${afCount} activos`:'Sin cargar', ok:afCount>0, accept:'.xlsx,.xls,.xlsm', handler:handleUploadActivosFijos, multiple:true },
