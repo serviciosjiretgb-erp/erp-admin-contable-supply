@@ -2990,23 +2990,32 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
   const [balMes, setBalMes] = useState(()=>balMeses[balMeses.length-1]||'Abril');
 
   const calcPL = (mes) => {
-    const d=dbData.filter(x=>x.month===mes&&/^[456]/.test(x.name));
-    let ingresos=0,costos=0,gastos=0;
+    const mesNorm = mes.toLowerCase();
+    const d=dbData.filter(x=>x.month?.toLowerCase()===mesNorm&&/^[456]/.test(x.name));
+    let ingresos=0, costoVentas=0, costosOp=0, gastos=0;
     d.forEach(x=>{
-      if(/^4/.test(x.name)) ingresos+=Math.abs(x.usd||0);
-      else if(/^5/.test(x.name)) costos+=Math.abs(x.usd||0);
-      else gastos+=Math.abs(x.usd||0);
+      const v=Math.abs(x.usd||0);
+      if(/^4/.test(x.name))       ingresos   += v;
+      else if(/^5\.1\.01/.test(x.name)) costoVentas += v;  // Costo de Ventas
+      else if(/^5/.test(x.name))   costosOp   += v;  // Costos Operativos (depreciación, otros 5.x)
+      else                          gastos     += v;  // Gastos 6.x
     });
-    const utilBruta=ingresos-costos;
-    const resultado=utilBruta-gastos;
-    return { ingresos, costos, gastos, utilBruta, resultado,
+    const costos    = costoVentas + costosOp;
+    const utilBruta = ingresos - costoVentas;
+    const utilOp    = utilBruta - costosOp;
+    const resultado = utilOp - gastos;
+    return { ingresos, costoVentas, costosOp, costos, gastos, utilBruta, utilOp, resultado,
       margenBruto: ingresos?utilBruta/ingresos*100:0,
+      margenOp:    ingresos?utilOp/ingresos*100:0,
       margenNeto:  ingresos?resultado/ingresos*100:0 };
   };
 
   const calcBal = (mes) => {
-    const mes2=(mes==='Abril'&&!dbData.some(d=>d.month===mes&&/^[123]/.test(d.name)))?'Saldos Iniciales':mes;
-    const d=dbData.filter(x=>x.month===mes2&&/^[123]/.test(x.name));
+    const mesNorm = mes.toLowerCase();
+    // Fallback to Saldos Iniciales if no exact month balance exists
+    const hasExact = dbData.some(d=>d.month?.toLowerCase()===mesNorm&&/^[123]/.test(d.name));
+    const targetMes = hasExact ? mes : 'Saldos Iniciales';
+    const d=dbData.filter(x=>x.month?.toLowerCase()===targetMes.toLowerCase()&&/^[123]/.test(x.name));
     let activos=0,pasivos=0,patrimonio=0;
     d.forEach(x=>{ const v=Math.abs(x.usd||0); if(/^1/.test(x.name))activos+=v; else if(/^2/.test(x.name))pasivos+=v; else patrimonio+=v; });
     return { activos,pasivos,patrimonio, razonCte:pasivos>0?activos/pasivos:0, endeudam:activos>0?pasivos/activos*100:0 };
@@ -3018,16 +3027,27 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
 
   const trendData = useMemo(()=>resMeses.map(m=>{
     const p=calcPL(m);
-    return { mes:m.slice(0,3).toUpperCase(), ingresos:parseFloat(p.ingresos.toFixed(2)), costos:parseFloat(p.costos.toFixed(2)), gastos:parseFloat(p.gastos.toFixed(2)), resultado:parseFloat(p.resultado.toFixed(2)), margenBruto:parseFloat(p.margenBruto.toFixed(1)) };
-  }),[dbData,resMeses]);
+    return {
+      mes:m.slice(0,3).toUpperCase(),
+      ingresos:    parseFloat(p.ingresos.toFixed(2)),
+      costoVentas: parseFloat(p.costoVentas.toFixed(2)),
+      costosOp:    parseFloat(p.costosOp.toFixed(2)),
+      gastos:      parseFloat(p.gastos.toFixed(2)),
+      resultado:   parseFloat(p.resultado.toFixed(2)),
+      margenBruto: parseFloat(p.margenBruto.toFixed(1)),
+      margenOp:    parseFloat(p.margenOp.toFixed(1)),
+    };
+  }),[dbData,resMeses.join(',')]); // eslint-disable-line
 
   const ACTIVO_GROUPS=[
     {label:'DISPONIBLE',re:/^1\.1\.01/},{label:'CxC',re:/^1\.1\.02/},
     {label:'INVENTARIOS',re:/^1\.1\.03/},{label:'OTROS CORR.',re:/^1\.1\.(04|05)/},{label:'ACTIVOS FIJOS',re:/^1\.1\.06/},
   ];
   const activosPie = useMemo(()=>{
-    const mes2=(balMes==='Abril'&&!dbData.some(d=>d.month===balMes&&/^1/.test(d.name)))?'Saldos Iniciales':balMes;
-    const d=dbData.filter(x=>x.month===mes2&&/^1/.test(x.name));
+    const mesNorm=balMes.toLowerCase();
+    const hasExact=dbData.some(d=>d.month?.toLowerCase()===mesNorm&&/^1/.test(d.name));
+    const target=hasExact?balMes:'Saldos Iniciales';
+    const d=dbData.filter(x=>x.month?.toLowerCase()===target.toLowerCase()&&/^1/.test(x.name));
     return ACTIVO_GROUPS.map(g=>({name:g.label,value:parseFloat(d.filter(x=>g.re.test(x.name)).reduce((s,x)=>s+Math.abs(x.usd||0),0).toFixed(2))})).filter(g=>g.value>0);
   },[dbData,balMes]);
 
@@ -3057,7 +3077,7 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
             <TrendingUp size={12} className="text-emerald-400"/>
             <span className="text-[10px] font-black text-slate-400 uppercase">P&L:</span>
             <select value={resMes} onChange={e=>setResMes(e.target.value)} className="bg-transparent text-emerald-300 text-xs font-black uppercase cursor-pointer outline-none">
-              {resMeses.map(m=><option key={m}>{m.toUpperCase()}</option>)}
+              {resMeses.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
               {!resMeses.length&&<option>ABRIL</option>}
             </select>
           </div>
@@ -3065,7 +3085,7 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
             <Scale size={12} className="text-indigo-400"/>
             <span className="text-[10px] font-black text-slate-400 uppercase">BALANCE:</span>
             <select value={balMes} onChange={e=>setBalMes(e.target.value)} className="bg-transparent text-indigo-300 text-xs font-black uppercase cursor-pointer outline-none">
-              {balMeses.map(m=><option key={m}>{m.toUpperCase()}</option>)}
+              {balMeses.map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
               {!balMeses.length&&<option>ABRIL</option>}
             </select>
           </div>
@@ -3083,22 +3103,32 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
             <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-3 py-1.5 rounded-lg">{resMeses.length} {resMeses.length===1?'MES':'MESES'} CARGADOS</span>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
-            <Kpi label="INGRESOS"     val={`USD ${fmtK(pl.ingresos)}`}  sub={fmtN(pl.ingresos)}   color="bg-emerald-100" icon={<DollarSign size={14} className="text-emerald-600"/>} trend={true}/>
-            <Kpi label="COSTOS"       val={`USD ${fmtK(pl.costos)}`}    sub={fmtN(pl.costos)}     color="bg-orange-100"  icon={<TrendingDown size={14} className="text-orange-600"/>} trend={false}/>
-            <Kpi label="UTIL. BRUTA"  val={`USD ${fmtK(pl.utilBruta)}`} sub={fmtN(pl.utilBruta)}  color="bg-blue-100"    icon={<Activity size={14} className="text-blue-600"/>}    trend={pl.utilBruta>=0}/>
-            <Kpi label="GASTOS"       val={`USD ${fmtK(pl.gastos)}`}    sub={fmtN(pl.gastos)}     color="bg-amber-100"   icon={<TrendingDown size={14} className="text-amber-600"/>} trend={false}/>
-            <Kpi label="RESULTADO"    val={`USD ${fmtK(pl.resultado)}`} sub={fmtN(pl.resultado)}  color="bg-indigo-100"  icon={<BarChart2 size={14} className="text-indigo-600"/>}  trend={pl.resultado>=0}/>
-            <Kpi label="MARGEN BRUTO" val={pctFmt(pl.margenBruto)}      sub="SOBRE INGRESOS"      color="bg-teal-100"    icon={<TrendingUp size={14} className="text-teal-600"/>}   trend={pl.margenBruto>=30}/>
-            <Kpi label="MARGEN NETO"  val={pctFmt(pl.margenNeto)}       sub="SOBRE INGRESOS"      color={pl.margenNeto>=0?"bg-emerald-100":"bg-red-100"} icon={<TrendingUp size={14} className={pl.margenNeto>=0?"text-emerald-600":"text-red-600"}/>} trend={pl.margenNeto>=0}/>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+            <Kpi label="INGRESOS"        val={`USD ${fmtK(pl.ingresos)}`}     sub={fmtN(pl.ingresos)}    color="bg-emerald-100" icon={<DollarSign size={14} className="text-emerald-600"/>} trend={true}/>
+            <Kpi label="COSTO DE VENTAS" val={`USD ${fmtK(pl.costoVentas)}`}  sub={fmtN(pl.costoVentas)} color="bg-orange-100"  icon={<TrendingDown size={14} className="text-orange-600"/>} trend={false}/>
+            <Kpi label="UTIL. BRUTA"     val={`USD ${fmtK(pl.utilBruta)}`}    sub={fmtN(pl.utilBruta)}   color="bg-blue-100"    icon={<Activity size={14} className="text-blue-600"/>}    trend={pl.utilBruta>=0}/>
+            <Kpi label="MARGEN BRUTO"    val={pctFmt(pl.margenBruto)}          sub="SOBRE INGRESOS"       color="bg-teal-100"    icon={<TrendingUp size={14} className="text-teal-600"/>}   trend={pl.margenBruto>=30}/>
+            <Kpi label="MARGEN NETO"     val={pctFmt(pl.margenNeto)}           sub="SOBRE INGRESOS"       color={pl.margenNeto>=0?"bg-emerald-100":"bg-red-100"} icon={<TrendingUp size={14} className={pl.margenNeto>=0?"text-emerald-600":"text-red-600"}/>} trend={pl.margenNeto>=0}/>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            <Kpi label="COSTOS OPERAT."  val={`USD ${fmtK(pl.costosOp)}`}     sub={fmtN(pl.costosOp)}    color="bg-amber-100"   icon={<TrendingDown size={14} className="text-amber-600"/>}  trend={false}/>
+            <Kpi label="GASTOS"          val={`USD ${fmtK(pl.gastos)}`}        sub={fmtN(pl.gastos)}      color="bg-rose-100"    icon={<TrendingDown size={14} className="text-rose-600"/>}   trend={false}/>
+            <Kpi label="UTIL. OPERATIVA" val={`USD ${fmtK(pl.utilOp)}`}        sub={fmtN(pl.utilOp)}      color="bg-violet-100"  icon={<Activity size={14} className="text-violet-600"/>}  trend={pl.utilOp>=0}/>
+            <Kpi label="MARGEN OPERAT."  val={pctFmt(pl.margenOp)}             sub="SOBRE INGRESOS"       color="bg-violet-100"  icon={<TrendingUp size={14} className="text-violet-600"/>}  trend={pl.margenOp>=0}/>
+            <Kpi label="RESULTADO"       val={`USD ${fmtK(pl.resultado)}`}     sub={fmtN(pl.resultado)}   color="bg-indigo-100"  icon={<BarChart2 size={14} className="text-indigo-600"/>}   trend={pl.resultado>=0}/>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">TENDENCIA: INGRESOS VS COSTOS</p>
-              <ChartLegend items={[{label:'Ingresos',color:'#10b981'},{label:'Costos',color:'#f97316'},{label:'Gastos',color:'#f59e0b'}]}/>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">INGRESOS VS COSTOS DE VENTAS + COSTOS OPERAT.</p>
+              <ChartLegend items={[{label:'Ingresos',color:'#10b981'},{label:'Costo Ventas',color:'#f97316'},{label:'Costos Op.',color:'#f59e0b'},{label:'Gastos',color:'#e879f9'}]}/>
               <div className="mt-3">
-                <SvgAreaChart data={trendData} series={[{key:'ingresos',label:'Ingresos',color:'#10b981',width:2.5,area:true},{key:'costos',label:'Costos',color:'#f97316',width:2,area:true},{key:'gastos',label:'Gastos',color:'#f59e0b',width:1.5,dash:'4 2'}]}/>
+                <SvgAreaChart data={trendData} series={[
+                  {key:'ingresos',    label:'Ingresos',    color:'#10b981', width:2.5, area:true},
+                  {key:'costoVentas', label:'Costo Ventas',color:'#f97316', width:2,   area:true},
+                  {key:'costosOp',    label:'Costos Op.',  color:'#f59e0b', width:1.5, dash:'4 2'},
+                  {key:'gastos',      label:'Gastos',      color:'#e879f9', width:1.5, dash:'2 3'},
+                ]}/>
               </div>
             </div>
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
@@ -3109,18 +3139,62 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
               </div>
             </div>
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">EVOLUCIÓN DEL MARGEN BRUTO (%)</p>
-              <ChartLegend items={[{label:'Margen Bruto %',color:'#3b82f6'},{label:'Meta 30%',color:'#10b981'}]}/>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">EVOLUCIÓN DE MÁRGENES (%)</p>
+              <ChartLegend items={[{label:'Margen Bruto',color:'#10b981'},{label:'Margen Operativo',color:'#8b5cf6'},{label:'Meta 30%',color:'#64748b'}]}/>
               <div className="mt-3">
-                <SvgAreaChart data={trendData} height={180} series={[{key:'margenBruto',label:'Margen %',color:'#3b82f6',width:3}]} refLine={30}/>
+                <SvgAreaChart data={trendData} height={180}
+                  series={[
+                    {key:'margenBruto',label:'Margen Bruto %',  color:'#10b981', width:2.5},
+                    {key:'margenOp',   label:'Margen Operat. %',color:'#8b5cf6', width:2, dash:'3 2'},
+                  ]} refLine={30}/>
               </div>
             </div>
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">ESTRUCTURA DE COSTOS Y GASTOS</p>
-              <ChartLegend items={[{label:'Costos',color:'#f97316'},{label:'Gastos',color:'#f59e0b'},{label:'Ingresos',color:'#10b981'}]}/>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">DESGLOSE DE COSTOS Y GASTOS POR MES</p>
+              <ChartLegend items={[{label:'Costo Ventas',color:'#f97316'},{label:'Costos Op.',color:'#f59e0b'},{label:'Gastos',color:'#e879f9'}]}/>
               <div className="mt-3">
-                <SvgStackedBar data={trendData} height={180} series={[{key:'costos',label:'Costos',color:'#f97316'},{key:'gastos',label:'Gastos',color:'#f59e0b'}]}/>
+                <SvgStackedBar data={trendData} height={180} series={[
+                  {key:'costoVentas', label:'Costo Ventas', color:'#f97316'},
+                  {key:'costosOp',    label:'Costos Op.',   color:'#f59e0b'},
+                  {key:'gastos',      label:'Gastos',       color:'#e879f9'},
+                ]}/>
               </div>
+            </div>
+          </div>
+          {/* Tabla resumen P&L mes seleccionado */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm mt-5">
+            <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-4">RESUMEN ESTADO DE RESULTADO — {resMes.toUpperCase()}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead><tr className="bg-slate-50 border-b-2 border-slate-200">
+                  <th className="px-4 py-2 font-black uppercase text-slate-500">CONCEPTO</th>
+                  <th className="px-4 py-2 font-black uppercase text-slate-500 text-right">USD</th>
+                  <th className="px-4 py-2 font-black uppercase text-slate-500 text-right">% INGRESOS</th>
+                  <th className="px-4 py-2 font-black uppercase text-slate-500 text-right">VARIACIÓN</th>
+                </tr></thead>
+                <tbody>
+                  {[
+                    {label:'INGRESOS',          v:pl.ingresos,    bold:true,  color:'text-emerald-700', border:'border-b-2 border-emerald-200'},
+                    {label:'(−) COSTO DE VENTAS',v:pl.costoVentas, bold:false, color:'text-orange-600',  border:'border-b border-slate-100'},
+                    {label:'= UTILIDAD BRUTA',   v:pl.utilBruta,   bold:true,  color:pl.utilBruta>=0?'text-blue-700':'text-red-600', border:'border-b-2 border-blue-200'},
+                    {label:'(−) COSTOS OPERAT.', v:pl.costosOp,    bold:false, color:'text-amber-600',   border:'border-b border-slate-100'},
+                    {label:'= UTILIDAD OPERAT.', v:pl.utilOp,      bold:true,  color:pl.utilOp>=0?'text-violet-700':'text-red-600', border:'border-b-2 border-violet-200'},
+                    {label:'(−) GASTOS',         v:pl.gastos,      bold:false, color:'text-rose-600',    border:'border-b border-slate-100'},
+                    {label:'= RESULTADO NETO',   v:pl.resultado,   bold:true,  color:pl.resultado>=0?'text-indigo-700':'text-red-700', border:'border-t-2 border-indigo-300'},
+                  ].map(row=>(
+                    <tr key={row.label} className={`${row.border} ${row.bold?'bg-slate-50/80':''}`}>
+                      <td className={`px-4 py-2.5 ${row.bold?'font-black':'font-bold'} text-slate-700 uppercase`}>{row.label}</td>
+                      <td className={`px-4 py-2.5 text-right font-mono ${row.bold?'font-black':'font-bold'} ${row.color}`}>{fmtN(row.v)}</td>
+                      <td className={`px-4 py-2.5 text-right font-mono text-slate-500 ${row.bold?'font-black':''}`}>{pl.ingresos>0?pctFmt(row.v/pl.ingresos*100):'—'}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded ${row.v>=0?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>
+                          {row.v>=0?'▲':'▼'} {pctFmt(Math.abs(row.v)/Math.max(pl.ingresos,1)*100)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
