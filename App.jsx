@@ -2016,7 +2016,6 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 
       // Activos Fijos desde auxiliar de inversiones (siempre, es la fuente autoritativa)
       if (currentAF?.records?.length) {
-        const extraM = Math.max(0, (MORD[selectedMonth]||4) - 4);
         const getRubroBalance = (r) => {
           const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
           if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
@@ -2047,8 +2046,10 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
           costoByRubro[rubro].usd += r.costoUSD || 0;
           costoByRubro[rubro].bs  += r.costoBS  || 0;
-          const depActual = (r.depAcum || 0) + extraM * (r.depreMensual || 0);
-          depBsByRubro[rubro] = (depBsByRubro[rubro] || 0) + depActual;
+          // Use depAcum from auxiliary (historical cost in Bs) — NOT computed from monthly rate
+          // depAcum already contains the accumulated depreciation as of the balance date
+          const depHist = r.depAcum || 0;
+          depBsByRubro[rubro] = (depBsByRubro[rubro] || 0) + depHist;
         });
         Object.entries(costoByRubro).forEach(([rubro, v]) => {
           // Costo USD: viene del auxiliar (no cambia)
@@ -2986,6 +2987,10 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
       ...dbData.filter(d=>isResRecord(d)).map(d=>d.month),
       ...dbData.filter(d=>isBalRecord(d)&&d.month!=='Saldos Iniciales').map(d=>d.month),
     ]);
+    // If only Saldos Iniciales balance exists (no named month), expose as "Abril"
+    if (!combined.has('Abril') && dbData.some(d=>d.month==='Saldos Iniciales'&&isBalRecord(d))) {
+      combined.add('Abril');
+    }
     return [...combined].filter(m=>m&&m!=='Sin Mes')
       .sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
   },[dbData]);
@@ -3000,8 +3005,9 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
 
   const hasPL  = useMemo(()=>dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isResRecord(d)),[dbData,mes]);
   const hasBal = useMemo(()=>{
-    const exact=dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isBalRecord(d));
-    return exact||dbData.some(d=>d.month==='Saldos Iniciales'&&isBalRecord(d));
+    // Only show balance section when there is EXACT data for the selected month
+    // Do NOT fallback to Saldos Iniciales for the visibility flag
+    return dbData.some(d=>d.month?.toLowerCase()===mes.toLowerCase()&&isBalRecord(d));
   },[dbData,mes]);
 
   // Build same tree as EstadoResultadoView and extract totals from root nodes
@@ -3064,13 +3070,49 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
   };
 
   const calcBal = (m) => {
-    const mn=m.toLowerCase();
-    const hasExact=dbData.some(d=>d.month?.toLowerCase()===mn&&isBalRecord(d));
-    const target=hasExact?m:'Saldos Iniciales';
-    const d=dbData.filter(x=>x.month?.toLowerCase()===target.toLowerCase()&&isBalRecord(x));
-    let activos=0,pasivos=0,patrimonio=0;
-    d.forEach(x=>{const v=Math.abs(x.usd||0);if(/^1/.test(x.name))activos+=v;else if(/^2/.test(x.name))pasivos+=v;else patrimonio+=v;});
-    return {activos,pasivos,patrimonio,razonCte:pasivos>0?activos/pasivos:0,endeudam:activos>0?pasivos/activos*100:0};
+    const mn = m.toLowerCase();
+    const hasExact = dbData.some(d=>d.month?.toLowerCase()===mn&&isBalRecord(d));
+    const target = hasExact ? m : 'Saldos Iniciales';
+    const balData = dbData.filter(x=>x.month?.toLowerCase()===target.toLowerCase()&&isBalRecord(x));
+
+    // Build same tree as BalanceGeneralView: group by path, only sum leaf nodes
+    const root = [];
+    const normKey = s => (s||'').trim().replace(/\s+/g,' ').toUpperCase();
+    balData.forEach(item => {
+      const pathArray = (item.path||'').split('>').filter(Boolean);
+      let cur = root;
+      pathArray.forEach(folderName => {
+        const key = normKey(folderName);
+        let folder = cur.find(n => normKey(n.n) === key);
+        if (!folder) { folder = {n:folderName.trim(), c:[], u:0, b:0, top:pathArray[0]}; cur.push(folder); }
+        cur = folder.c;
+      });
+      // Leaf = the account record
+      let leaf = cur.find(n => normKey(n.n) === normKey(item.name) && n.isLeaf);
+      if (!leaf) cur.push({n:item.name.trim(), u:item.usd, b:item.bs, isLeaf:true, top:(item.path||'').split('>')[0]});
+      else { leaf.u += item.usd; leaf.b += item.bs; }
+    });
+
+    // Sum ALL leaves recursively — classify by top-level path element
+    let activos=0, pasivos=0, patrimonio=0;
+    const walkLeaves = (nodes, topSection) => {
+      nodes.forEach(n => {
+        if (n.isLeaf) {
+          const v = Math.abs(n.u||0);
+          const sec = (topSection || n.top || '').toUpperCase();
+          if (sec.includes('ACTIV')) activos += v;
+          else if (sec.includes('PASIV')) pasivos += v;
+          else patrimonio += v;
+        } else {
+          walkLeaves(n.c||[], topSection || (n.top||n.n));
+        }
+      });
+    };
+    walkLeaves(root, '');
+
+    return {activos, pasivos, patrimonio,
+      razonCte: pasivos>0 ? activos/pasivos : 0,
+      endeudam: activos>0 ? pasivos/activos*100 : 0};
   };
 
   const pl  = useMemo(()=>calcPL(mes), [dbData,mes]); // eslint-disable-line
@@ -3668,7 +3710,14 @@ function ReportesFinancierosApp() {
   const [activosFijosData] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_af_data')||'null'); return s||{records:[]}; } catch(e){return {records:[]};} });
 
   const getAuxForMonth = (mes) => auxByMonth[mes] || auxDataConfig || {};
-  const getAfForMonth  = (mes) => afByMonth[mes]  || (activosFijosData?.records?.length ? activosFijosData : {records:[]});
+  const getAfForMonth  = (mes) => {
+    // Only use per-month data — do NOT fall back to legacy activosFijosData
+    // This prevents a month with no AF upload from showing data from another month
+    if (afByMonth[mes]) return afByMonth[mes];
+    // Special case: if asking for 'General' or 'Abril' and legacy data exists, use it
+    if ((mes === 'General' || mes === 'Abril') && activosFijosData?.records?.length) return activosFijosData;
+    return {records:[]};
+  };
 
   const handleUploadResultados = async (e) => { if (!e.target.files.length) return; try { const newData=await processFiles(e.target.files); setDbData(prev=>{const nm=[...new Set(newData.map(d=>d.month))];return [...prev.filter(d=>!nm.includes(d.month)),...newData];}); alert("✅ Resultados cargados."); } catch(err){alert("Error.");} };
   const handleUploadPlan = async (e) => { if (!e.target.files.length) return; try { const plan=await processPlanCuentas(e.target.files[0]); setPlanCuentas(plan); alert("✅ Plan de cuentas cargado."); } catch(err){alert("Error.");} };
