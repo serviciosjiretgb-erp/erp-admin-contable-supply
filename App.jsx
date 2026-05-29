@@ -3975,92 +3975,140 @@ function ReportesFinancierosApp() {
   if (view === 'dashfin')       return <DashboardFinancieroView onBack={()=>setView('dashboard')} dbData={dbData} tasaByMonth={tasaByMonth} afByMonth={afByMonth} activosFijosData={activosFijosData}/>;
   if (view === 'inversiones')   return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={getAfForMonth(configMes)} setActivosFijosData={(d)=>setAfByMonth(prev=>({...prev,[configMes]:d}))}/>;
 
-  if (view === 'configuracion') return (
-    <div className="min-h-screen bg-[#111111]">
-      <header className="px-6 py-4 bg-[#111111] border-b-4 border-orange-500 flex items-center gap-4 shadow-lg">
+  if (view === 'configuracion') {
+    // Resumen por mes de qué datos hay cargados
+    const TODOS_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const mesResumen = TODOS_MESES.map(m => {
+      const hasBalance = dbData.some(d=>(d.month===m||d.month==='Saldos Iniciales')&&/^[123]/.test(d.name));
+      const hasResultado = dbData.some(d=>d.month===m&&!/^[123]/.test(d.name)&&d.month!=='Sin Mes');
+      const hasCxC = (auxByMonth[m]?.cxc_general?.length||0)+(auxByMonth[m]?.cxc_zuliana?.length||0)>0;
+      const hasCxP = (auxByMonth[m]?.cxp_general?.length||0)+(auxByMonth[m]?.cxp_surepack?.length||0)+(auxByMonth[m]?.cxp_autototal?.length||0)>0;
+      const hasAF  = afByMonth[m]?.records?.length>0;
+      const hasTasa = !!tasaByMonth[m];
+      const count = [hasBalance,hasResultado,hasCxC,hasCxP,hasAF,hasTasa].filter(Boolean).length;
+      return {m, hasBalance, hasResultado, hasCxC, hasCxP, hasAF, hasTasa, count};
+    }).filter(r=>r.count>0||r.m===configMes);
+
+    return (
+    <div className="min-h-screen bg-[#0d0d0d]">
+      <header className="px-6 py-4 bg-[#111111] border-b-4 border-orange-500 flex items-center gap-4 shadow-lg flex-wrap">
         <button onClick={()=>setView('dashboard')} className="flex items-center gap-2 text-slate-400 hover:text-white font-black text-xs uppercase"><ArrowLeft size={16}/> Panel</button>
         <h1 className="text-white font-black text-lg tracking-widest uppercase flex items-center gap-2">Configuración <span className="text-orange-500 text-sm">/ Ingesta de Datos</span></h1>
-        <div className="ml-auto flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mes de trabajo:</span>
-          <select value={configMes} onChange={e=>setConfigMes(e.target.value)} className="bg-orange-500/20 border border-orange-500/50 text-orange-300 text-xs font-black rounded-lg px-3 py-1.5 outline-none cursor-pointer">
-            {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m=><option key={m}>{m}</option>)}
+        <div className="ml-auto flex items-center gap-3 bg-slate-800/80 border-2 border-orange-500/60 rounded-xl px-4 py-2">
+          <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">MES ACTIVO:</span>
+          <select value={configMes} onChange={e=>setConfigMes(e.target.value)} className="bg-transparent border-none text-orange-300 text-sm font-black rounded-lg px-2 py-1 outline-none cursor-pointer">
+            {TODOS_MESES.map(m=><option key={m}>{m}</option>)}
           </select>
+          <span className="text-[9px] text-slate-500 font-bold">— datos cargados aquí van a {configMes}</span>
         </div>
       </header>
-      <main className="max-w-3xl mx-auto p-8 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            {label:'Plan de Cuentas',       ok:hasPlan,        val:hasPlan?'Cargado':'Pendiente'},
-            {label:'Meses en Memoria',       ok:loadedMonths.length>0, val:loadedMonths.length>0?loadedMonths.join(', '):'Ninguno'},
-            {label:`CxC — ${configMes}`,     ok:cxcTotal>0,    val:cxcTotal>0?`${cxcTotal} reg.`:'Pendiente'},
-            {label:`CxP — ${configMes}`,     ok:cxpTotal>0,    val:cxpTotal>0?`${cxpTotal} reg.`:'Pendiente'},
-          ].map(s=>(
-            <div key={s.label} className={`rounded-2xl p-4 border ${s.ok?'bg-emerald-950/40 border-emerald-700':'bg-[#1a1a1a] border-slate-700'}`}>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{s.label}</p>
-              <p className={`text-xs font-bold truncate ${s.ok?'text-emerald-400':'text-slate-500'}`}>{s.val}</p>
-            </div>
-          ))}
-        </div>
-        <div className="bg-[#1a1a1a] rounded-3xl p-8 border border-slate-700 space-y-4">
-          <h2 className="text-white font-black text-sm uppercase tracking-widest mb-2 flex items-center gap-2"><Database size={16} className="text-orange-500"/> Carga de Archivos</h2>
-          <p className="text-slate-500 text-[10px] uppercase tracking-widest mb-4">Mes activo: <span className="text-orange-400 font-black">{configMes}</span> — Los archivos 02–06 se guardan para este mes</p>
-          {/* Tasa de cambio por mes */}
-          <div className="flex items-center gap-3 p-4 rounded-2xl border border-amber-500/40 bg-amber-500/5">
-            <span className="text-2xl font-black font-mono opacity-30">Bs/$</span>
-            <span className="flex-1 font-black text-xs uppercase tracking-wider text-amber-300">Tasa de Cambio — {configMes}</span>
-            <input
-              type="number" min="1" step="0.01"
-              value={tasaByMonth[configMes] || ''}
-              placeholder="Ej: 90.00"
-              onChange={e => saveTasa(configMes, parseFloat(e.target.value)||1)}
-              className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-sm rounded-lg px-3 py-1.5 w-32 font-black outline-none"
-            />
-            {tasaByMonth[configMes] && <span className="text-[9px] text-emerald-400 font-black">✓ GUARDADA</span>}
-          </div>
-          {[
-            {num:'01',label:hasPlan?`✓ Plan Cuentas (${Object.keys(planCuentas).length} ctas)`:'Plan de Cuentas (.txt)',active:true,accept:'.txt',handler:handleUploadPlan,hasClear:hasPlan},
-            {num:'02',label:dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name))?`✓ Balance ${configMes} cargado`:`Balance ${configMes} (.txt / .xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm,.txt',handler:handleUploadSaldos,hasClear:dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name))},
-            {num:'03',label:loadedMonths.length>0?`✓ Resultados (${loadedMonths.length} mes${loadedMonths.length!==1?'es':''})`:'Estado de Resultados (.xlsx)',active:true,accept:'.xlsx,.xls,.xlsm,.txt,.csv',handler:handleUploadResultados,multiple:true,hasClear:loadedMonths.length>0},
-            {num:'04',label:cxcTotal>0?`✓ CxC ${configMes} (${cxcTotal} reg.)`:`Auxiliar CxC — ${configMes} (.xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxC,multiple:true,hasClear:cxcTotal>0,color:'blue'},
-            {num:'05',label:cxpTotal>0?`✓ CxP ${configMes} (${cxpTotal} reg.)`:`Auxiliar CxP — ${configMes} (.xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm,.csv,.txt',handler:handleUploadCxP,multiple:true,hasClear:cxpTotal>0,color:'red'},
-            {num:'06',label:afCount>0?`✓ Activos Fijos ${configMes} (${afCount} reg.)`:`Activos Fijos — ${configMes} (.xlsx)`,active:true,accept:'.xlsx,.xls,.xlsm',handler:handleUploadActivosFijos,multiple:true,hasClear:afCount>0},
-          ].map(step=>(
-            <div key={step.num} className="flex items-center gap-2">
-            <label className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer flex-1 ${
-              step.color==='blue' ? 'border-blue-500/50 text-blue-300 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500' :
-              step.color==='red'  ? 'border-red-500/50 text-red-300 bg-red-500/5 hover:bg-red-500/10 hover:border-red-500' :
-              step.active         ? 'border-orange-500/50 text-orange-300 bg-orange-500/5 hover:bg-orange-500/10 hover:border-orange-500' :
-                                    'border-slate-700 text-slate-600 opacity-40 cursor-not-allowed'
-            }`}>
-              <span className="text-2xl font-black font-mono opacity-30">{step.num}</span>
-              <span className="flex-1 font-black text-xs uppercase tracking-wider">{step.label}</span>
-              <Upload size={16} className="opacity-50"/>
-              <input type="file" accept={step.accept} multiple={step.multiple} disabled={!step.active} className="hidden" onChange={step.handler}/>
-            </label>
-              {step.hasClear && <button onClick={(e)=>{e.stopPropagation();clearSlot(step.num);}} title="Eliminar datos" className="flex-shrink-0 p-1.5 bg-red-950/60 hover:bg-red-600 text-red-500 hover:text-white rounded-lg border border-red-900/40 transition-colors"><Trash2 size={12}/></button>}
-            </div>
-          ))}
-          <div className="pt-2 border-t border-slate-700">
-            <button onClick={handleSimulatePDFs} className="w-full flex items-center justify-center gap-2 bg-[#222] hover:bg-[#333] text-slate-400 hover:text-white border border-slate-600 px-4 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest transition-colors"><FileOutput size={12}/> Cargar datos demo Abr 2026</button>
-          </div>
-        </div>
-        {loadedMonths.length > 0 && (
-          <div className="bg-[#1a1a1a] rounded-3xl p-6 border border-slate-700">
-            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2"><CheckCircle size={14} className="text-emerald-500"/> Meses en Memoria</p>
-            <div className="flex flex-wrap gap-2">
-              {loadedMonths.map(m=>(<span key={m} className="bg-[#222] text-emerald-400 border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2">{m}<button onClick={()=>handleDeleteMonth(m)} className="hover:text-red-400"><Trash2 size={10}/></button></span>))}
+
+      <main className="max-w-4xl mx-auto p-6 space-y-6">
+        {/* Resumen de meses con datos */}
+        {mesResumen.length > 0 && (
+          <div className="bg-[#1a1a1a] rounded-2xl border border-slate-700 p-5">
+            <h2 className="text-white font-black text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
+              <CheckCircle size={14} className="text-emerald-500"/> Datos Guardados por Mes
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {mesResumen.map(r=>(
+                <div key={r.m} onClick={()=>setConfigMes(r.m)} className={`rounded-xl p-3 border cursor-pointer transition-all ${r.m===configMes?'border-orange-500 bg-orange-500/10':'border-slate-700 bg-slate-800/40 hover:border-slate-500'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-xs font-black uppercase ${r.m===configMes?'text-orange-300':'text-slate-300'}`}>{r.m}</span>
+                    {r.m===configMes && <span className="text-[8px] bg-orange-500 text-white px-1.5 py-0.5 rounded font-black">ACTIVO</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {r.hasBalance   && <span className="text-[8px] bg-blue-900/60 text-blue-300 px-1.5 py-0.5 rounded font-black">BAL</span>}
+                    {r.hasResultado && <span className="text-[8px] bg-emerald-900/60 text-emerald-300 px-1.5 py-0.5 rounded font-black">P&L</span>}
+                    {r.hasCxC       && <span className="text-[8px] bg-teal-900/60 text-teal-300 px-1.5 py-0.5 rounded font-black">CxC</span>}
+                    {r.hasCxP       && <span className="text-[8px] bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-black">CxP</span>}
+                    {r.hasAF        && <span className="text-[8px] bg-emerald-900/60 text-emerald-400 px-1.5 py-0.5 rounded font-black">AF</span>}
+                    {r.hasTasa      && <span className="text-[8px] bg-amber-900/60 text-amber-300 px-1.5 py-0.5 rounded font-black">TASA</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
-        <div className="bg-red-950/20 rounded-2xl p-5 border border-red-900/40 flex items-center justify-between">
-          <div><p className="text-red-400 font-black text-xs uppercase tracking-wider">Zona de Peligro</p><p className="text-slate-500 text-[11px] mt-0.5">Elimina todos los datos en memoria</p></div>
-          <button onClick={()=>{if(window.confirm("¿Borrar TODOS los datos?"))setDbData([]);setPlanCuentas({});setAuxDataConfig({});setActivosFijosData({records:[]});}} className="bg-red-900/60 hover:bg-red-600 text-red-300 hover:text-white border border-red-700 px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest">Limpiar Todo</button>
+
+        {/* Aviso de aislamiento */}
+        <div className="bg-indigo-950/40 border border-indigo-700/50 rounded-2xl px-5 py-3 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-indigo-400 flex-shrink-0 mt-0.5"/>
+          <p className="text-indigo-300 text-[10px] font-bold uppercase tracking-wide leading-relaxed">
+            Todo lo que cargues aquí se guarda <span className="text-orange-400">exclusivamente</span> para el mes <span className="text-orange-400">{configMes.toUpperCase()}</span>. Los datos de otros meses no se modifican. Cada mes tiene su propio Balance, CxC, CxP, AF y Tasa.
+          </p>
         </div>
+
+        {/* Tasa del mes */}
+        <div className="bg-[#1a1a1a] rounded-2xl border border-amber-500/40 p-5">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Tasa de Cambio — {configMes}</p>
+              <p className="text-slate-400 text-[9px]">Tasa Bs/USD al cierre del mes. Se aplica al Balance y se guarda solo para {configMes}.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <input type="number" min="1" step="0.01" value={tasaByMonth[configMes]||''} placeholder="Ej: 90.00"
+                onChange={e=>saveTasa(configMes, parseFloat(e.target.value)||1)}
+                className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-lg font-black rounded-lg px-4 py-2 w-36 outline-none"/>
+              {tasaByMonth[configMes] && <span className="text-[9px] text-emerald-400 font-black flex items-center gap-1"><CheckCircle size={10}/> GUARDADA</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Archivos del mes */}
+        <div className="bg-[#1a1a1a] rounded-2xl border border-slate-700 p-6 space-y-3">
+          <h2 className="text-white font-black text-sm uppercase tracking-widest flex items-center gap-2 mb-4">
+            <Database size={14} className="text-orange-500"/> Archivos — {configMes}
+          </h2>
+          {[
+            { num:'01', icon:'📋', label:'Plan de Cuentas', sub:'Aplica a todos los meses', status:hasPlan?`✓ ${Object.keys(planCuentas).length} cuentas cargadas`:'Sin cargar', ok:hasPlan, accept:'.txt', handler:handleUploadPlan, global:true },
+            { num:'02', icon:'⚖️', label:`Balance General — ${configMes}`, sub:'Saldos de cuentas 1,2,3 del balance', status:dbData.some(d=>d.month===configMes&&/^[123]/.test(d.name))||dbData.some(d=>d.month==='Saldos Iniciales'&&/^[123]/.test(d.name))?'✓ Cargado':'Sin cargar', ok:dbData.some(d=>(d.month===configMes||d.month==='Saldos Iniciales')&&/^[123]/.test(d.name)), accept:'.xlsx,.xls,.xlsm,.txt', handler:handleUploadSaldos },
+            { num:'03', icon:'📊', label:`Estado de Resultado — ${configMes}`, sub:'Cuentas 4,5,6 de ingresos, costos y gastos', status:dbData.some(d=>d.month===configMes&&!/^[123]/.test(d.name))?'✓ Cargado':'Sin cargar', ok:dbData.some(d=>d.month===configMes&&!/^[123]/.test(d.name)), accept:'.xlsx,.xls,.xlsm,.txt,.csv', handler:handleUploadResultados, multiple:true },
+            { num:'04', icon:'🔵', label:`Auxiliar CxC — ${configMes}`, sub:'Cuentas por cobrar de clientes', status:cxcTotal>0?`✓ ${cxcTotal} registros`:'Sin cargar', ok:cxcTotal>0, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler:handleUploadCxC, multiple:true, color:'blue' },
+            { num:'05', icon:'🔴', label:`Auxiliar CxP — ${configMes}`, sub:'Cuentas por pagar a proveedores', status:cxpTotal>0?`✓ ${cxpTotal} registros`:'Sin cargar', ok:cxpTotal>0, accept:'.xlsx,.xls,.xlsm,.csv,.txt', handler:handleUploadCxP, multiple:true, color:'red' },
+            { num:'06', icon:'🏭', label:`Activos Fijos — ${configMes}`, sub:'Inventario de activos fijos y depreciación', status:afCount>0?`✓ ${afCount} activos`:'Sin cargar', ok:afCount>0, accept:'.xlsx,.xls,.xlsm', handler:handleUploadActivosFijos, multiple:true },
+          ].map(step=>{
+            const borderColor = step.color==='blue'?'border-blue-700/50 bg-blue-950/20':step.color==='red'?'border-red-700/50 bg-red-950/20':step.ok?'border-emerald-700/40 bg-emerald-950/20':'border-slate-700 bg-slate-800/20';
+            return (
+              <div key={step.num} className={`rounded-xl border ${borderColor} p-4 flex items-center gap-4`}>
+                <span className="text-xl flex-shrink-0">{step.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[9px] font-black text-slate-600 uppercase">PASO {step.num}</span>
+                    {step.global && <span className="text-[8px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-black uppercase">Global</span>}
+                    {step.ok && <span className="text-[8px] bg-emerald-800 text-emerald-300 px-1.5 py-0.5 rounded font-black uppercase">✓ Listo</span>}
+                  </div>
+                  <p className="text-white font-black text-xs uppercase tracking-wide">{step.label}</p>
+                  <p className="text-slate-500 text-[9px] truncate">{step.sub}</p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <span className={`text-[9px] font-bold ${step.ok?'text-emerald-400':'text-slate-500'}`}>{step.status}</span>
+                  <label className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase cursor-pointer transition-all flex items-center gap-1 ${step.ok?'bg-slate-700 text-slate-300 hover:bg-slate-600':'bg-orange-500 text-white hover:bg-orange-600'}`}>
+                    <Upload size={11}/> {step.ok?'Reemplazar':'Cargar'}
+                    <input type="file" className="hidden" accept={step.accept} multiple={step.multiple} onChange={step.handler}/>
+                  </label>
+                  {step.ok && (
+                    <button onClick={()=>clearSlot(step.num)} className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase">✕ Limpiar</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Plan de cuentas global */}
+        {!hasPlan && (
+          <div className="bg-amber-950/30 border border-amber-700/50 rounded-2xl px-5 py-3 flex items-center gap-3">
+            <AlertTriangle size={14} className="text-amber-400"/>
+            <p className="text-amber-300 text-[10px] font-bold uppercase">Carga primero el Plan de Cuentas (Paso 01) — es necesario para procesar los saldos de balance.</p>
+          </div>
+        )}
       </main>
     </div>
-  );
+    );
+  }
 
-  // ── DASHBOARD PRINCIPAL — diseño SaaS light ────────────────────────────────
+    // ── DASHBOARD PRINCIPAL — diseño SaaS light ────────────────────────────────
   const modules = [
     { id:'resultado',     title:'Estado de Resultados',      desc:'P&L mensual y acumulado por cuentas',
       iconBg:'bg-slate-800', icon:<LineChart size={22} className="text-white"/>,
