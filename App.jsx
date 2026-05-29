@@ -1378,37 +1378,45 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     // ── Inyectar depreciación mensual desde auxiliar de Activos Fijos ─────────
     const afRecords = activosFijosData?.records || [];
     if (afRecords.length > 0) {
-      const MONTH_ORDER = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      const BASE_M = 4; // Abril es el mes base del auxiliar
-
-      // Para "General": sumar 1 mes por cada mes disponible en dbData
-      // Para un mes específico: exactamente 1 mes (la depreciación mensual)
-      // NUNCA multiplicar por monthsToProcess.length de forma plana porque acumula incorrectamente
       const monthsToProcess = selectedMonth === 'General'
         ? [...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes')
         : [selectedMonth];
-      const numMeses = monthsToProcess.length; // 1 para mes puntual, N para acumulado
+      const numMeses = monthsToProcess.length;
 
-      // Agrupar depreciación por cuenta de gasto — 1 mes por período
+      // Agrupar por cuenta de gasto EXACTA del auxiliar (cuentaGasto por activo)
+      // Si no hay cuentaGasto, usar RUBRO_DEPR_MAP para determinar la cuenta
       const depByCtaGasto = {};
       afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
-        const rubro = getRubro(r);
-        const map = RUBRO_DEPR_MAP[rubro];
-        const perMesBs = r.depreMensual;
+        const perMesBs  = r.depreMensual;
         const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
-        const nDebe = map ? map.debe.length : 1;
-        if (map) {
-          map.debe.forEach(d => {
-            const label = `${d.cta}-${d.nombre}`;
-            if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
-            depByCtaGasto[label].montoBs  += (perMesBs  / nDebe) * numMeses;
-            depByCtaGasto[label].montoUSD += (perMesUSD / nDebe) * numMeses;
-          });
-        } else {
-          const label = `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+        const ctaGasto  = (r.cuentaGasto||'').trim();
+
+        if (ctaGasto && /^\d/.test(ctaGasto)) {
+          // Usar la cuenta específica del activo (lo más preciso)
+          const codeMatch = ctaGasto.match(/^(\d[\d.]+)/);
+          const code  = codeMatch ? codeMatch[1] : ctaGasto;
+          const label = ctaGasto.includes('-') ? ctaGasto : `${code}-DEPRECIACIÓN`;
           if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
           depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
           depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
+        } else {
+          // Fallback: RUBRO_DEPR_MAP con split igualitario
+          const rubro = getRubro(r);
+          const map = RUBRO_DEPR_MAP[rubro];
+          const nDebe = map ? map.debe.length : 1;
+          if (map) {
+            map.debe.forEach(d => {
+              const label = `${d.cta}-${d.nombre}`;
+              if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
+              depByCtaGasto[label].montoBs  += (perMesBs  / nDebe) * numMeses;
+              depByCtaGasto[label].montoUSD += (perMesUSD / nDebe) * numMeses;
+            });
+          } else {
+            const label = `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
+            if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
+            depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
+            depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
+          }
         }
       });
 
@@ -2057,6 +2065,8 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           if (v.usd > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.usd * tasa);
         });
         Object.entries(depBsByRubro).forEach(([rubro, depBs]) => {
+          // depBs viene directamente del auxiliar (valor histórico real en Bs)
+          // USD = depBs / tasa actual
           if (depBs > 0) insertLeaf(['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', rubro], AF_DEP_LABEL[rubro]||`DEP. ACUMULADA ${rubro}`, -(depBs / tasa), -depBs);
         });
       }
@@ -2970,7 +2980,7 @@ function ChartLegend({ items }) {
   );
 }
 
-function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
+function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {}, afByMonth = {}, activosFijosData }) {
   const MESES_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const fmtK = v => { const a=Math.abs(v||0); if(a>=1e6)return (v/1e6).toFixed(2)+'M'; if(a>=1e3)return (v/1e3).toFixed(1)+'K'; return (v||0).toFixed(0); };
   const fmtN = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
@@ -3042,6 +3052,61 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {} }) {
       return { u, b };
     };
     root.forEach(sumNode);
+
+    // ── Inyectar depreciación del AF auxiliar del mes (igual que EstadoResultadoView) ──
+    const afData = afByMonth[m] || (activosFijosData?.records?.length ? activosFijosData : null);
+    const afRecs = afData?.records || [];
+    if (afRecs.length > 0) {
+      const depByLabel = {};
+      afRecs.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
+        const perMesBs  = r.depreMensual;
+        const t = r.tasa || tasaByMonth[m] || 1;
+        const perMesUSD = t > 0 ? perMesBs / t : 0;
+        const ctaGasto  = (r.cuentaGasto||'').trim();
+        if (ctaGasto && /^\d/.test(ctaGasto)) {
+          const label = ctaGasto.includes('-') ? ctaGasto : `${ctaGasto}-DEPRECIACIÓN`;
+          if (!depByLabel[label]) depByLabel[label] = {bs:0,usd:0};
+          depByLabel[label].bs  += perMesBs;
+          depByLabel[label].usd += perMesUSD;
+        } else {
+          const rubro = getRubro(r);
+          const map = RUBRO_DEPR_MAP[rubro];
+          if (map) {
+            const nDebe = map.debe.length;
+            map.debe.forEach(d => {
+              const label = `${d.cta}-${d.nombre}`;
+              if (!depByLabel[label]) depByLabel[label] = {bs:0,usd:0};
+              depByLabel[label].bs  += perMesBs  / nDebe;
+              depByLabel[label].usd += perMesUSD / nDebe;
+            });
+          }
+        }
+      });
+      // Insertar las depreciaciones en el árbol
+      Object.entries(depByLabel).forEach(([label, vals]) => {
+        const cta = label.split('-')[0].trim();
+        const isGasto = /^6/.test(cta);
+        const path5Node = root.find(n => /^(COSTO)/i.test(n.n));
+        const path6Node = root.find(n => /^(GASTO)/i.test(n.n));
+        const folderPath = isGasto
+          ? (path6Node ? path6Node.n : 'GASTOS')
+          : (path5Node ? path5Node.n : 'COSTOS');
+        const subPath = isGasto ? 'GASTOS DE DEPRECIACIÓN' : 'DEPRECIACIÓN';
+        // Insert/update leaf
+        const insertInRoot = (sectionName, sub, leafName, u, b) => {
+          const normKey2 = s => (s||'').trim().replace(/\s+/g,' ').toUpperCase();
+          let section = root.find(n => normKey2(n.n)===normKey2(sectionName));
+          if (!section) { section = {n:sectionName, c:[], u:0, b:0}; root.push(section); }
+          let subNode = section.c.find(n => normKey2(n.n)===normKey2(sub));
+          if (!subNode) { subNode = {n:sub, c:[], u:0, b:0}; section.c.push(subNode); }
+          let leaf2 = subNode.c.find(n => normKey2(n.n)===normKey2(leafName)&&n.isLeaf);
+          if (!leaf2) subNode.c.push({n:leafName, u, b, isLeaf:true});
+          else { leaf2.u += u; leaf2.b += b; }
+        };
+        insertInRoot(folderPath, subPath, label, vals.usd, vals.bs);
+      });
+      root.forEach(sumNode); // re-sum after injection
+    }
 
     // Classify each root section the same way EstadoResultadoView does
     let ingresos = 0, costoVentas = 0, costosOp = 0, gastos = 0;
@@ -3820,7 +3885,7 @@ function ReportesFinancierosApp() {
   if (view === 'resultado')     return <EstadoResultadoView   onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={getAfForMonth('General') || activosFijosData}/>;
   if (view === 'comparativo')   return <AnalisisComparativoView onBack={()=>setView('dashboard')} dbData={dbData} activosFijosData={activosFijosData}/>;
   if (view === 'balance')       return <BalanceGeneralView    onBack={()=>setView('dashboard')} dbData={dbData} auxByMonth={auxByMonth} afByMonth={afByMonth} auxDataConfig={auxDataConfig} activosFijosData={activosFijosData} tasaByMonth={tasaByMonth} onSaveTasa={saveTasa}/>;
-  if (view === 'dashfin')       return <DashboardFinancieroView onBack={()=>setView('dashboard')} dbData={dbData} tasaByMonth={tasaByMonth}/>;
+  if (view === 'dashfin')       return <DashboardFinancieroView onBack={()=>setView('dashboard')} dbData={dbData} tasaByMonth={tasaByMonth} afByMonth={afByMonth} activosFijosData={activosFijosData}/>;
   if (view === 'inversiones')   return <InversionesView       onBack={()=>setView('dashboard')} activosFijosData={getAfForMonth(configMes)} setActivosFijosData={(d)=>setAfByMonth(prev=>({...prev,[configMes]:d}))}/>;
 
   if (view === 'configuracion') return (
