@@ -1944,13 +1944,26 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   const [currency, setCurrency] = useState('both');
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Saldos Abril' : m;
 
-  // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback Abril para Saldos Iniciales)
+  // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback cualquier mes disponible)
   const currentAux = (auxByMonth && auxByMonth[selectedMonth]) || auxDataConfig || {};
   const currentAF  = (() => {
-    if (afByMonth && afByMonth[selectedMonth]) return afByMonth[selectedMonth];
+    // 1. Mes exacto
+    if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
+    // 2. Legacy key
     if (activosFijosData?.records?.length) return activosFijosData;
-    // 'Saldos Iniciales' es el balance de Abril — buscar AF de Abril
-    if (selectedMonth === 'Saldos Iniciales' && afByMonth?.['Abril']) return afByMonth['Abril'];
+    // 3. Para 'Saldos Iniciales' o cuando no hay exacto: buscar Abril primero, luego cualquier mes
+    if (afByMonth && Object.keys(afByMonth).length > 0) {
+      const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      // Ordenar por mes y tomar el más reciente disponible ≤ mes del balance
+      const mesNum = MORD2[selectedMonth] || MORD2['Abril'] || 4;
+      const candidates = Object.entries(afByMonth)
+        .filter(([m, v]) => v?.records?.length && (MORD2[m]||99) <= mesNum)
+        .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
+      if (candidates.length > 0) return candidates[0][1];
+      // Si no hay ninguno ≤ mesNum, tomar el primero disponible
+      const any = Object.values(afByMonth).find(v => v?.records?.length);
+      if (any) return any;
+    }
     return {records:[]};
   })();
 
@@ -3840,11 +3853,21 @@ function ReportesFinancierosApp() {
 
   const getAuxForMonth = (mes) => auxByMonth[mes] || auxDataConfig || {};
   const getAfForMonth  = (mes) => {
-    // Only use per-month data — do NOT fall back to legacy activosFijosData
-    // This prevents a month with no AF upload from showing data from another month
-    if (afByMonth[mes]) return afByMonth[mes];
-    // Special case: if asking for 'General' or 'Abril' and legacy data exists, use it
+    const MORD3 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+    // 1. Mes exacto en per-month store
+    if (afByMonth?.[mes]?.records?.length) return afByMonth[mes];
+    // 2. Legacy key (solo para Abril/General donde se cargó originalmente)
     if ((mes === 'General' || mes === 'Abril') && activosFijosData?.records?.length) return activosFijosData;
+    // 3. Para cualquier mes: buscar el AF más reciente disponible ≤ ese mes
+    if (afByMonth && Object.keys(afByMonth).length > 0) {
+      const mesNum = MORD3[mes] || 99;
+      const candidates = Object.entries(afByMonth)
+        .filter(([m, v]) => v?.records?.length && (MORD3[m]||99) <= mesNum)
+        .sort((a, b) => (MORD3[b[0]]||0) - (MORD3[a[0]]||0));
+      if (candidates.length > 0) return candidates[0][1];
+      const any = Object.values(afByMonth).find(v => v?.records?.length);
+      if (any) return any;
+    }
     return {records:[]};
   };
 
