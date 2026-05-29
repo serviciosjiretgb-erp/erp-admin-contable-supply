@@ -1002,8 +1002,18 @@ const processActivosFijosExcel = async (files) => {
       const iCuenta=ci('cuenta contable del activo','cuenta del activo','cuenta activo','cuenta del bien','cuentaactivo');
       // Buscar columnas de cuentas de depreciación por nombre o por posición relativa
       // En muchos auxiliares venezolanos: col N = cuenta gasto dep, col N+1 = cuenta dep. acum
-      const iCuentaGasto   = ci('cuenta gasto depreciacion','cuenta gasto dep','gasto depreciacion','cuenta debito','ctadebito','cta gasto','cta debito');
-      const iCuentaDepAcum = ci('cuenta depreciacion acumulada','cuenta dep acum','cuenta acumulada','cuenta credito','ctacredito','cta haber','cta acum');
+      const iCuentaGasto   = ci(
+        'cuenta gasto depreciacion','cuenta gasto dep','gasto depreciacion',
+        'cuenta debito','ctadebito','cta gasto','cta debito',
+        'cuenta gasto','cta. gasto','n cuenta gasto','cuenta de gasto',
+        'cuenta dep gasto','cuenta gasto dep','cuentagasto','c/gasto',
+        'cuenta debe','ctadebe','debito'
+      );
+      const iCuentaDepAcum = ci(
+        'cuenta depreciacion acumulada','cuenta dep acum','cuenta acumulada',
+        'cuenta credito','ctacredito','cta haber','cta acum',
+        'cuenta haber','ctahaber','cuenta dep acumulada','c/dep acum'
+      );
       const iDeprMet=hRow.findIndex(h=>h.includes('depreciacion')&&!h.includes('acum'));
       const iDepAcum1=hRow.findIndex(h=>h.includes('depreciacion')&&h.includes('acum'));
       const iFecha=ci('fecha de adquisicion','fecha adquisicion','fecha');
@@ -1400,17 +1410,31 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
           depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
           depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
         } else {
-          // Fallback: RUBRO_DEPR_MAP con split igualitario
+          // Fallback sin cuentaGasto: asignar UNA cuenta según keywords del activo
           const rubro = getRubro(r);
           const map = RUBRO_DEPR_MAP[rubro];
-          const nDebe = map ? map.debe.length : 1;
           if (map) {
-            map.debe.forEach(d => {
-              const label = `${d.cta}-${d.nombre}`;
+            // Si el rubro tiene UNA sola cuenta DEBE, usarla directamente
+            if (map.debe.length === 1) {
+              const d0 = map.debe[0];
+              const label = `${d0.cta}-${d0.nombre}`;
               if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
-              depByCtaGasto[label].montoBs  += (perMesBs  / nDebe) * numMeses;
-              depByCtaGasto[label].montoUSD += (perMesUSD / nDebe) * numMeses;
-            });
+              depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
+              depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
+            } else {
+              // Rubros con 2 cuentas (VEHÍCULOS, MOBILIARIO, EQUIPOS):
+              // Clasificar por keywords del activo para determinar si es operativo (5.x) o administrativo (6.x)
+              const desc = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
+              const esAdm = /JAC|T6|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI|PERSONAL/.test(desc);
+              // Cuentas 5.x = operativo (default), 6.x = administrativo
+              const ctaElegida = esAdm
+                ? map.debe.find(d => /^6/.test(d.cta)) || map.debe[0]
+                : map.debe.find(d => /^5/.test(d.cta)) || map.debe[0];
+              const label = `${ctaElegida.cta}-${ctaElegida.nombre}`;
+              if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
+              depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
+              depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
+            }
           } else {
             const label = `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
             if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
@@ -1918,9 +1942,15 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   const [currency, setCurrency] = useState('both');
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Saldos Abril' : m;
 
-  // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy)
+  // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback Abril para Saldos Iniciales)
   const currentAux = (auxByMonth && auxByMonth[selectedMonth]) || auxDataConfig || {};
-  const currentAF  = (afByMonth  && afByMonth[selectedMonth])  || activosFijosData || {records:[]};
+  const currentAF  = (() => {
+    if (afByMonth && afByMonth[selectedMonth]) return afByMonth[selectedMonth];
+    if (activosFijosData?.records?.length) return activosFijosData;
+    // 'Saldos Iniciales' es el balance de Abril — buscar AF de Abril
+    if (selectedMonth === 'Saldos Iniciales' && afByMonth?.['Abril']) return afByMonth['Abril'];
+    return {records:[]};
+  })();
 
   const MORD = {'Saldos Iniciales':0,Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
 
@@ -3072,13 +3102,23 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {}, afByMonth =
           const rubro = getRubro(r);
           const map = RUBRO_DEPR_MAP[rubro];
           if (map) {
-            const nDebe = map.debe.length;
-            map.debe.forEach(d => {
-              const label = `${d.cta}-${d.nombre}`;
+            if (map.debe.length === 1) {
+              const d0 = map.debe[0];
+              const label = `${d0.cta}-${d0.nombre}`;
               if (!depByLabel[label]) depByLabel[label] = {bs:0,usd:0};
-              depByLabel[label].bs  += perMesBs  / nDebe;
-              depByLabel[label].usd += perMesUSD / nDebe;
-            });
+              depByLabel[label].bs  += perMesBs;
+              depByLabel[label].usd += perMesUSD;
+            } else {
+              const desc = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
+              const esAdm = /JAC|T6|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI|PERSONAL/.test(desc);
+              const ctaElegida = esAdm
+                ? map.debe.find(d => /^6/.test(d.cta)) || map.debe[0]
+                : map.debe.find(d => /^5/.test(d.cta)) || map.debe[0];
+              const label = `${ctaElegida.cta}-${ctaElegida.nombre}`;
+              if (!depByLabel[label]) depByLabel[label] = {bs:0,usd:0};
+              depByLabel[label].bs  += perMesBs;
+              depByLabel[label].usd += perMesUSD;
+            }
           }
         }
       });
