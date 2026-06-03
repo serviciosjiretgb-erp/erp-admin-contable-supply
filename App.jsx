@@ -934,24 +934,52 @@ const processAuxFile = async (files) => {
           break;
         }
       }
-      if (headerIdx === -1) { colMap = { cod:0, nombre:1, doc:2, emision:3, vence:4, monto:5 }; headerIdx = 0; }
+      // Detectar columna de cuentaContable en formato antiguo también
+      let colCuenta = -1;
+      if (headerIdx >= 0 && headerIdx < dataRows.length) {
+        const hRow = dataRows[headerIdx] || [];
+        hRow.forEach((c, idx) => {
+          const s = c ? String(c).toLowerCase().trim() : '';
+          if ((s.includes('cuenta') || s.includes('cta') || s.includes('ctble')) && colCuenta === -1) colCuenta = idx;
+        });
+      }
       for (let i = headerIdx + 1; i < dataRows.length; i++) {
         const row = dataRows[i];
         if (!row || row.every(c => !c)) continue;
         const nombre = colMap.nombre >= 0 && row[colMap.nombre] ? String(row[colMap.nombre]).trim().toUpperCase() : '';
         const monto = colMap.monto >= 0 ? parseVal(row[colMap.monto]) : null;
         if (!nombre || monto === null || monto === 0) continue;
+        // Intentar obtener cuentaContable de la columna detectada o de cualquier columna que parezca un código
+        let cuentaContable = colCuenta >= 0 && row[colCuenta] ? String(row[colCuenta]).trim() : '';
+        if (!cuentaContable) {
+          // Buscar en todas las celdas un patrón de código contable
+          for (const cell of row) {
+            if (cell && /^\d\.\d\.\d{2}\.\d{2}/.test(String(cell).trim())) {
+              cuentaContable = String(cell).trim(); break;
+            }
+          }
+        }
+        const codeMatch = cuentaContable.match(/^(\d[\d.]+)/);
+        const accountCode = codeMatch ? codeMatch[1] : null;
+        const mapInfoFromCuenta = accountCode ? ACCOUNT_MAPS[accountCode] : null;
+
         const record = {
           cod: colMap.cod >= 0 && row[colMap.cod] ? String(row[colMap.cod]).trim() : '-',
-          nombre, operacion: '-', dias: '-', descripcion: '-', cuentaContable: '',
+          nombre, operacion: '-', dias: '-', descripcion: '-', cuentaContable,
           doc: colMap.doc >= 0 && row[colMap.doc] ? String(row[colMap.doc]).trim() : '-',
           emision: colMap.emision >= 0 ? parseDate(row[colMap.emision]) : '-',
           vence: colMap.vence >= 0 ? parseDate(row[colMap.vence]) : '-', monto,
         };
-        if (nombre.includes('ZULIANA DE EMPAQUE')) result.cxc_zuliana.push({...record, monto: Math.abs(monto)});
-        else if (nombre.includes('AUTO TOTAL')) result.cxp_autototal.push(record);
-        else if (nombre.includes('SURE PACK')) result.cxp_surepack.push(record);
-        else if (nombre.includes('PACOMELA') || nombre.includes('AGRO INDUSTRIAS LACTEAS')) result.cxp_pacomela.push(record);
+
+        // Prioridad 1: routing por cuentaContable (más preciso)
+        if (mapInfoFromCuenta && result[mapInfoFromCuenta.type] !== undefined) {
+          result[mapInfoFromCuenta.type].push(record);
+        }
+        // Prioridad 2: routing por keywords del nombre
+        else if (nombre.includes('ZULIANA DE EMPAQUE')) result.cxc_zuliana.push({...record, monto: Math.abs(monto)});
+        else if (nombre.includes('AUTO TOTAL') || nombre.includes('AUTOTOTAL') || nombre.includes('VEHICULO') || nombre.includes('VEHÍCULO')) result.cxp_autototal.push(record);
+        else if (nombre.includes('SURE PACK') || nombre.includes('SUREPACK')) result.cxp_surepack.push(record);
+        else if (nombre.includes('PACOMELA') || nombre.includes('AGRO INDUSTRIAS LACTEAS') || nombre.includes('INMUEBLE') || nombre.includes('PACOMELA')) result.cxp_pacomela.push(record);
         else if (nombre.includes('YANCARLOS') || nombre.includes('PEREZ CASANOVA')) result.cxp_yancarlos.push(record);
         else result.cxp_general.push(record);
       }
@@ -1235,18 +1263,23 @@ const ExpandableRow = ({ node, level = 0, totalBaseUSD, defaultOpen = false, hig
 // ============================================================================
 function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
   const mapInfo = ACCOUNT_MAPS[accountCode] || { type: 'cxp_general', label: 'Reporte General' };
-  const allData = auxDataConfig[mapInfo.type] || [];
 
-  // Filtrar solo los registros que pertenecen a esta cuenta específica
+  // Buscar en TODOS los buckets disponibles para este accountCode
+  // (los registros pueden haber caído en cxp_general si el clasificador no los reconoció)
   const filteredData = useMemo(() => {
-    const byCC = allData.filter(d => {
+    const allRecords = Object.values(auxDataConfig).flat().filter(Boolean);
+    // 1. Buscar registros cuya cuentaContable coincide con el accountCode
+    const byCC = allRecords.filter(d => {
       const cc = (d.cuentaContable || '').trim();
       return cc.startsWith(accountCode) || cc.includes(accountCode);
     });
-    // Si ningún registro tiene cuentaContable configurada, mostrar todos (fallback)
-    return byCC.length > 0 ? byCC : allData;
-  }, [allData, accountCode]);
-  const total = filteredData.reduce((acc, curr) => acc + curr.monto, 0);
+    if (byCC.length > 0) return byCC;
+    // 2. Si no hay coincidencia por cuenta, usar el bucket designado completo
+    const bucketData = auxDataConfig[mapInfo.type] || [];
+    return bucketData;
+  }, [auxDataConfig, accountCode, mapInfo.type]);
+
+  const total = filteredData.reduce((acc, curr) => acc + (curr.monto||0), 0);
   const fmtCur = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const isCxC = mapInfo.type.includes('cxc');
 
@@ -1945,7 +1978,32 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Saldos Abril' : m;
 
   // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback cualquier mes disponible)
-  const currentAux = (auxByMonth && auxByMonth[selectedMonth]) || auxDataConfig || {};
+  const currentAux = (() => {
+    const hasData = (obj) => obj && Object.values(obj).some(v => Array.isArray(v) && v.length > 0);
+    // 1. Mes exacto
+    if (hasData(auxByMonth?.[selectedMonth])) return auxByMonth[selectedMonth];
+    // 2. Legacy key
+    if (hasData(auxDataConfig)) return auxDataConfig;
+    // 3. Para 'Saldos Iniciales': aux más reciente disponible sin límite
+    if (selectedMonth === 'Saldos Iniciales' && auxByMonth && Object.keys(auxByMonth).length > 0) {
+      const MORD_A = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const sorted = Object.entries(auxByMonth).filter(([,v]) => hasData(v))
+        .sort((a,b) => (MORD_A[b[0]]||0) - (MORD_A[a[0]]||0));
+      if (sorted.length > 0) return sorted[0][1];
+    }
+    // 4. Para cualquier otro mes: más reciente disponible ≤ ese mes, o cualquiera si no hay
+    if (auxByMonth && Object.keys(auxByMonth).length > 0) {
+      const MORD_A = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const mesNum = MORD_A[selectedMonth] || 99;
+      const cands = Object.entries(auxByMonth).filter(([m,v]) => hasData(v) && (MORD_A[m]||99) <= mesNum)
+        .sort((a,b) => (MORD_A[b[0]]||0) - (MORD_A[a[0]]||0));
+      if (cands.length > 0) return cands[0][1];
+      const any = Object.entries(auxByMonth).filter(([,v]) => hasData(v))
+        .sort((a,b) => (MORD_A[b[0]]||0) - (MORD_A[a[0]]||0));
+      if (any.length > 0) return any[0][1];
+    }
+    return {};
+  })();
   const currentAF  = (() => {
     // 1. Mes exacto
     if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
@@ -3861,7 +3919,22 @@ function ReportesFinancierosApp() {
   const [auxDataConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_erp_aux_data')||'{}'); } catch(e){return {};} });
   const [activosFijosData] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_af_data')||'null'); return s||{records:[]}; } catch(e){return {records:[]};} });
 
-  const getAuxForMonth = (mes) => auxByMonth[mes] || auxDataConfig || {};
+  const getAuxForMonth  = (mes) => {
+    const hasData = (obj) => obj && Object.values(obj).some(v => Array.isArray(v) && v.length > 0);
+    const MORD3 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+    if (hasData(auxByMonth?.[mes])) return auxByMonth[mes];
+    if (hasData(auxDataConfig)) return auxDataConfig;
+    if (auxByMonth && Object.keys(auxByMonth).length > 0) {
+      const sorted = Object.entries(auxByMonth).filter(([,v]) => hasData(v))
+        .sort((a,b) => (MORD3[b[0]]||0) - (MORD3[a[0]]||0));
+      if (!sorted.length) return {};
+      if (mes === 'General' || mes === 'Saldos Iniciales') return sorted[0][1];
+      const mesNum = MORD3[mes] || 99;
+      const cand = sorted.filter(([m]) => (MORD3[m]||99) <= mesNum);
+      return (cand.length > 0 ? cand[0] : sorted[0])[1];
+    }
+    return {};
+  };
   const getAfForMonth  = (mes) => {
     const MORD3 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
     // 1. Mes exacto en per-month store
@@ -4122,7 +4195,13 @@ function ReportesFinancierosApp() {
               }
               const pkg = {
                 version:'2.0', exportDate:new Date().toISOString(), exportedBy:'Servicios Jiret G&B, C.A.',
-                data:{ dbData, planCuentas, tasaByMonth, auxByMonth, afByMonth },
+                data:{
+                  dbData, planCuentas, tasaByMonth,
+                  auxByMonth, afByMonth,
+                  // Legacy keys — para compatibilidad con sesiones anteriores
+                  auxDataConfig,
+                  activosFijosData: activosFijosData || {records:[]},
+                },
               };
               const months=[...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes');
               const now=new Date();
@@ -4157,6 +4236,11 @@ function ReportesFinancierosApp() {
                   localStorage.setItem('jiret_tasa_by_month',JSON.stringify(pkg.data.tasaByMonth||{}));
                   localStorage.setItem('jiret_aux_by_month', JSON.stringify(pkg.data.auxByMonth||{}));
                   localStorage.setItem('jiret_af_by_month',  JSON.stringify(pkg.data.afByMonth||{}));
+                  // Restaurar legacy keys también
+                  if (pkg.data.auxDataConfig && Object.keys(pkg.data.auxDataConfig).length > 0)
+                    localStorage.setItem('jiret_aux_config', JSON.stringify(pkg.data.auxDataConfig));
+                  if (pkg.data.activosFijosData?.records?.length > 0)
+                    localStorage.setItem('jiret_af_data', JSON.stringify(pkg.data.activosFijosData));
                   // Verificar que se guardó
                   const saved=JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]');
                   if(saved.length !== pkg.data.dbData.length) {
