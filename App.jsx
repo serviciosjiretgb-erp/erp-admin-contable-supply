@@ -4115,23 +4115,22 @@ function ReportesFinancierosApp() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <button onClick={() => {
+              // Leer del estado React (no de localStorage — puede estar desactualizado)
+              if (!dbData.length && !Object.keys(planCuentas).length) {
+                alert('⚠️ No hay datos cargados para exportar. Carga los archivos primero.');
+                return;
+              }
               const pkg = {
                 version:'2.0', exportDate:new Date().toISOString(), exportedBy:'Servicios Jiret G&B, C.A.',
-                data:{
-                  dbData:      JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]'),
-                  planCuentas: JSON.parse(localStorage.getItem('jiret_plan_cuentas')||'{}'),
-                  tasaByMonth: JSON.parse(localStorage.getItem('jiret_tasa_by_month')||'{}'),
-                  auxByMonth:  JSON.parse(localStorage.getItem('jiret_aux_by_month')||'{}'),
-                  afByMonth:   JSON.parse(localStorage.getItem('jiret_af_by_month')||'{}'),
-                },
+                data:{ dbData, planCuentas, tasaByMonth, auxByMonth, afByMonth },
               };
-              const months=[...new Set(pkg.data.dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes');
+              const months=[...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes');
               const now=new Date();
               const fn=`JIRET_DATOS_${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}.json`;
-              const blob=new Blob([JSON.stringify(pkg,null,2)],{type:'application/json'});
+              const blob=new Blob([JSON.stringify(pkg)],{type:'application/json'});
               const url=URL.createObjectURL(blob);
               const a=document.createElement('a'); a.href=url; a.download=fn; a.click(); URL.revokeObjectURL(url);
-              alert(`✅ Paquete exportado\n\n📁 ${fn}\n📊 ${pkg.data.dbData.length} registros\n📅 Meses: ${months.join(', ')}\n\nComparte este archivo con los directivos.`);
+              alert(`✅ Paquete exportado correctamente\n\n📁 ${fn}\n📊 ${dbData.length} registros contables\n📅 Meses: ${months.join(', ')}\n\nComparte este archivo con los directivos.`);
             }} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-colors shadow-lg">
               <FileOutput size={14}/> Exportar Paquete
             </button>
@@ -4142,17 +4141,31 @@ function ReportesFinancierosApp() {
                 try {
                   const text=await e.target.files[0].text();
                   const pkg=JSON.parse(text);
-                  if(!pkg.data||!pkg.data.dbData){alert('❌ Archivo inválido.');return;}
+                  if(!pkg?.data?.dbData || !Array.isArray(pkg.data.dbData)) {
+                    alert('❌ Archivo inválido — no es un paquete de datos JIRET.\n\nAsegúrate de usar el archivo generado por "Exportar Paquete".');
+                    return;
+                  }
+                  if(pkg.data.dbData.length === 0) {
+                    alert('⚠️ El paquete está vacío (0 registros). Exporta nuevamente cuando tengas datos cargados.');
+                    return;
+                  }
                   const months=[...new Set(pkg.data.dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes');
-                  if(!window.confirm(`¿Importar paquete?\n\n📅 Meses: ${months.join(', ')}\n📊 ${pkg.data.dbData.length} registros\n📆 Exportado: ${pkg.exportDate?new Date(pkg.exportDate).toLocaleString('es-VE'):'N/A'}\n\n⚠️ Esto reemplaza todos tus datos actuales.`)) return;
+                  if(!window.confirm(`¿Importar paquete de datos?\n\n📊 ${pkg.data.dbData.length} registros contables\n📅 Meses: ${months.join(', ')}\n📆 Exportado: ${pkg.exportDate?new Date(pkg.exportDate).toLocaleString('es-VE'):'N/A'}\n\n⚠️ Esto reemplazará todos los datos actuales en este navegador.`)) return;
+                  // Guardar directamente en localStorage
                   localStorage.setItem('jiret_erp_db_data',  JSON.stringify(pkg.data.dbData));
                   localStorage.setItem('jiret_plan_cuentas', JSON.stringify(pkg.data.planCuentas||{}));
                   localStorage.setItem('jiret_tasa_by_month',JSON.stringify(pkg.data.tasaByMonth||{}));
                   localStorage.setItem('jiret_aux_by_month', JSON.stringify(pkg.data.auxByMonth||{}));
                   localStorage.setItem('jiret_af_by_month',  JSON.stringify(pkg.data.afByMonth||{}));
-                  alert(`✅ Datos importados.\nMeses: ${months.join(', ')}\n\nLa página se recargará.`);
+                  // Verificar que se guardó
+                  const saved=JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]');
+                  if(saved.length !== pkg.data.dbData.length) {
+                    alert('❌ Error al guardar los datos. Intenta nuevamente.');
+                    return;
+                  }
+                  alert(`✅ ${saved.length} registros importados correctamente.\nMeses: ${months.join(', ')}\n\nLa página se recargará ahora.`);
                   window.location.reload();
-                } catch(err){alert('❌ Error: '+err.message);}
+                } catch(err){alert('❌ Error al leer el archivo: '+err.message+'\n\nVerifica que el archivo no esté corrupto.');}
                 e.target.value='';
               }}/>
             </label>
