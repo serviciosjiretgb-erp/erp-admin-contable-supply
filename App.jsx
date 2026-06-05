@@ -1948,18 +1948,31 @@ const AF_CATEGORY_MAP_BY_CODE = {
 
 function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConfig, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
   const availableMonths = useMemo(() => {
+    const MORD_B = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
     const balanceRecords = dbData.filter(item =>
-      item.path.toUpperCase().includes('ACTIVO') ||
-      item.path.toUpperCase().includes('PASIVO') ||
-      item.path.toUpperCase().includes('PATRIMONIO') ||
+      (item.path||'').toUpperCase().includes('ACTIVO') ||
+      (item.path||'').toUpperCase().includes('PASIVO') ||
+      (item.path||'').toUpperCase().includes('PATRIMONIO') ||
       /^[123]/.test(item.name)
     );
-    const months = [...new Set(balanceRecords.map(d => d.month))];
-    const siIdx = months.indexOf('Saldos Iniciales');
-    if (siIdx > 0) { months.splice(siIdx, 1); months.unshift('Saldos Iniciales'); }
-    return months;
+    const months = [...new Set(balanceRecords.map(d => d.month))].filter(m => m && m !== 'Sin Mes');
+    // Ordenar: Saldos Iniciales primero, luego cronológico
+    return months.sort((a,b) => {
+      if (a === 'Saldos Iniciales') return -1;
+      if (b === 'Saldos Iniciales') return 1;
+      return (MORD_B[a]||99) - (MORD_B[b]||99);
+    });
   }, [dbData]);
-  const [selectedMonth, setSelectedMonth] = useState(availableMonths[availableMonths.length - 1] || '');
+  const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length - 1] || '');
+  // Sincronizar cuando llegan nuevos meses (ej: se carga Mayo después del montaje)
+  useEffect(() => {
+    if (availableMonths.length > 0) {
+      setSelectedMonth(prev => {
+        if (!prev || !availableMonths.includes(prev)) return availableMonths[availableMonths.length - 1];
+        return prev; // mantener el mes actual si sigue siendo válido
+      });
+    }
+  }, [availableMonths]);
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
   const [activeCode, setActiveCode] = useState(null);
@@ -1975,7 +1988,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   }, [selectedMonth, tasaByMonth]);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
   const [currency, setCurrency] = useState('both');
-  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Saldos Abril' : m;
+  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril (Saldos)' : m;
 
   // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback cualquier mes disponible)
   const currentAux = (() => {
@@ -3973,10 +3986,14 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const d = await processSaldosBalance(e.target.files[0], planCuentas);
-      const months = [...new Set(d.map(x=>x.month))];
-      // Reemplazar solo los meses que trae el archivo nuevo (no borrar otros)
-      setDbData(prev => [...prev.filter(x => !months.includes(x.month)), ...d]);
-      alert(`✅ Balance cargado: ${months.join(', ')} (${d.length} cuentas)`);
+      // El mes del archivo puede venir como 'Saldos Iniciales' si no detecta el mes en el nombre.
+      // Forzar siempre al mes activo en Configuración (configMes) para que no pise datos de otro mes.
+      const detectedMonth = [...new Set(d.map(x=>x.month))][0] || 'Saldos Iniciales';
+      const targetMonth = configMes; // SIEMPRE usar el mes activo del panel de configuración
+      const remapped = d.map(r => ({ ...r, month: targetMonth }));
+      // Limpiar datos previos de ese mes exacto (no tocar otros meses)
+      setDbData(prev => [...prev.filter(x => x.month !== targetMonth), ...remapped]);
+      alert(`✅ Balance cargado para: ${targetMonth}\n${remapped.length} cuentas registradas.${detectedMonth !== targetMonth ? `\n\n(El archivo indicaba "${detectedMonth}" — se guardó como "${targetMonth}" según el mes activo)` : ''}`);
     } catch(err){alert("Error: "+err.message);} e.target.value='';
   };
 
