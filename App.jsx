@@ -1949,18 +1949,21 @@ const AF_CATEGORY_MAP_BY_CODE = {
 function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConfig, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
   const availableMonths = useMemo(() => {
     const MORD_B = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-    const balanceRecords = dbData.filter(item =>
-      (item.path||'').toUpperCase().includes('ACTIVO') ||
-      (item.path||'').toUpperCase().includes('PASIVO') ||
-      (item.path||'').toUpperCase().includes('PATRIMONIO') ||
-      /^[123]/.test(item.name)
-    );
-    const months = [...new Set(balanceRecords.map(d => d.month))].filter(m => m && m !== 'Sin Mes');
-    // Ordenar: Saldos Iniciales primero, luego cronológico
-    return months.sort((a,b) => {
+    // Detectar meses que tienen datos de balance (cuentas 1/2/3 o paths con ACTIVO/PASIVO/PATRIMONIO)
+    const balMonths = [...new Set(dbData
+      .filter(item =>
+        /^[123]/.test(item.name) ||
+        (item.path||'').toUpperCase().includes('ACTIV') ||
+        (item.path||'').toUpperCase().includes('PASIV') ||
+        (item.path||'').toUpperCase().includes('PATRIMON')
+      )
+      .map(d => d.month)
+    )].filter(m => m && m !== 'Sin Mes');
+
+    return balMonths.sort((a, b) => {
       if (a === 'Saldos Iniciales') return -1;
       if (b === 'Saldos Iniciales') return 1;
-      return (MORD_B[a]||99) - (MORD_B[b]||99);
+      return (MORD_B[a] || 99) - (MORD_B[b] || 99);
     });
   }, [dbData]);
   const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length - 1] || '');
@@ -3919,8 +3922,19 @@ function ReportesFinancierosApp() {
   const [afByMonth,  setAfByMonth]  = useState(() => { try { return JSON.parse(localStorage.getItem('jiret_af_by_month') ||'{}'); } catch(e){return {};} });
   // Mes seleccionado en configuración para cargar auxiliares/AF
   const [configMes, setConfigMes] = useState(() => {
-    const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    return meses[new Date().getMonth()] || 'Abril';
+    // Default al último mes con datos cargados, o al mes anterior al actual
+    const MORD = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+    const MNMS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    try {
+      const saved = JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]');
+      const months = [...new Set(saved.map(d=>d.month))].filter(m=>m&&m!=='Sin Mes'&&m!=='Saldos Iniciales'&&MORD[m]);
+      if (months.length > 0) {
+        return months.sort((a,b)=>(MORD[b]||0)-(MORD[a]||0))[0]; // último mes con datos
+      }
+    } catch(e) {}
+    // Fallback: mes anterior al actual
+    const prev = Math.max(0, new Date().getMonth() - 1);
+    return MNMS[prev] || 'Abril';
   });
 
   useEffect(() => { localStorage.setItem('jiret_erp_db_data', JSON.stringify(dbData)); }, [dbData]);
@@ -4095,7 +4109,11 @@ function ReportesFinancierosApp() {
     // Resumen por mes de qué datos hay cargados
     const TODOS_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const mesResumen = TODOS_MESES.map(m => {
-      const hasBalance = dbData.some(d=>(d.month===m||d.month==='Saldos Iniciales')&&/^[123]/.test(d.name));
+      // hasBalance ESTRICTO: solo datos realmente guardados para ese mes exacto
+      // Para 'Abril' también acepta 'Saldos Iniciales' como su balance base
+      const hasBalance = m === 'Abril'
+        ? dbData.some(d=>(d.month===m||d.month==='Saldos Iniciales')&&/^[123]/.test(d.name))
+        : dbData.some(d=>d.month===m&&/^[123]/.test(d.name));
       const hasResultado = dbData.some(d=>d.month===m&&!/^[123]/.test(d.name)&&d.month!=='Sin Mes');
       const hasCxC = (auxByMonth[m]?.cxc_general?.length||0)+(auxByMonth[m]?.cxc_zuliana?.length||0)>0;
       const hasCxP = (auxByMonth[m]?.cxp_general?.length||0)+(auxByMonth[m]?.cxp_surepack?.length||0)+(auxByMonth[m]?.cxp_autototal?.length||0)>0;
