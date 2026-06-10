@@ -2141,7 +2141,6 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     };
 
     // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
-    const hasAFAuxiliar = !!(_currentAF?.records?.length);
 
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
