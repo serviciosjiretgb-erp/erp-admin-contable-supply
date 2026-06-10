@@ -1385,17 +1385,15 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 // ============================================================================
 // 5. VISTA: ESTADO DE RESULTADOS
 // ============================================================================
-// ============================================================================
-// 5. VISTA: ESTADO DE RESULTADOS  
-// ============================================================================
 function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData]);
+  // Rename "Saldos Iniciales" to "Depreciaciones" only in the dropdown label
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Depreciaciones' : m;
   const [selectedMonth, setSelectedMonth] = useState('General');
   const [defaultOpen, setDefaultOpen] = useState(false);
-  const [expandKey, setExpandKey]   = useState(0);
-  const [currency, setCurrency]     = useState('both');
+  const [expandKey, setExpandKey] = useState(0);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
+  const [currency, setCurrency] = useState('both'); // 'usd' | 'bs' | 'both'
   const toggleHighlight = (a) => setHighlightedAccounts(prev => { const s=new Set(prev); if(s.has(a))s.delete(a); else s.add(a); return s; });
   const [openNodeMap, setOpenNodeMap] = useState(() => ({}));
   const reportNodeOpen = (label, isOpen) => setOpenNodeMap(p => ({...p, [label.trim().toUpperCase()]: isOpen}));
@@ -1414,56 +1412,22 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     resData.forEach(item => {
       const pathArray = (item.path||'').split('>');
       let cur = root;
-      pathArray.forEach(folderName => {
-        const key = normKey(folderName);
+      pathArray.forEach(fn => {
+        const key = normKey(fn);
         let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        if (!folder) { folder = { n: fn.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
         cur = folder.c;
       });
       let leaf = cur.find(n => normKey(n.n) === normKey(item.name) && n.isLeaf);
       if (!leaf) cur.push({ n: item.name.trim(), u: item.usd||0, b: item.bs||0, isLeaf: true });
       else { leaf.u += item.usd||0; leaf.b += item.bs||0; }
     });
-
-    // Inyectar depreciación mensual desde auxiliar de Activos Fijos
-    const afRecords = activosFijosData?.records || [];
-    if (afRecords.length > 0) {
-      const MONTH_ORDER = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      const BASE_M = 4;
-      const monthsToProcess = selectedMonth === 'General'
-        ? [...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes')
-        : [selectedMonth];
-      const depByCtaGasto = {};
-      afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
-        const rubro = getRubro(r);
-        const ctaGasto = r.cuentaGasto || `5.x-DEPRECIACIÓN ${rubro}`;
-        const pathDep = ['COSTOS Y GASTOS OPERATIVOS', 'GASTOS DE DEPRECIACIÓN'];
-        if (!depByCtaGasto[ctaGasto]) depByCtaGasto[ctaGasto] = { path: pathDep, montoBs: 0 };
-        depByCtaGasto[ctaGasto].montoBs += r.depreMensual * monthsToProcess.length;
-      });
-      Object.entries(depByCtaGasto).forEach(([ctaGasto, info]) => {
-        let cur = root;
-        info.path.forEach(folderName => {
-          const key = normKey(folderName);
-          let folder = cur.find(n => normKey(n.n) === key);
-          if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
-          cur = folder.c;
-        });
-        const tasa = afRecords.find(r=>r.tasa>0)?.tasa || 487;
-        const usdVal = tasa > 0 ? info.montoBs / tasa : 0;
-        let leaf = cur.find(n => normKey(n.n)===normKey(ctaGasto)&&n.isLeaf);
-        if (!leaf) cur.push({ n: ctaGasto, u: usdVal, b: info.montoBs, isLeaf: true });
-        else { leaf.u += usdVal; leaf.b += info.montoBs; }
-      });
-    }
-
     const compute = (nodes) => { let u=0,b=0; nodes.forEach(n => { if(!n.isLeaf&&n.c?.length){const t=compute(n.c);n.u=t.u;n.b=t.b;} u+=n.u;b+=n.b; }); return {u,b}; };
     compute(root);
     return root;
-  }, [dbData, selectedMonth, activosFijosData]);
+  }, [dbData, selectedMonth]);
 
   const fmt = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
-  const fmts = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
@@ -1484,7 +1448,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
         <div className="flex items-center gap-2">
           <button onClick={()=>setDefaultOpen(!defaultOpen)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">{defaultOpen?'COLAPSAR TODO':'EXPANDIR TODO'}</button>
           <button onClick={()=>{setExpandKey(k=>k+1);setOpenNodeMap({});}} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">↺</button>
-          <button onClick={()=>exportResultadoExcel && exportResultadoExcel(tree, monthLabel(selectedMonth), 0, getOpenSet(), currency)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1"><FileSpreadsheet size={12}/> Excel</button>
+          <button onClick={()=>exportResultadoExcel(tree, monthLabel(selectedMonth), 0, getOpenSet(), currency)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1"><FileSpreadsheet size={12}/> Excel</button>
         </div>
       </header>
       <main className="max-w-5xl mx-auto px-4 py-8">
@@ -1509,33 +1473,39 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
 // ============================================================================
 // 6. VISTA: BALANCE GENERAL
 // ============================================================================
-function BalanceGeneralView({ onBack, dbData, auxByMonth = {}, afByMonth = {}, auxDataConfig = {}, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
-  const MORD_BG = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConfig, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
+  const MORD_B = {Saldos_Iniciales:0,Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
   const availableMonths = useMemo(() => {
     const months = new Set();
-    dbData.forEach(d => { if(d.month && d.month !== 'Sin Mes') { if(/^[123]/.test(d.name)||(d.path||'').toUpperCase().includes('ACTIV')||(d.path||'').toUpperCase().includes('PASIV')||(d.path||'').toUpperCase().includes('PATRIMON')) months.add(d.month); }});
+    dbData.forEach(d => { if(d.month && d.month !== 'Sin Mes') {
+      const isBalRec = /^[123]/.test(d.name) || (d.path||'').toUpperCase().includes('ACTIV') || (d.path||'').toUpperCase().includes('PASIV') || (d.path||'').toUpperCase().includes('PATRIMON');
+      if(isBalRec) months.add(d.month);
+    }});
     Object.keys(afByMonth||{}).forEach(m => { if(afByMonth[m]?.records?.length) months.add(m); });
-    const hasSI=months.has('Saldos Iniciales'), hasA=months.has('Abril');
-    if(hasSI&&hasA) months.delete('Saldos Iniciales');
-    return [...months].filter(Boolean).sort((a,b)=>{ if(a==='Saldos Iniciales')return -1; if(b==='Saldos Iniciales')return 1; return (MORD_BG[a]||99)-(MORD_BG[b]||99); });
-  }, [dbData, afByMonth]);
+    Object.keys(tasaByMonth||{}).forEach(m => { if(m && m !== 'Sin Mes') { const hasAux = auxByMonth?.[m] && Object.values(auxByMonth[m]).some(v=>Array.isArray(v)&&v.length>0); if(hasAux) months.add(m); }});
+    const hasSI = months.has('Saldos Iniciales'), hasAbril = months.has('Abril');
+    if(hasSI && hasAbril) months.delete('Saldos Iniciales');
+    return [...months].filter(Boolean).sort((a,b) => { if(a==='Saldos Iniciales')return -1; if(b==='Saldos Iniciales')return 1; return (MORD_B[a]||99)-(MORD_B[b]||99); });
+  }, [dbData, afByMonth, auxByMonth, tasaByMonth]);
   const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril' : m;
   const displayMonths = availableMonths;
-  const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length-1]||'');
-  useEffect(()=>{ if(availableMonths.length>0) setSelectedMonth(p=>(!p||!availableMonths.includes(p))?availableMonths[availableMonths.length-1]:p); },[availableMonths]);
-  const [tasa, setTasaLocal] = useState(() => tasaByMonth[availableMonths[availableMonths.length-1]||'']||90);
-  const handleTasaChange = (v) => { setTasaLocal(v); if(onSaveTasa&&selectedMonth) onSaveTasa(selectedMonth,v); };
-  useEffect(()=>{ if(selectedMonth){ const s=tasaByMonth[selectedMonth]; if(s) setTasaLocal(s); }},[selectedMonth,tasaByMonth]);
-  const currentAux = (()=>{ const hD=(o)=>o&&Object.values(o).some(v=>Array.isArray(v)&&v.length>0); if(hD(auxByMonth?.[selectedMonth]))return auxByMonth[selectedMonth]; if(hD(auxDataConfig))return auxDataConfig; return {}; })();
-  const [activeCode, setActiveCode] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length-1] || '');
+  useEffect(() => {
+    if(availableMonths.length > 0) setSelectedMonth(prev => (!prev||!availableMonths.includes(prev)) ? availableMonths[availableMonths.length-1] : prev);
+  }, [availableMonths]);
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
+  const [activeCode, setActiveCode] = useState(null);
+  const [tasa, setTasaLocal] = useState(() => tasaByMonth[availableMonths[availableMonths.length-1]||'']||90);
+  const handleTasaChange = (v) => { setTasaLocal(v); if(onSaveTasa && selectedMonth) onSaveTasa(selectedMonth, v); };
+  useEffect(() => { if(selectedMonth) { const saved = tasaByMonth[selectedMonth]; if(saved) setTasaLocal(saved); }}, [selectedMonth, tasaByMonth]);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
-  const [currency, setCurrency] = useState('both'); // 'usd' | 'bs' | 'both'
+  const [currency, setCurrency] = useState('both');
   const toggleHighlight = (a) => setHighlightedAccounts(prev => { const s=new Set(prev); if(s.has(a))s.delete(a); else s.add(a); return s; });
   const [openNodeMap, setOpenNodeMap] = useState(() => ({}));
   const reportNodeOpen = (label, isOpen) => setOpenNodeMap(p => ({...p, [label.trim().toUpperCase()]: isOpen}));
   const getOpenSet = () => defaultOpen ? null : new Set(Object.entries(openNodeMap).filter(([,v])=>v).map(([k])=>k));
+  const currentAux = (() => { const hasD=(o)=>o&&Object.values(o).some(v=>Array.isArray(v)&&v.length>0); if(hasD(auxByMonth?.[selectedMonth]))return auxByMonth[selectedMonth]; if(hasD(auxDataConfig))return auxDataConfig; return {}; })();
 
   const tree = useMemo(() => {
     const root = [];
