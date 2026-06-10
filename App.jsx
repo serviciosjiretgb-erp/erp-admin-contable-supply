@@ -1949,23 +1949,30 @@ const AF_CATEGORY_MAP_BY_CODE = {
 function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConfig, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
   const availableMonths = useMemo(() => {
     const MORD_B = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-    // Detectar meses que tienen datos de balance (cuentas 1/2/3 o paths con ACTIVO/PASIVO/PATRIMONIO)
-    const balMonths = [...new Set(dbData
-      .filter(item =>
-        /^[123]/.test(item.name) ||
-        (item.path||'').toUpperCase().includes('ACTIV') ||
-        (item.path||'').toUpperCase().includes('PASIV') ||
-        (item.path||'').toUpperCase().includes('PATRIMON')
-      )
-      .map(d => d.month)
-    )].filter(m => m && m !== 'Sin Mes');
+    const months = new Set();
 
-    return balMonths.sort((a, b) => {
+    // 1. Meses con CUALQUIER registro en dbData (no solo balance)
+    // Si un mes tiene registros, puede tener balance aunque el filtro de nombre no lo detecte
+    dbData.forEach(d => { if(d.month && d.month !== 'Sin Mes') months.add(d.month); });
+
+    // 2. Meses con activos fijos cargados
+    Object.keys(afByMonth || {}).forEach(m => { if(m && afByMonth[m]?.records?.length) months.add(m); });
+
+    // 3. Meses con auxiliares CxC/CxP cargados
+    Object.keys(auxByMonth || {}).forEach(m => {
+      const aux = auxByMonth[m];
+      if(aux && Object.values(aux).some(v => Array.isArray(v) && v.length > 0)) months.add(m);
+    });
+
+    // 4. Meses con tasa guardada
+    Object.keys(tasaByMonth || {}).forEach(m => { if(m) months.add(m); });
+
+    return [...months].filter(m => m !== 'Sin Mes').sort((a, b) => {
       if (a === 'Saldos Iniciales') return -1;
       if (b === 'Saldos Iniciales') return 1;
       return (MORD_B[a] || 99) - (MORD_B[b] || 99);
     });
-  }, [dbData]);
+  }, [dbData, afByMonth, auxByMonth, tasaByMonth]);
   const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length - 1] || '');
   // Sincronizar cuando llegan nuevos meses (ej: se carga Mayo después del montaje)
   useEffect(() => {
@@ -1991,7 +1998,15 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   }, [selectedMonth, tasaByMonth]);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
   const [currency, setCurrency] = useState('both');
-  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril (Saldos)' : m;
+  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril' : m;
+  // Si hay tanto 'Saldos Iniciales' como 'Abril' en availableMonths, combinarlos en uno solo
+  const displayMonths = useMemo(() => {
+    const hasSI = availableMonths.includes('Saldos Iniciales');
+    const hasAbril = availableMonths.includes('Abril');
+    if (hasSI && !hasAbril) return availableMonths; // solo SI → mostrarlo como Abril
+    if (hasSI && hasAbril) return availableMonths.filter(m => m !== 'Saldos Iniciales'); // ya hay Abril real, ocultar SI
+    return availableMonths;
+  }, [availableMonths]);
 
   // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback cualquier mes disponible)
   const currentAux = (() => {
@@ -2305,7 +2320,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
             <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Corte:</span>
               <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-orange-500/10 border border-orange-500/40 text-orange-300 text-xs rounded-lg p-1.5 font-bold uppercase cursor-pointer outline-none">
-                {availableMonths.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                {displayMonths.map(m => <option key={m} value={m}>{monthLabel(m).toUpperCase()}</option>)}
               </select>
             </div>
           )}
