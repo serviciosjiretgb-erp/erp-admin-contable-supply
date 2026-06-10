@@ -3944,9 +3944,18 @@ function ReportesFinancierosApp() {
       const newData = await processFiles(e.target.files);
       const newMonths = [...new Set(newData.map(d => d.month))];
       setDbData(prev => {
-        // Solo reemplaza los meses que vienen en el archivo nuevo
-        // Los meses existentes (Enero, Febrero, etc.) NO se tocan
-        return [...prev.filter(d => !newMonths.includes(d.month)), ...newData];
+        // Solo eliminar registros de RESULTADO (4/5/6) para los meses del archivo nuevo
+        // Los registros de BALANCE (1/2/3) y 'Saldos Iniciales' NUNCA se tocan
+        const kept = prev.filter(d => {
+          const isBalanceRecord = /^[123]/.test(d.name) ||
+            (d.path||'').toUpperCase().includes('ACTIV') ||
+            (d.path||'').toUpperCase().includes('PASIV') ||
+            (d.path||'').toUpperCase().includes('PATRIMON') ||
+            d.month === 'Saldos Iniciales';
+          if (isBalanceRecord) return true; // nunca borrar balance
+          return !newMonths.includes(d.month); // solo borrar P&L del mismo mes
+        });
+        return [...kept, ...newData];
       });
       alert(`✅ Estado de Resultado cargado para: ${newMonths.join(', ')}\n\nLos demás meses permanecen sin cambios.`);
     } catch(err) { alert("Error: " + err.message); }
