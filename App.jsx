@@ -1390,101 +1390,114 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 // ============================================================================
 function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData]);
-  const monthLabel2 = (m) => m === 'Saldos Iniciales' ? 'Depreciaciones' : m;
-  const [selectedMonth2, setSelectedMonth2] = useState('General');
-  const [defaultOpen2, setDefaultOpen2] = useState(false);
-  const [expandKey2, setExpandKey2] = useState(0);
-  const [highlightedAccounts2, setHighlightedAccounts2] = useState(()=>new Set());
-  const [currency2, setCurrency2] = useState('both');
-  const toggleHighlight2 = (a)=>setHighlightedAccounts2(prev=>{const s=new Set(prev);s.has(a)?s.delete(a):s.add(a);return s;});
-  const [openNodeMap2, setOpenNodeMap2] = useState(()=>({}));
-  const reportNodeOpen2 = (lbl,isOpen)=>setOpenNodeMap2(p=>({...p,[lbl.trim().toUpperCase()]:isOpen}));
-  const getOpenSet2 = ()=>defaultOpen2?null:new Set(Object.entries(openNodeMap2).filter(([,v])=>v).map(([k])=>k));
+  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Depreciaciones' : m;
+  const [selectedMonth, setSelectedMonth] = useState('General');
+  const [defaultOpen, setDefaultOpen] = useState(false);
+  const [expandKey, setExpandKey]   = useState(0);
+  const [currency, setCurrency]     = useState('both');
+  const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
+  const toggleHighlight = (a) => setHighlightedAccounts(prev => { const s=new Set(prev); if(s.has(a))s.delete(a); else s.add(a); return s; });
+  const [openNodeMap, setOpenNodeMap] = useState(() => ({}));
+  const reportNodeOpen = (label, isOpen) => setOpenNodeMap(p => ({...p, [label.trim().toUpperCase()]: isOpen}));
+  const getOpenSet = () => defaultOpen ? null : new Set(Object.entries(openNodeMap).filter(([,v])=>v).map(([k])=>k));
 
-  const resTree = useMemo(()=>{
-    const root=[];
-    const mData = selectedMonth2==='General'?dbData:dbData.filter(d=>d.month===selectedMonth2);
-    const resData = mData.filter(item=>!(item.path||'').toUpperCase().includes('ACTIVO')&&!(item.path||'').toUpperCase().includes('PASIVO')&&!(item.path||'').toUpperCase().includes('PATRIMONIO')&&!/^[123]/.test(item.name));
-    const nK=s=>(s||'').trim().replace(/\s+/g,' ').toUpperCase();
-    resData.forEach(item=>{
-      const pathArray=(item.path||'').split('>');
-      let cur=root;
-      pathArray.forEach(fn=>{const key=nK(fn);let f=cur.find(n=>nK(n.n)===key);if(!f){f={n:fn.trim(),c:[],u:0,b:0};cur.push(f);}cur=f.c;});
-      let leaf=cur.find(n=>nK(n.n)===nK(item.name)&&n.isLeaf);
-      if(!leaf)cur.push({n:item.name.trim(),u:item.usd||0,b:item.bs||0,isLeaf:true});
-      else{leaf.u+=item.usd||0;leaf.b+=item.bs||0;}
+  const tree = useMemo(() => {
+    const root = [];
+    const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
+    const resData = monthData.filter(item =>
+      !(item.path||'').toUpperCase().includes('ACTIVO') &&
+      !(item.path||'').toUpperCase().includes('PASIVO') &&
+      !(item.path||'').toUpperCase().includes('PATRIMONIO') &&
+      !/^[123]/.test(item.name)
+    );
+    const normKey = s => (s||'').trim().replace(/\s+/g,' ').toUpperCase();
+    resData.forEach(item => {
+      const pathArray = (item.path||'').split('>');
+      let cur = root;
+      pathArray.forEach(folderName => {
+        const key = normKey(folderName);
+        let folder = cur.find(n => normKey(n.n) === key);
+        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        cur = folder.c;
+      });
+      let leaf = cur.find(n => normKey(n.n) === normKey(item.name) && n.isLeaf);
+      if (!leaf) cur.push({ n: item.name.trim(), u: item.usd||0, b: item.bs||0, isLeaf: true });
+      else { leaf.u += item.usd||0; leaf.b += item.bs||0; }
     });
-    // Inject AF depreciation
-    const afRec = activosFijosData?.records||[];
-    const MNUM2={Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-    const BASE2=4;
-    const m2 = selectedMonth2==='General'?'Abril':selectedMonth2;
-    const extraM2=Math.max(0,(MNUM2[m2]||BASE2)-BASE2);
-    afRec.forEach(r=>{
-      const dep=(r.depAcum||0)+extraM2*(r.depreMensual||0);
-      if(dep>0){
-        const cta=r.cuentaGasto||(r.sede==='C2'?'6.2.02.02.000':'5.1.03.05.000');
-        const ctaPath=(cta||'').split('.');
-        const path=ctaPath.slice(0,3).join('.')+'.*';
-        const nK2=s=>(s||'').trim().replace(/\s+/g,' ').toUpperCase();
-        let cur2=root;
-        const pArr=[r.sede==='C2'?'GASTOS ADMINISTRATIVOS':'COSTOS OPERATIVOS','DEPRECIACIONES'];
-        pArr.forEach(fn=>{const key=nK2(fn);let f=cur2.find(n=>nK2(n.n)===key);if(!f){f={n:fn,c:[],u:0,b:0};cur2.push(f);}cur2=f.c;});
-        const lName=cta+'-DEP '+((r.descripcion||r.cuenta||'').slice(0,30));
-        let lf=cur2.find(n=>nK2(n.n)===nK2(lName)&&n.isLeaf);
-        if(!lf)cur2.push({n:lName,u:dep/487.12,b:dep,isLeaf:true});
-        else{lf.u+=dep/487.12;lf.b+=dep;}
-      }
-    });
-    const compute=(nodes)=>{let u=0,b=0;nodes.forEach(n=>{if(!n.isLeaf&&n.c?.length){const t=compute(n.c);n.u=t.u;n.b=t.b;}u+=n.u;b+=n.b;});return{u,b};};
+
+    // Inyectar depreciación mensual desde auxiliar de Activos Fijos
+    const afRecords = activosFijosData?.records || [];
+    if (afRecords.length > 0) {
+      const MONTH_ORDER = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const BASE_M = 4;
+      const monthsToProcess = selectedMonth === 'General'
+        ? [...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes')
+        : [selectedMonth];
+      const depByCtaGasto = {};
+      afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
+        const rubro = getRubro(r);
+        const ctaGasto = r.cuentaGasto || `5.x-DEPRECIACIÓN ${rubro}`;
+        const pathDep = ['COSTOS Y GASTOS OPERATIVOS', 'GASTOS DE DEPRECIACIÓN'];
+        if (!depByCtaGasto[ctaGasto]) depByCtaGasto[ctaGasto] = { path: pathDep, montoBs: 0 };
+        depByCtaGasto[ctaGasto].montoBs += r.depreMensual * monthsToProcess.length;
+      });
+      Object.entries(depByCtaGasto).forEach(([ctaGasto, info]) => {
+        let cur = root;
+        info.path.forEach(folderName => {
+          const key = normKey(folderName);
+          let folder = cur.find(n => normKey(n.n) === key);
+          if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+          cur = folder.c;
+        });
+        const tasa = afRecords.find(r=>r.tasa>0)?.tasa || 487;
+        const usdVal = tasa > 0 ? info.montoBs / tasa : 0;
+        let leaf = cur.find(n => normKey(n.n)===normKey(ctaGasto)&&n.isLeaf);
+        if (!leaf) cur.push({ n: ctaGasto, u: usdVal, b: info.montoBs, isLeaf: true });
+        else { leaf.u += usdVal; leaf.b += info.montoBs; }
+      });
+    }
+
+    const compute = (nodes) => { let u=0,b=0; nodes.forEach(n => { if(!n.isLeaf&&n.c?.length){const t=compute(n.c);n.u=t.u;n.b=t.b;} u+=n.u;b+=n.b; }); return {u,b}; };
     compute(root);
     return root;
-  },[dbData,selectedMonth2,activosFijosData]);
+  }, [dbData, selectedMonth, activosFijosData]);
 
-  const fmtER=(v)=>new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
-  const [openNodes2,setOpenNodes2]=useState(()=>new Set());
-  const toggle2=(lbl)=>setOpenNodes2(p=>{const s=new Set(p);s.has(lbl)?s.delete(lbl):s.add(lbl);return s;});
+  const fmt = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+  const fmts = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
 
   return (
-    <div className="min-h-screen bg-[#0d1117]">
+    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
       <header className="bg-[#111111] border-b-4 border-emerald-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-2">
         <div className="flex items-center gap-4 flex-wrap">
           <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-emerald-400"><ArrowLeft size={16}/> Panel</button>
           <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Período:</span>
-            <select value={selectedMonth2} onChange={e=>setSelectedMonth2(e.target.value)} className="bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-xs rounded-lg p-1.5 font-bold uppercase cursor-pointer outline-none">
+            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-xs rounded-lg p-1.5 font-bold uppercase cursor-pointer outline-none">
               <option value="General">Acumulado</option>
-              {availableMonths.map(m=><option key={m} value={m}>{monthLabel2(m).toUpperCase()}</option>)}
+              {availableMonths.map(m=><option key={m} value={m}>{monthLabel(m).toUpperCase()}</option>)}
             </select>
+          </div>
+          <div className="flex gap-2 border-l-2 border-slate-700 pl-4">
+            {['both','usd','bs'].map(c=><button key={c} onClick={()=>setCurrency(c)} className={`text-[10px] font-black uppercase px-2 py-1 rounded border ${currency===c?'bg-emerald-600 border-emerald-500 text-white':'border-slate-600 text-slate-400 hover:border-emerald-500'}`}>{c==='both'?'USD + BS':c==='usd'?'SOLO USD':'SOLO BS'}</button>)}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={()=>setDefaultOpen2(!defaultOpen2)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">{defaultOpen2?'COLAPSAR':'EXPANDIR'}</button>
-          <button onClick={()=>setExpandKey2(k=>k+1)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">↺ REFRESCAR</button>
+          <button onClick={()=>setDefaultOpen(!defaultOpen)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">{defaultOpen?'COLAPSAR TODO':'EXPANDIR TODO'}</button>
+          <button onClick={()=>{setExpandKey(k=>k+1);setOpenNodeMap({});}} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">↺</button>
+          <button onClick={()=>exportResultadoExcel && exportResultadoExcel(tree, monthLabel(selectedMonth), 0, getOpenSet(), currency)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1"><FileSpreadsheet size={12}/> Excel</button>
         </div>
       </header>
       <main className="max-w-5xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl shadow-xl border-t-4 border-emerald-500 overflow-hidden">
           <div className="px-8 py-6 border-b border-slate-100">
             <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Estado de Resultado</h1>
-            <p className="text-slate-500 text-sm">Período: {selectedMonth2==='General'?'Acumulado':monthLabel2(selectedMonth2)}</p>
+            <p className="text-slate-500 text-sm">Período: {selectedMonth==='General'?'Acumulado':monthLabel(selectedMonth)}</p>
           </div>
-          <div className="divide-y divide-slate-100">
-            {resTree.map((node,i)=>(
-              <div key={i} className="px-6 py-2">
-                <div className="flex justify-between items-center cursor-pointer py-2" onClick={()=>toggle2(node.n)}>
-                  <span className="font-black text-sm uppercase text-slate-800 flex items-center gap-2">
-                    {openNodes2.has(node.n)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}{node.n}
-                  </span>
-                  <span className="font-black text-sm text-slate-700">{fmtER(node.u)} USD</span>
-                </div>
-                {openNodes2.has(node.n)&&node.c?.map((child,j)=>(
-                  <div key={j} className="pl-6 py-1 flex justify-between">
-                    <span className="text-xs text-slate-600">{child.n}</span>
-                    <span className="text-xs font-bold text-slate-600">{fmtER(child.u)} USD</span>
-                  </div>
-                ))}
-              </div>
+          <div key={expandKey}>
+            {tree.map((node,i) => (
+              <ExpandableRow key={i} node={node} depth={0} currency={currency} defaultOpen={defaultOpen}
+                highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight}
+                onOpenChange={reportNodeOpen} onShowReport={null} showReportAccounts={new Set()} tasa={487} />
             ))}
           </div>
         </div>
