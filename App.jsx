@@ -1385,11 +1385,136 @@ function AuxiliarReportView({ accountCode, onBack, auxDataConfig }) {
 // ============================================================================
 // 5. VISTA: ESTADO DE RESULTADOS
 // ============================================================================
+// ============================================================================
+// 5. VISTA: ESTADO DE RESULTADOS  
+// ============================================================================
 function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m=>m!=='Sin Mes'), [dbData]);
-  // Rename "Saldos Iniciales" to "Depreciaciones" only in the dropdown label
-  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Depreciaciones' : m;
-  const [selectedMonth, setSelectedMonth] = useState('General');
+  const monthLabel2 = (m) => m === 'Saldos Iniciales' ? 'Depreciaciones' : m;
+  const [selectedMonth2, setSelectedMonth2] = useState('General');
+  const [defaultOpen2, setDefaultOpen2] = useState(false);
+  const [expandKey2, setExpandKey2] = useState(0);
+  const [highlightedAccounts2, setHighlightedAccounts2] = useState(()=>new Set());
+  const [currency2, setCurrency2] = useState('both');
+  const toggleHighlight2 = (a)=>setHighlightedAccounts2(prev=>{const s=new Set(prev);s.has(a)?s.delete(a):s.add(a);return s;});
+  const [openNodeMap2, setOpenNodeMap2] = useState(()=>({}));
+  const reportNodeOpen2 = (lbl,isOpen)=>setOpenNodeMap2(p=>({...p,[lbl.trim().toUpperCase()]:isOpen}));
+  const getOpenSet2 = ()=>defaultOpen2?null:new Set(Object.entries(openNodeMap2).filter(([,v])=>v).map(([k])=>k));
+
+  const resTree = useMemo(()=>{
+    const root=[];
+    const mData = selectedMonth2==='General'?dbData:dbData.filter(d=>d.month===selectedMonth2);
+    const resData = mData.filter(item=>!(item.path||'').toUpperCase().includes('ACTIVO')&&!(item.path||'').toUpperCase().includes('PASIVO')&&!(item.path||'').toUpperCase().includes('PATRIMONIO')&&!/^[123]/.test(item.name));
+    const nK=s=>(s||'').trim().replace(/\s+/g,' ').toUpperCase();
+    resData.forEach(item=>{
+      const pathArray=(item.path||'').split('>');
+      let cur=root;
+      pathArray.forEach(fn=>{const key=nK(fn);let f=cur.find(n=>nK(n.n)===key);if(!f){f={n:fn.trim(),c:[],u:0,b:0};cur.push(f);}cur=f.c;});
+      let leaf=cur.find(n=>nK(n.n)===nK(item.name)&&n.isLeaf);
+      if(!leaf)cur.push({n:item.name.trim(),u:item.usd||0,b:item.bs||0,isLeaf:true});
+      else{leaf.u+=item.usd||0;leaf.b+=item.bs||0;}
+    });
+    // Inject AF depreciation
+    const afRec = activosFijosData?.records||[];
+    const MNUM2={Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+    const BASE2=4;
+    const m2 = selectedMonth2==='General'?'Abril':selectedMonth2;
+    const extraM2=Math.max(0,(MNUM2[m2]||BASE2)-BASE2);
+    afRec.forEach(r=>{
+      const dep=(r.depAcum||0)+extraM2*(r.depreMensual||0);
+      if(dep>0){
+        const cta=r.cuentaGasto||(r.sede==='C2'?'6.2.02.02.000':'5.1.03.05.000');
+        const ctaPath=(cta||'').split('.');
+        const path=ctaPath.slice(0,3).join('.')+'.*';
+        const nK2=s=>(s||'').trim().replace(/\s+/g,' ').toUpperCase();
+        let cur2=root;
+        const pArr=[r.sede==='C2'?'GASTOS ADMINISTRATIVOS':'COSTOS OPERATIVOS','DEPRECIACIONES'];
+        pArr.forEach(fn=>{const key=nK2(fn);let f=cur2.find(n=>nK2(n.n)===key);if(!f){f={n:fn,c:[],u:0,b:0};cur2.push(f);}cur2=f.c;});
+        const lName=cta+'-DEP '+((r.descripcion||r.cuenta||'').slice(0,30));
+        let lf=cur2.find(n=>nK2(n.n)===nK2(lName)&&n.isLeaf);
+        if(!lf)cur2.push({n:lName,u:dep/487.12,b:dep,isLeaf:true});
+        else{lf.u+=dep/487.12;lf.b+=dep;}
+      }
+    });
+    const compute=(nodes)=>{let u=0,b=0;nodes.forEach(n=>{if(!n.isLeaf&&n.c?.length){const t=compute(n.c);n.u=t.u;n.b=t.b;}u+=n.u;b+=n.b;});return{u,b};};
+    compute(root);
+    return root;
+  },[dbData,selectedMonth2,activosFijosData]);
+
+  const fmtER=(v)=>new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+  const [openNodes2,setOpenNodes2]=useState(()=>new Set());
+  const toggle2=(lbl)=>setOpenNodes2(p=>{const s=new Set(p);s.has(lbl)?s.delete(lbl):s.add(lbl);return s;});
+
+  return (
+    <div className="min-h-screen bg-[#0d1117]">
+      <header className="bg-[#111111] border-b-4 border-emerald-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-2">
+        <div className="flex items-center gap-4 flex-wrap">
+          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-emerald-400"><ArrowLeft size={16}/> Panel</button>
+          <div className="border-l-2 border-slate-700 pl-4 flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Período:</span>
+            <select value={selectedMonth2} onChange={e=>setSelectedMonth2(e.target.value)} className="bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-xs rounded-lg p-1.5 font-bold uppercase cursor-pointer outline-none">
+              <option value="General">Acumulado</option>
+              {availableMonths.map(m=><option key={m} value={m}>{monthLabel2(m).toUpperCase()}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setDefaultOpen2(!defaultOpen2)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">{defaultOpen2?'COLAPSAR':'EXPANDIR'}</button>
+          <button onClick={()=>setExpandKey2(k=>k+1)} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:border-emerald-500 hover:text-emerald-400">↺ REFRESCAR</button>
+        </div>
+      </header>
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-2xl shadow-xl border-t-4 border-emerald-500 overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100">
+            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Estado de Resultado</h1>
+            <p className="text-slate-500 text-sm">Período: {selectedMonth2==='General'?'Acumulado':monthLabel2(selectedMonth2)}</p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {resTree.map((node,i)=>(
+              <div key={i} className="px-6 py-2">
+                <div className="flex justify-between items-center cursor-pointer py-2" onClick={()=>toggle2(node.n)}>
+                  <span className="font-black text-sm uppercase text-slate-800 flex items-center gap-2">
+                    {openNodes2.has(node.n)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}{node.n}
+                  </span>
+                  <span className="font-black text-sm text-slate-700">{fmtER(node.u)} USD</span>
+                </div>
+                {openNodes2.has(node.n)&&node.c?.map((child,j)=>(
+                  <div key={j} className="pl-6 py-1 flex justify-between">
+                    <span className="text-xs text-slate-600">{child.n}</span>
+                    <span className="text-xs font-bold text-slate-600">{fmtER(child.u)} USD</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ============================================================================
+// 6. VISTA: BALANCE GENERAL
+// ============================================================================
+function BalanceGeneralView({ onBack, dbData, auxByMonth = {}, afByMonth = {}, auxDataConfig = {}, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
+  const MORD_BG = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+  const availableMonths = useMemo(() => {
+    const months = new Set();
+    dbData.forEach(d => { if(d.month && d.month !== 'Sin Mes') { if(/^[123]/.test(d.name)||(d.path||'').toUpperCase().includes('ACTIV')||(d.path||'').toUpperCase().includes('PASIV')||(d.path||'').toUpperCase().includes('PATRIMON')) months.add(d.month); }});
+    Object.keys(afByMonth||{}).forEach(m => { if(afByMonth[m]?.records?.length) months.add(m); });
+    const hasSI=months.has('Saldos Iniciales'), hasA=months.has('Abril');
+    if(hasSI&&hasA) months.delete('Saldos Iniciales');
+    return [...months].filter(Boolean).sort((a,b)=>{ if(a==='Saldos Iniciales')return -1; if(b==='Saldos Iniciales')return 1; return (MORD_BG[a]||99)-(MORD_BG[b]||99); });
+  }, [dbData, afByMonth]);
+  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril' : m;
+  const displayMonths = availableMonths;
+  const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length-1]||'');
+  useEffect(()=>{ if(availableMonths.length>0) setSelectedMonth(p=>(!p||!availableMonths.includes(p))?availableMonths[availableMonths.length-1]:p); },[availableMonths]);
+  const [tasa, setTasaLocal] = useState(() => tasaByMonth[availableMonths[availableMonths.length-1]||'']||90);
+  const handleTasaChange = (v) => { setTasaLocal(v); if(onSaveTasa&&selectedMonth) onSaveTasa(selectedMonth,v); };
+  useEffect(()=>{ if(selectedMonth){ const s=tasaByMonth[selectedMonth]; if(s) setTasaLocal(s); }},[selectedMonth,tasaByMonth]);
+  const currentAux = (()=>{ const hD=(o)=>o&&Object.values(o).some(v=>Array.isArray(v)&&v.length>0); if(hD(auxByMonth?.[selectedMonth]))return auxByMonth[selectedMonth]; if(hD(auxDataConfig))return auxDataConfig; return {}; })();
+  const [activeCode, setActiveCode] = useState(null);
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [expandKey, setExpandKey] = useState(0);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
