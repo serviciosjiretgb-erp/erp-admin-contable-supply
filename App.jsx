@@ -1545,10 +1545,6 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
   const fmtRs = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
   const [openNodes, setOpenNodes] = useState(() => new Set());
   const toggleOpen = (label) => setOpenNodes(p => { const s=new Set(p); if(s.has(label))s.delete(label); else s.add(label); return s; });
-  // Track open/closed nodes for export — synced with ExpandableRow via callback
-  const [openNodeMap, setOpenNodeMap] = useState(() => ({}));
-  const reportNodeOpen = (label, isOpen) => setOpenNodeMap(p => ({...p, [label.trim().toUpperCase()]: isOpen}));
-  const getOpenSet = () => defaultOpen ? null : new Set(Object.entries(openNodeMap).filter(([,v])=>v).map(([k])=>k));
 
   // Build print HTML for balance
   const handlePrintBalance = () => {
