@@ -1526,8 +1526,6 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     return root;
   }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData, afByMonth, auxByMonth]);
 
-  }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData, afByMonth, auxByMonth]);
-
   let totalActivos = 0; let totalPasPat = 0;
   let totalActivos_bs = 0; let totalPasPat_bs = 0;
   tree.forEach(n => {
