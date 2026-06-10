@@ -1425,6 +1425,15 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     };
 
     // Procesar cuentas del archivo de balance
+    const AF_CATEGORY_MAP_BY_CODE = {
+      '1.1.06.01.001':'INMUEBLE (GALPON)', '1.1.06.01.002':'INMUEBLE (GALPON)',
+      '1.1.06.01.003':'MAQUINARIAS Y EQUIPOS', '1.1.06.01.004':'MAQUINARIAS Y EQUIPOS',
+      '1.1.06.01.005':'EQUIPOS DE COMPUTACIÓN', '1.1.06.01.006':'EQUIPOS DE COMPUTACIÓN',
+      '1.1.06.01.007':'EQUIPOS DE COMPUTACIÓN',
+      '1.1.06.01.008':'VEHÍCULOS', '1.1.06.01.009':'VEHÍCULOS',
+      '1.1.06.01.012':'MOBILIARIO', '1.1.06.01.013':'MOBILIARIO',
+      '1.1.06.01.016':'PLANTA ELÉCTRICA', '1.1.06.01.017':'PLANTA ELÉCTRICA',
+    };
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
       if (!fullCodeMatch) return;
