@@ -4026,13 +4026,8 @@ function ReportesFinancierosApp() {
       if (!d || d.length === 0) { alert('⚠️ El archivo no generó registros. Verifica que sea un archivo de Balance General válido.'); e.target.value=''; return; }
       const targetMonth = configMes;
       const remapped = d.map(r => ({ ...r, month: targetMonth }));
-      setDbData(prev => {
-        const filtered = prev.filter(x => x.month !== targetMonth);
-        return [...filtered, ...remapped];
-      });
-      // Forzar guardado en localStorage inmediatamente
-      const updated = JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]').filter(x=>x.month!==targetMonth);
-      localStorage.setItem('jiret_erp_db_data', JSON.stringify([...updated, ...remapped]));
+      // Solo actualizar el estado React — el useEffect se encarga de sincronizar localStorage
+      setDbData(prev => [...prev.filter(x => x.month !== targetMonth), ...remapped]);
       alert(`✅ Balance guardado para: ${targetMonth.toUpperCase()}\n📊 ${remapped.length} cuentas registradas.\n\nVe al módulo Balance General → el selector mostrará ${targetMonth.toUpperCase()}.`);
     } catch(err){ alert('❌ Error: ' + err.message); } e.target.value='';
   };
