@@ -2070,8 +2070,44 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 
   const tree = useMemo(() => {
     const root = [];
+
+    // ── Calcular _currentAF y _currentAux DENTRO del useMemo para siempre tener datos frescos ──
+    const MORD_AF = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+    const _currentAF = (() => {
+      if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
+      if (activosFijosData?.records?.length) return activosFijosData;
+      if (afByMonth && Object.keys(afByMonth).length > 0) {
+        const entries = Object.entries(afByMonth).filter(([,v]) => v?.records?.length);
+        if (!entries.length) return {records:[]};
+        // Abril/Saldos Iniciales: AF más antiguo disponible (base)
+        if (selectedMonth === 'Saldos Iniciales' || selectedMonth === 'Abril') {
+          return entries.sort((a,b) => (MORD_AF[a[0]]||99) - (MORD_AF[b[0]]||99))[0][1];
+        }
+        const mesNum = MORD_AF[selectedMonth] || 99;
+        const cands = entries.filter(([m]) => (MORD_AF[m]||99) <= mesNum)
+          .sort((a,b) => (MORD_AF[b[0]]||0) - (MORD_AF[a[0]]||0));
+        return (cands.length > 0 ? cands[0] : entries.sort((a,b)=>(MORD_AF[b[0]]||0)-(MORD_AF[a[0]]||0))[0])[1];
+      }
+      return {records:[]};
+    })();
+    const hasData_aux = (obj) => obj && Object.values(obj).some(v => Array.isArray(v) && v.length > 0);
+    const _currentAux = (() => {
+      if (hasData_aux(auxByMonth?.[selectedMonth])) return auxByMonth[selectedMonth];
+      if (hasData_aux(auxDataConfig)) return auxDataConfig;
+      if (auxByMonth && Object.keys(auxByMonth).length > 0) {
+        const mesNum = MORD_AF[selectedMonth] || 99;
+        const cands = Object.entries(auxByMonth).filter(([m,v]) => hasData_aux(v) && (MORD_AF[m]||99) <= mesNum)
+          .sort((a,b) => (MORD_AF[b[0]]||0) - (MORD_AF[a[0]]||0));
+        if (cands.length > 0) return cands[0][1];
+        const any = Object.entries(auxByMonth).filter(([,v]) => hasData_aux(v))
+          .sort((a,b) => (MORD_AF[b[0]]||0) - (MORD_AF[a[0]]||0));
+        if (any.length > 0) return any[0][1];
+      }
+      return {};
+    })();
+    const hasAFAuxiliar = !!(_currentAF?.records?.length);
+
     // Para 'Abril': combinar registros de 'Abril' + 'Saldos Iniciales' como complemento
-    // (evita que un re-upload parcial de Abril pierda cuentas que solo están en Saldos Iniciales)
     const exactData = dbData.filter(d => d.month === selectedMonth);
     const siData    = dbData.filter(d => d.month === 'Saldos Iniciales');
     let monthData;
@@ -2105,7 +2141,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     };
 
     // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
-    const hasAFAuxiliar = !!(currentAF?.records?.length);
+    const hasAFAuxiliar = !!(_currentAF?.records?.length);
 
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
@@ -2164,7 +2200,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     {
       // CxC y CxP
       Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
-        const allRecords = currentAux?.[info.type] || [];
+        const allRecords = _currentAux?.[info.type] || [];
         const forThisCode = allRecords.filter(d => (d.cuentaContable||'').trim().startsWith(code));
         const isSharedBucket = Object.values(ACCOUNT_MAPS).filter(m => m.type === info.type).length > 1;
         const records = forThisCode.length > 0 ? forThisCode : (isSharedBucket ? [] : allRecords);
@@ -2182,7 +2218,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
       });
 
       // Activos Fijos — inyectar PPE desde auxiliar (la PPE NO viene del archivo de balance)
-      if (currentAF?.records?.length) {
+      if (_currentAF?.records?.length) {
         const MNUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
         const BASE_MONTH_NUM = 4;
         const mesNum = MNUM[selectedMonth] || MNUM['Abril'];
@@ -2215,7 +2251,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           'PLANTA ELÉCTRICA':       '1.1.06.01.017-DEP. ACUMULADA PLANTA ELECTRICA',
         };
         const costoByRubro = {}, depByAccount = {};
-        currentAF.records.forEach(r => {
+        _currentAF.records.forEach(r => {
           const rubro = getRubroBalance(r);
           if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
           costoByRubro[rubro].usd += r.costoUSD || 0;
@@ -2255,7 +2291,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     });
 
     return root;
-  }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData]);
+  }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData, afByMonth, auxByMonth]);
 
   let totalActivos = 0; let totalPasPat = 0;
   let totalActivos_bs = 0; let totalPasPat_bs = 0;
