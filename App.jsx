@@ -1951,23 +1951,32 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     const MORD_B = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
     const months = new Set();
 
-    // 1. Meses con CUALQUIER registro en dbData (no solo balance)
-    // Si un mes tiene registros, puede tener balance aunque el filtro de nombre no lo detecte
-    dbData.forEach(d => { if(d.month && d.month !== 'Sin Mes') months.add(d.month); });
-
-    // 2. Meses con activos fijos cargados
-    Object.keys(afByMonth || {}).forEach(m => { if(m && afByMonth[m]?.records?.length) months.add(m); });
-
-    // 3. Meses con auxiliares CxC/CxP cargados
-    Object.keys(auxByMonth || {}).forEach(m => {
-      const aux = auxByMonth[m];
-      if(aux && Object.values(aux).some(v => Array.isArray(v) && v.length > 0)) months.add(m);
+    // Solo meses con DATOS DE BALANCE reales (cuentas 1/2/3)
+    // Esto evita que Enero/Febrero/Marzo (solo P&L) aparezcan aquí
+    dbData.forEach(d => {
+      if (d.month && d.month !== 'Sin Mes') {
+        const isBalRec = /^[123]/.test(d.name) ||
+          (d.path||'').toUpperCase().includes('ACTIV') ||
+          (d.path||'').toUpperCase().includes('PASIV') ||
+          (d.path||'').toUpperCase().includes('PATRIMON');
+        if (isBalRec) months.add(d.month);
+      }
     });
 
-    // 4. Meses con tasa guardada
-    Object.keys(tasaByMonth || {}).forEach(m => { if(m) months.add(m); });
+    // Meses con AF cargado también pueden tener balance (AF reemplaza 1.1.06.x)
+    Object.keys(afByMonth || {}).forEach(m => {
+      if (m && m !== 'Sin Mes' && afByMonth[m]?.records?.length) months.add(m);
+    });
 
-    return [...months].filter(m => m !== 'Sin Mes').sort((a, b) => {
+    // Meses con tasa guardada y al menos aux cargado
+    Object.keys(tasaByMonth || {}).forEach(m => {
+      if (m && m !== 'Sin Mes') {
+        const hasAux = auxByMonth?.[m] && Object.values(auxByMonth[m]).some(v => Array.isArray(v) && v.length > 0);
+        if (hasAux) months.add(m);
+      }
+    });
+
+    return [...months].filter(Boolean).sort((a, b) => {
       if (a === 'Saldos Iniciales') return -1;
       if (b === 'Saldos Iniciales') return 1;
       return (MORD_B[a] || 99) - (MORD_B[b] || 99);
@@ -1998,15 +2007,14 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
   }, [selectedMonth, tasaByMonth]);
   const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
   const [currency, setCurrency] = useState('both');
-  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril' : m;
-  // Si hay tanto 'Saldos Iniciales' como 'Abril' en availableMonths, combinarlos en uno solo
+  // 'Saldos Iniciales' se muestra como 'ABRIL' — si hay AMBOS, quitar el duplicado
   const displayMonths = useMemo(() => {
-    const hasSI = availableMonths.includes('Saldos Iniciales');
+    const hasSI    = availableMonths.includes('Saldos Iniciales');
     const hasAbril = availableMonths.includes('Abril');
-    if (hasSI && !hasAbril) return availableMonths; // solo SI → mostrarlo como Abril
-    if (hasSI && hasAbril) return availableMonths.filter(m => m !== 'Saldos Iniciales'); // ya hay Abril real, ocultar SI
+    if (hasSI && hasAbril) return availableMonths.filter(m => m !== 'Saldos Iniciales');
     return availableMonths;
   }, [availableMonths]);
+  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril' : m;
 
   // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback cualquier mes disponible)
   const currentAux = (() => {
@@ -4015,15 +4023,18 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const d = await processSaldosBalance(e.target.files[0], planCuentas);
-      // El mes del archivo puede venir como 'Saldos Iniciales' si no detecta el mes en el nombre.
-      // Forzar siempre al mes activo en Configuración (configMes) para que no pise datos de otro mes.
-      const detectedMonth = [...new Set(d.map(x=>x.month))][0] || 'Saldos Iniciales';
-      const targetMonth = configMes; // SIEMPRE usar el mes activo del panel de configuración
+      if (!d || d.length === 0) { alert('⚠️ El archivo no generó registros. Verifica que sea un archivo de Balance General válido.'); e.target.value=''; return; }
+      const targetMonth = configMes;
       const remapped = d.map(r => ({ ...r, month: targetMonth }));
-      // Limpiar datos previos de ese mes exacto (no tocar otros meses)
-      setDbData(prev => [...prev.filter(x => x.month !== targetMonth), ...remapped]);
-      alert(`✅ Balance cargado para: ${targetMonth}\n${remapped.length} cuentas registradas.${detectedMonth !== targetMonth ? `\n\n(El archivo indicaba "${detectedMonth}" — se guardó como "${targetMonth}" según el mes activo)` : ''}`);
-    } catch(err){alert("Error: "+err.message);} e.target.value='';
+      setDbData(prev => {
+        const filtered = prev.filter(x => x.month !== targetMonth);
+        return [...filtered, ...remapped];
+      });
+      // Forzar guardado en localStorage inmediatamente
+      const updated = JSON.parse(localStorage.getItem('jiret_erp_db_data')||'[]').filter(x=>x.month!==targetMonth);
+      localStorage.setItem('jiret_erp_db_data', JSON.stringify([...updated, ...remapped]));
+      alert(`✅ Balance guardado para: ${targetMonth.toUpperCase()}\n📊 ${remapped.length} cuentas registradas.\n\nVe al módulo Balance General → el selector mostrará ${targetMonth.toUpperCase()}.`);
+    } catch(err){ alert('❌ Error: ' + err.message); } e.target.value='';
   };
 
   // ── Auxiliar CxC por mes ──────────────────────────────────────────────────
