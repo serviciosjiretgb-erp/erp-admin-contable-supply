@@ -2077,7 +2077,23 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 
   const tree = useMemo(() => {
     const root = [];
-    const monthData = dbData.filter(d => d.month === selectedMonth);
+    // Para 'Abril': combinar registros de 'Abril' + 'Saldos Iniciales' como complemento
+    // (evita que un re-upload parcial de Abril pierda cuentas que solo están en Saldos Iniciales)
+    const exactData = dbData.filter(d => d.month === selectedMonth);
+    const siData    = dbData.filter(d => d.month === 'Saldos Iniciales');
+    let monthData;
+    if ((selectedMonth === 'Abril' || selectedMonth === 'Saldos Iniciales') && siData.length > 0) {
+      if (selectedMonth === 'Saldos Iniciales') {
+        monthData = siData;
+      } else {
+        // Abril: usar los datos de Abril + los de Saldos Iniciales para cuentas no cubiertas
+        const exactNames = new Set(exactData.map(d => (d.name||'').toUpperCase().trim()));
+        const siSupplement = siData.filter(d => !exactNames.has((d.name||'').toUpperCase().trim()));
+        monthData = [...exactData, ...siSupplement];
+      }
+    } else {
+      monthData = exactData;
+    }
     const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
 
     // Inserta una hoja en el árbol siguiendo la ruta canónica
