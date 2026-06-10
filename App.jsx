@@ -2044,31 +2044,24 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     return {};
   })();
   const currentAF  = (() => {
+    const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
     // 1. Mes exacto
     if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
     // 2. Legacy key
     if (activosFijosData?.records?.length) return activosFijosData;
-    // 3. Para 'Saldos Iniciales': usar el AF MÁS RECIENTE disponible (sin límite de mes)
-    if (selectedMonth === 'Saldos Iniciales' && afByMonth && Object.keys(afByMonth).length > 0) {
-      const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      const sorted = Object.entries(afByMonth)
-        .filter(([, v]) => v?.records?.length)
-        .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
-      if (sorted.length > 0) return sorted[0][1];
-    }
-    // 4. Para cualquier otro mes: AF más reciente ≤ ese mes
     if (afByMonth && Object.keys(afByMonth).length > 0) {
-      const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const entries = Object.entries(afByMonth).filter(([,v]) => v?.records?.length);
+      if (!entries.length) return {records:[]};
+      // Para 'Saldos Iniciales' o 'Abril': usar el AF MÁS ANTIGUO (base de Abril)
+      // Crítico: evita que el AF de Mayo (activos nuevos) cambie los valores del balance de Abril
+      if (selectedMonth === 'Saldos Iniciales' || selectedMonth === 'Abril') {
+        return entries.sort((a,b) => (MORD2[a[0]]||99) - (MORD2[b[0]]||99))[0][1];
+      }
+      // Para otros meses: AF más reciente ≤ ese mes
       const mesNum = MORD2[selectedMonth] || 99;
-      const candidates = Object.entries(afByMonth)
-        .filter(([m, v]) => v?.records?.length && (MORD2[m]||99) <= mesNum)
-        .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
-      if (candidates.length > 0) return candidates[0][1];
-      // Si no hay ninguno ≤ mesNum, tomar el más reciente disponible
-      const any = Object.entries(afByMonth)
-        .filter(([, v]) => v?.records?.length)
-        .sort((a, b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
-      if (any.length > 0) return any[0][1];
+      const cands = entries.filter(([m]) => (MORD2[m]||99) <= mesNum)
+        .sort((a,b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
+      return (cands.length > 0 ? cands[0] : entries.sort((a,b)=>(MORD2[b[0]]||0)-(MORD2[a[0]]||0))[0])[1];
     }
     return {records:[]};
   })();
@@ -2112,7 +2105,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     };
 
     // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
-    const hasAFAuxiliar = false; // AF no se inyecta en el balance — usa solo el archivo de balance
+    const hasAFAuxiliar = !!(currentAF?.records?.length);
 
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
@@ -2167,13 +2160,12 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
       insertLeaf(canonPath, item.name, usdV, bsV);
     });
 
-    // ── Inyectar CxC / CxP desde auxiliares (NO activos fijos — el balance ya los tiene correctos) ──
+    // ── Inyectar CxC / CxP / Activos Fijos desde auxiliares ─────────────────
     {
-      // CxC y CxP — totalizar SOLO los registros de la cuenta específica
+      // CxC y CxP
       Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
         const allRecords = currentAux?.[info.type] || [];
         const forThisCode = allRecords.filter(d => (d.cuentaContable||'').trim().startsWith(code));
-
         const isSharedBucket = Object.values(ACCOUNT_MAPS).filter(m => m.type === info.type).length > 1;
         const records = forThisCode.length > 0 ? forThisCode : (isSharedBucket ? [] : allRecords);
         const total = records.reduce((s, r) => s + r.monto, 0);
@@ -2188,8 +2180,61 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
         if (ok) { const i = cur.findIndex(n => normKey(n.n)===normKey(leafName)&&n.isLeaf); if (i!==-1) cur.splice(i,1); }
         insertLeaf(canonPath, leafName, total, total * tasa);
       });
-      // Nota: Activos Fijos NO se inyectan aquí — el Balance General usa los valores del archivo
-      // cargado (que ya están cuadrados). El módulo Activos Fijos tiene su propia vista detallada.
+
+      // Activos Fijos — inyectar PPE desde auxiliar (la PPE NO viene del archivo de balance)
+      if (currentAF?.records?.length) {
+        const MNUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+        const BASE_MONTH_NUM = 4;
+        const mesNum = MNUM[selectedMonth] || MNUM['Abril'];
+        const extraM = Math.max(0, mesNum - BASE_MONTH_NUM);
+
+        const getRubroBalance = (r) => {
+          const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
+          if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
+          if (s.includes('GALPON')||s.includes('INMUEBLE')||s.includes('LOCAL')) return 'INMUEBLE (GALPON)';
+          if (s.includes('COMPUT')||s.includes('LAPTOP')||s.includes('MONITOR')||s.includes('IMPRES')) return 'EQUIPOS DE COMPUTACIÓN';
+          if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')) return 'MOBILIARIO';
+          if (s.includes('PLANTA')||s.includes('ELECTRIC')||s.includes('GENERA')) return 'PLANTA ELÉCTRICA';
+          if (s.includes('MONTACAR')) return 'MAQUINARIAS Y EQUIPOS';
+          return 'MAQUINARIAS Y EQUIPOS';
+        };
+        const AF_COSTO_LABEL = {
+          'INMUEBLE (GALPON)':      '1.1.06.01.001-INMUEBLE (GALPON)',
+          'MOBILIARIO':             '1.1.06.01.012-MOBILIARIO Y EQUIPO',
+          'MAQUINARIAS Y EQUIPOS':  '1.1.06.01.003-MAQUINARIAS Y EQUIPOS',
+          'EQUIPOS DE COMPUTACIÓN': '1.1.06.01.005-EQUIPOS DE COMPUTACIÓN',
+          'VEHÍCULOS':              '1.1.06.01.008-VEHÍCULOS',
+          'PLANTA ELÉCTRICA':       '1.1.06.01.017-PLANTA ELÉCTRICA',
+        };
+        const AF_DEP_LABEL = {
+          'INMUEBLE (GALPON)':      '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
+          'MOBILIARIO':             '1.1.06.01.013-DEP. ACUMULADA MOBILIARIO',
+          'MAQUINARIAS Y EQUIPOS':  '1.1.06.01.004-DEP. ACUMULADA MAQUINARIA Y EQUIPOS',
+          'EQUIPOS DE COMPUTACIÓN': '1.1.06.01.007-DEP. ACUMULADA EQUIPOS DE COMPUTACIÓN',
+          'VEHÍCULOS':              '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
+          'PLANTA ELÉCTRICA':       '1.1.06.01.017-DEP. ACUMULADA PLANTA ELECTRICA',
+        };
+        const costoByRubro = {}, depByAccount = {};
+        currentAF.records.forEach(r => {
+          const rubro = getRubroBalance(r);
+          if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
+          costoByRubro[rubro].usd += r.costoUSD || 0;
+          costoByRubro[rubro].bs  += r.costoBS  || 0;
+          const depActual = (r.depAcum || 0) + extraM * (r.depreMensual || 0);
+          if (depActual > 0) {
+            const ctaHaber = AF_DEP_LABEL[rubro] || `DEP. ACUMULADA ${rubro}`;
+            if (!depByAccount[ctaHaber]) depByAccount[ctaHaber] = { bs: 0, rubro };
+            depByAccount[ctaHaber].bs += depActual;
+          }
+        });
+        const PPE_PATH = ['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS'];
+        Object.entries(costoByRubro).forEach(([rubro, v]) => {
+          if (v.usd > 0) insertLeaf([...PPE_PATH, rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.usd * tasa);
+        });
+        Object.entries(depByAccount).forEach(([ctaLabel, info]) => {
+          insertLeaf([...PPE_PATH, info.rubro], ctaLabel, -(info.bs / tasa), -info.bs);
+        });
+      }
     }
 
     // ── Calcular totales de nodos padre ───────────────────────────────────────
