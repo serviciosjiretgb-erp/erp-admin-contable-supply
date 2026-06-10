@@ -1401,820 +1401,110 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
 
   const tree = useMemo(() => {
     const root = [];
-    const monthData = selectedMonth === 'General' ? dbData : dbData.filter(d => d.month === selectedMonth);
-    const resData = monthData.filter(item => !item.path.toUpperCase().includes('ACTIVO') && !item.path.toUpperCase().includes('PASIVO') && !item.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(item.name));
-    const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
-    resData.forEach(item => {
-      const pathArray = item.path.split('>');
+
+    // SIMPLE: usar EXACTAMENTE los datos del mes seleccionado
+    // Si el mes tiene AF cargado, usarlo para PPE. Sin fallbacks, sin mezclar meses.
+    const _af   = afByMonth?.[selectedMonth];
+    const _aux  = auxByMonth?.[selectedMonth] || auxDataConfig || {};
+    const hasAFAuxiliar = !!(_af?.records?.length);
+
+    const monthData = dbData.filter(d => d.month === selectedMonth);
+
+    const normKey  = s => (s||'').trim().replace(/\s+/g,' ').toUpperCase();
+    const insertLeaf = (pathArr, leafName, usdVal, bsVal) => {
       let cur = root;
-      pathArray.forEach(folderName => {
+      for (const folderName of pathArr) {
         const key = normKey(folderName);
         let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName.trim(), c: [], u: 0, b: 0 }; cur.push(folder); }
+        if (!folder) { folder = {n:folderName, c:[], u:0, b:0}; cur.push(folder); }
         cur = folder.c;
-      });
-      let leaf = cur.find(n => normKey(n.n) === normKey(item.name) && n.isLeaf);
-      if (!leaf) cur.push({ n: item.name.trim(), u: item.usd, b: item.bs, isLeaf: true });
-      else { leaf.u += item.usd; leaf.b += item.bs; }
-    });
-
-    // ── Inyectar depreciación mensual desde auxiliar de Activos Fijos ─────────
-    const afRecords = activosFijosData?.records || [];
-    if (afRecords.length > 0) {
-      const monthsToProcess = selectedMonth === 'General'
-        ? [...new Set(dbData.map(d=>d.month))].filter(m=>m!=='Sin Mes')
-        : [selectedMonth];
-      const numMeses = monthsToProcess.length;
-
-      // Agrupar por cuenta de gasto EXACTA del auxiliar (cuentaGasto por activo)
-      // Si no hay cuentaGasto, usar RUBRO_DEPR_MAP para determinar la cuenta
-      const depByCtaGasto = {};
-      afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
-        const perMesBs  = r.depreMensual;
-        const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
-        const ctaGasto  = (r.cuentaGasto||'').trim();
-
-        if (ctaGasto && /^\d/.test(ctaGasto)) {
-          // Usar la cuenta específica del activo (lo más preciso)
-          const codeMatch = ctaGasto.match(/^(\d[\d.]+)/);
-          const code  = codeMatch ? codeMatch[1] : ctaGasto;
-          const label = ctaGasto.includes('-') ? ctaGasto : `${code}-DEPRECIACIÓN`;
-          if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
-          depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
-          depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
-        } else {
-          // Fallback sin cuentaGasto: asignar UNA cuenta según keywords del activo
-          const rubro = getRubro(r);
-          const map = RUBRO_DEPR_MAP[rubro];
-          if (map) {
-            // Si el rubro tiene UNA sola cuenta DEBE, usarla directamente
-            if (map.debe.length === 1) {
-              const d0 = map.debe[0];
-              const label = `${d0.cta}-${d0.nombre}`;
-              if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
-              depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
-              depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
-            } else {
-              // Rubros con 2 cuentas (VEHÍCULOS, MOBILIARIO, EQUIPOS):
-              // Clasificar por keywords del activo para determinar si es operativo (5.x) o administrativo (6.x)
-              // Sede C2 = administrativo → 6.x; C1 u otros = operativo → 5.x
-              const sede2 = (r.sede||'').toUpperCase().trim();
-              const desc2 = ((r.descripcion||'')+(r.cuenta||'')).toUpperCase();
-              const esAdm = sede2 === 'C2' || /\bC2\b/.test(sede2) ||
-                /JAC\b|\bT6\b|ADMIN|OFICIN|ADM\b|GERENC|DIRECCI/.test(desc2);
-              const ctaElegida = esAdm
-                ? map.debe.find(d => /^6/.test(d.cta)) || map.debe[0]
-                : map.debe.find(d => /^5/.test(d.cta)) || map.debe[0];
-              const label = `${ctaElegida.cta}-${ctaElegida.nombre}`;
-              if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
-              depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
-              depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
-            }
-          } else {
-            const label = `5.x.xx.xx.xxx-DEPRECIACIÓN ${rubro}`;
-            if (!depByCtaGasto[label]) depByCtaGasto[label] = { montoBs: 0, montoUSD: 0 };
-            depByCtaGasto[label].montoBs  += perMesBs  * numMeses;
-            depByCtaGasto[label].montoUSD += perMesUSD * numMeses;
-          }
-        }
-      });
-
-      // Insertar hojas según prefijo de cuenta:
-      // cuentas 5.x → bajo la sección COSTOS del Estado de Resultado (buscar nodo existente que inicie con "COSTO")
-      // cuentas 6.x → bajo la sección GASTOS (buscar nodo existente que inicie con "GASTO")
-      const getDepPath = (ctaLabel) => {
-        const firstChar = ctaLabel.trim()[0];
-        if (firstChar === '6') {
-          // Buscar rama GASTOS existente en root, si no crear
-          const gastoNode = root.find(n => /^(GASTOS|GASTO)/i.test(n.n.trim()));
-          const gastoName = gastoNode ? gastoNode.n : 'GASTOS OPERATIVOS Y ADMINISTRATIVOS';
-          return [gastoName, 'GASTOS DE DEPRECIACIÓN'];
-        }
-        // Default 5.x → COSTOS
-        const costoNode = root.find(n => /^(COSTO)/i.test(n.n.trim()));
-        const costoName = costoNode ? costoNode.n : 'COSTOS Y GASTOS OPERATIVOS';
-        return [costoName, 'DEPRECIACIÓN'];
-      };
-
-      Object.entries(depByCtaGasto).forEach(([ctaGasto, vals]) => {
-        const pathDep = getDepPath(ctaGasto);
-        let cur = root;
-        pathDep.forEach(folderName => {
-          const key = normKey(folderName);
-          let folder = cur.find(n => normKey(n.n) === key);
-          if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
-          cur = folder.c;
-        });
-        let leaf = cur.find(n => normKey(n.n)===normKey(ctaGasto)&&n.isLeaf);
-        if (!leaf) cur.push({ n: ctaGasto, u: vals.montoUSD, b: vals.montoBs, isLeaf: true });
-        else { leaf.u += vals.montoUSD; leaf.b += vals.montoBs; }
-      });
-    }
-
-    const compute = (nodes) => { let u=0,b=0; nodes.forEach(n => { if(!n.isLeaf){const t=compute(n.c);n.u=t.u;n.b=t.b;} u+=n.u;b+=n.b; }); return {u,b}; };
-    compute(root);
-    root.forEach(rootNode => {
-      const isIngreso = rootNode.n.toUpperCase().includes('INGRESO') || rootNode.n.toUpperCase().includes('VENTA') || rootNode.n.startsWith('4');
-      const multiplier = isIngreso ? -1 : 1;
-      const applySign = (nodes) => nodes.forEach(n => { n.u *= multiplier; n.b *= multiplier; if (!n.isLeaf) applySign(n.c); });
-      applySign([rootNode]);
-    });
-    return root;
-  }, [dbData, selectedMonth, activosFijosData]);
-
-  let totalUSD = 0; let totalBS = 0; let baseVentas = 0;
-  let ingresosUSD = 0; let ingresosBS = 0;
-  let costosUSD = 0;  let costosBS = 0;
-  tree.forEach(n => {
-    const up = n.n.toUpperCase();
-    const isIng  = up.includes('INGRESO') || up.includes('VENTA') || n.n.startsWith('4');
-    const isCost = up.includes('COSTO') || n.n.startsWith('5');
-    if (isIng)  { totalUSD+=n.u; totalBS+=n.b; baseVentas+=n.u; ingresosUSD+=n.u; ingresosBS+=n.b; }
-    else        { totalUSD-=n.u; totalBS-=n.b; if(isCost){ costosUSD+=n.u; costosBS+=n.b; } }
-  });
-  if (baseVentas === 0) baseVentas = 1;
-  const utilidadBrutaUSD = ingresosUSD - costosUSD;
-  const utilidadBrutaBS  = ingresosBS  - costosBS;
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-
-  // Title Case helper for leaf account descriptions
-  const toTitleCase = (str) => str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-
-  return (
-    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
-      <header className="bg-[#111111] border-b-4 border-orange-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-4">
-        <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-orange-400"><ArrowLeft size={16}/> Panel</button>
-          <div className="flex items-center gap-2 border-l-2 border-slate-700 pl-4">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Período:</span>
-            <select value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="bg-orange-500/10 border border-orange-500/40 text-orange-300 text-xs rounded-lg p-1.5 font-black uppercase cursor-pointer outline-none min-w-[120px]">
-              <option value="General">General (Acumulado)</option>
-              {availableMonths.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-            </select>
-          </div>
-          {/* Currency toggle */}
-          <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700 border-l-2 border-l-slate-700 ml-2">
-            {[['both','USD + Bs'],['usd','Solo USD'],['bs','Solo Bs']].map(([v,lbl])=>(
-              <button key={v} onClick={()=>setCurrency(v)} className={`px-3 py-1.5 rounded text-[10px] font-black uppercase transition-colors ${currency===v?'bg-orange-500 text-white':'text-slate-400 hover:text-white hover:bg-slate-700'}`}>{lbl}</button>
-            ))}
-          </div>
-        </div>
-        <div className="flex gap-2 items-center flex-wrap">
-          <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
-            <button onClick={() => { setDefaultOpen(true); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronDown size={14}/> Expandir</button>
-            <button onClick={() => { setDefaultOpen(false); setExpandKey(k=>k+1); }} className="px-3 py-1.5 rounded text-[10px] font-black uppercase flex items-center gap-1 text-slate-300 hover:bg-slate-700 hover:text-white"><ChevronRight size={14}/> Contraer</button>
-          </div>
-          <button onClick={() => exportResultadoExcel(tree, monthLabel(selectedMonth), totalUSD, getOpenSet(), currency)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
-            <FileSpreadsheet size={13}/> Excel
-          </button>
-          <button onClick={() => {
-            const fmtP = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
-            const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
-            const cols = ['Cuenta', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[]), '%'].map(c=>`<th>${c}</th>`).join('');
-            const openStates = getOpenSet();
-            const buildRows = (nodes, lvl=0) => nodes.map(n => {
-              const indent = '&nbsp;'.repeat(lvl*4);
-              const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
-
-              if (!n.isLeaf && n.c?.length) {
-                if (!isAccountNode) {
-                  const childRows = buildRows(n.c, lvl+1);
-                  return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
-                } else {
-                  const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
-                  let html = `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${baseVentas?((Math.abs(n.u)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr>`;
-                  if (isOpen) {
-                    html += buildRows(n.c, lvl+1);
-                    html += `<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
-                  }
-                  return html;
-                }
-              }
-              return `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${baseVentas?((Math.abs(n.u)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr>`;
-            }).join('');
-            printReport(`<h1>Estado de Resultado</h1><h2>Período: ${selectedMonth==='General'?'Acumulado':monthLabel(selectedMonth)}</h2>`,
-              `<table><thead><tr>${cols}</tr></thead><tbody>${buildRows(tree)}<tr class="grand-total"><td>RESULTADO DEL EJERCICIO</td>${showUSD?`<td>${fmtP(totalUSD)}</td>`:''}${showBS?'<td></td>':''}<td>${baseVentas?((Math.abs(totalUSD)/Math.abs(baseVentas)*100).toFixed(2)+'%'):''}</td></tr></tbody></table>`);
-          }}
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
-            <FileText size={13}/> PDF
-          </button>
-        </div>
-      </header>
-      <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-8 border-t-4 border-orange-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">Servicios Jiret G&B, C.A.</p>
-          <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight mb-1">Estado de Resultado</h1>
-          <p className="text-orange-600 font-black uppercase bg-orange-50 px-5 py-1.5 rounded-full text-[10px] border border-orange-200 mt-2">
-            Período: {selectedMonth === 'General' ? 'Acumulado' : monthLabel(selectedMonth)}
-          </p>
-        </div>
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-[#111111] text-[10px] uppercase font-black text-slate-300">
-              <tr>
-                <th className="px-4 py-5 w-[55%]">Cuentas</th>
-                {currency !== 'bs'  && <th className="px-3 py-5 text-right text-orange-300">USD</th>}
-                {currency !== 'usd' && <th className="px-3 py-5 text-right text-amber-300 hidden sm:table-cell">Bs.</th>}
-                <th className="px-3 py-5 text-right text-slate-400">%</th>
-              </tr>
-            </thead>
-            <tbody key={expandKey}>
-              {tree.map((node, i) => {
-                const up = node.n.toUpperCase();
-                const isIng  = up.includes('INGRESO') || up.includes('VENTA') || node.n.startsWith('4');
-                const isCost = up.includes('COSTO') || node.n.startsWith('5');
-                const showUB = isCost; // show Utilidad Bruta row right after COSTOS node
-                return (
-                  <React.Fragment key={i}>
-                    <ExpandableRow node={node} totalBaseUSD={baseVentas} defaultOpen={defaultOpen} highlightedAccounts={highlightedAccounts} toggleHighlight={toggleHighlight} isBalance={false} currency={currency} onToggle={reportNodeOpen}/>
-                    {showUB && (
-                      <tr className="border-t-2 border-emerald-400 bg-emerald-50">
-                        <td className="px-5 py-3 font-black text-[11px] uppercase tracking-widest text-emerald-800 pl-8">UTILIDAD BRUTA</td>
-                        {currency !== 'bs'  && <td className={`px-3 py-3 text-right font-mono font-black text-sm ${utilidadBrutaUSD >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtR(utilidadBrutaUSD)}</td>}
-                        {currency !== 'usd' && <td className={`px-3 py-3 text-right font-mono font-black text-sm hidden sm:table-cell ${utilidadBrutaBS >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtR(utilidadBrutaBS)}</td>}
-                        <td className="px-3 py-3 text-right font-mono font-black text-[11px] text-emerald-600">{baseVentas ? (Math.abs(utilidadBrutaUSD)/Math.abs(baseVentas)*100).toFixed(2) : 0}%</td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-              <tr className="bg-[#111111] text-white font-black border-t-4 border-orange-600">
-                <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
-                {currency !== 'bs'  && <td className={`px-3 py-7 text-right text-lg font-mono ${totalUSD < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmtR(totalUSD)}</td>}
-                {currency !== 'usd' && <td className={`px-3 py-7 text-right text-base font-mono hidden sm:table-cell ${totalBS < 0 ? 'text-red-300' : 'text-amber-300'}`}>{fmtR(totalBS)}</td>}
-                <td className="px-3 py-7 text-right text-lg font-mono">{(Math.abs(totalUSD)/baseVentas*100).toFixed(2)}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-// ============================================================================
-// 6. VISTA: ANÁLISIS COMPARATIVO
-// ============================================================================
-function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
-  const availableMonths = useMemo(() => [...new Set(dbData.map(d => d.month))].filter(m => m !== 'Sin Mes'), [dbData]);
-  const [month1, setMonth1] = useState(availableMonths[0] || '');
-  const [month2, setMonth2] = useState(availableMonths[1] || availableMonths[0] || '');
-  const fmtR = (v) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-
-  const tree = useMemo(() => {
-    const root = [];
-    const getData = (m) => dbData.filter(d => d.month === m && !d.path.toUpperCase().includes('ACTIVO') && !d.path.toUpperCase().includes('PASIVO') && !d.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(d.name));
-    const m1Data = getData(month1); const m2Data = getData(month2);
-    const processItem = (item, isM1) => {
-      const pathParts = item.path.split('>');
-      const mainCategory = pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS';
-      let accountOriginalName = pathParts.length > 1 ? pathParts[pathParts.length - 1].trim() : item.name.trim();
-      if (!/^(\d[\d\.]+)/.test(accountOriginalName) && /^(\d[\d\.]+)/.test(item.name.trim())) accountOriginalName = item.name.trim();
-      const matchKey = accountOriginalName.match(/^(\d[\d\.]+)/);
-      const accountKey = matchKey ? matchKey[1] : accountOriginalName.toUpperCase();
-      let categoryNode = root.find(n => n.key === mainCategory);
-      if (!categoryNode) { categoryNode = { key: mainCategory, n: pathParts[0]?pathParts[0].trim().toUpperCase():'OTROS', c: [], m1_u: 0, m2_u: 0 }; root.push(categoryNode); }
-      let accountNode = categoryNode.c.find(n => n.key === accountKey);
-      if (!accountNode) { accountNode = { key: accountKey, n: accountOriginalName, m1_u: 0, m2_u: 0 }; categoryNode.c.push(accountNode); }
-      if (isM1) accountNode.m1_u += item.usd; else accountNode.m2_u += item.usd;
-    };
-    m1Data.forEach(item => processItem(item, true));
-    m2Data.forEach(item => processItem(item, false));
-
-    // ── Inyectar depreciación por mes desde Activos Fijos ─────────────────────
-    const afRecords = activosFijosData?.records || [];
-    if (afRecords.length > 0) {
-      const getDeprByRubro = () => {
-        const byRubro = {};
-        afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
-          const rubro = getRubro(r);
-          const map = RUBRO_DEPR_MAP[rubro];
-          if (!map) return;
-          const nDebe = map.debe.length;
-
-          const perMesBs = r.depreMensual;
-          const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
-
-          map.debe.forEach(d => {
-            const key = `${d.cta}-${d.nombre}`;
-            if (!byRubro[key]) byRubro[key] = { m1: 0, m2: 0, cat: d.cta[0]==='6'?'GASTOS':'COSTOS Y GASTOS OPERATIVOS' };
-            byRubro[key].m1 += perMesUSD / nDebe;
-            byRubro[key].m2 += perMesUSD / nDebe;
-          });
-        });
-        return byRubro;
-      };
-      const deprByRubro = getDeprByRubro();
-      Object.entries(deprByRubro).forEach(([label, vals]) => {
-        const catKey = vals.cat;
-        let catNode = root.find(n => n.key === catKey);
-        if (!catNode) { catNode = { key: catKey, n: catKey, c: [], m1_u: 0, m2_u: 0 }; root.push(catNode); }
-        let accNode = catNode.c.find(n => n.key === label);
-        if (!accNode) { accNode = { key: label, n: label, m1_u: 0, m2_u: 0 }; catNode.c.push(accNode); }
-        accNode.m1_u += vals.m1;
-        accNode.m2_u += vals.m2;
-      });
-    }
-
-    root.forEach(cat => {
-      let cat_m1 = 0, cat_m2 = 0;
-      const up = cat.n.toUpperCase();
-      const isIngreso = up.includes('INGRESO') || up.includes('VENTA') || /^4/.test(cat.key||'');
-      // Apply same sign logic as EstadoResultadoView: ingresos keep positive (negate negative source values), gastos positive
-      // Source data sign: ingresos are stored negative (credit nature), gastos positive (debit nature)
-      // multiplier -1 on ingresos flips them to positive; +1 on gastos keeps them positive
-      const multiplier = isIngreso ? -1 : 1;
-      cat.c.forEach(acc => { acc.m1_u *= multiplier; acc.m2_u *= multiplier; cat_m1 += acc.m1_u; cat_m2 += acc.m2_u; });
-      cat.m1_u = cat_m1; cat.m2_u = cat_m2;
-    });
-    return root;
-  }, [dbData, month1, month2, activosFijosData]);
-
-  // After sign application inside useMemo:
-  // • INGRESOS cats: m1_u/m2_u are positive (revenue)
-  // • COSTOS/GASTOS cats: m1_u/m2_u are positive (expenses)
-  // RESULTADO = INGRESOS - COSTOS/GASTOS
-  let total_m1 = 0, total_m2 = 0;
-  tree.forEach(cat => {
-    const isIng = cat.n.toUpperCase().includes('INGRESO') || cat.n.toUpperCase().includes('VENTA') || (cat.key && /^4/.test(cat.key));
-    if (isIng) { total_m1 += cat.m1_u; total_m2 += cat.m2_u; }
-    else       { total_m1 -= cat.m1_u; total_m2 -= cat.m2_u; }
-  });
-  const varAbsTotal = total_m2 - total_m1;
-
-  return (
-    <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
-      <header className="bg-white border-b-2 border-indigo-400 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm flex-wrap gap-3">
-        <button onClick={onBack} className="flex items-center gap-2 font-black text-xs text-slate-600 uppercase hover:text-indigo-600"><ArrowLeft size={16}/> Volver al Panel</button>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Base:</span>
-          <select value={month1} onChange={e=>setMonth1(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
-          <span className="text-slate-400 font-black text-xs">VS</span>
-          <select value={month2} onChange={e=>setMonth2(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none">{availableMonths.map(m=><option key={m}>{m}</option>)}</select>
-          <button onClick={() => exportComparativoExcel(tree, month1, month2, total_m1, total_m2)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
-            <FileSpreadsheet size={13}/> Excel
-          </button>
-          <button onClick={() => {
-            const fmtR = v => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0);
-            const pct = (varAbs, base) => base !== 0 ? (Math.abs(varAbs) / Math.abs(base) * 100).toFixed(2) + '%' : '—';
-            const cols = `<th>Estructura</th><th style="text-align:right">${month1}</th><th style="text-align:right">${month2}</th><th style="text-align:right">Var. Absoluta</th><th style="text-align:right">Var. %</th>`;
-            let rowsHtml = '';
-            tree.forEach(cat => {
-              const sortedAccounts = [...cat.c].sort((a,b) => String(a.n).localeCompare(String(b.n)));
-              const catVarAbs = cat.m2_u - cat.m1_u;
-              rowsHtml += `<tr class="section"><td colspan="5" style="text-align:left;">${cat.n}</td></tr>`;
-              sortedAccounts.forEach(acc => {
-                const varAbs = acc.m2_u - acc.m1_u;
-                rowsHtml += `<tr><td style="text-align:left;padding-left:15px;">${acc.n}</td><td style="text-align:right">${fmtR(acc.m1_u)}</td><td style="text-align:right">${fmtR(acc.m2_u)}</td><td style="text-align:right">${fmtR(varAbs)}</td><td style="text-align:right">${pct(varAbs,acc.m1_u)}</td></tr>`;
-              });
-              rowsHtml += `<tr class="total"><td style="text-align:left;padding-left:15px;">TOTAL ${cat.n}</td><td style="text-align:right">${fmtR(cat.m1_u)}</td><td style="text-align:right">${fmtR(cat.m2_u)}</td><td style="text-align:right">${fmtR(catVarAbs)}</td><td style="text-align:right">${pct(catVarAbs,cat.m1_u)}</td></tr>`;
-            });
-            const varAbsTotal = total_m2 - total_m1;
-            printReport(
-              `<h1>Análisis Comparativo de Variaciones</h1><h2>${month1} vs ${month2}</h2>`,
-              `<table><thead><tr>${cols}</tr></thead><tbody>${rowsHtml}<tr class="grand-total"><td style="text-align:left;">RESULTADO DEL EJERCICIO</td><td style="text-align:right">${fmtR(total_m1)}</td><td style="text-align:right">${fmtR(total_m2)}</td><td style="text-align:right">${fmtR(varAbsTotal)}</td><td style="text-align:right">${pct(varAbsTotal,total_m1)}</td></tr></tbody></table>`
-            );
-          }}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-colors">
-            <FileText size={13}/> PDF
-          </button>
-        </div>
-      </header>
-      <main className="p-4 md:p-8 max-w-6xl mx-auto pb-16">
-        <div className="bg-white px-8 py-10 border-t-4 border-indigo-400 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-          <h1 className="text-3xl font-black text-slate-900 uppercase mb-2">Servicios Jiret G&B, C.A.</h1>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-widest mb-2">Análisis Comparativo</h2>
-          <p className="font-black uppercase bg-slate-800 text-white px-5 py-2 rounded-full text-[10px]">{month1} vs {month2}</p>
-        </div>
-        {availableMonths.length < 2 ? (
-          <div className="bg-white p-12 text-center rounded-xl border border-slate-200"><AlertTriangle className="mx-auto text-indigo-400 mb-4" size={48}/><p className="text-slate-500 font-black text-xs uppercase">Necesitas al menos 2 meses cargados.</p></div>
-        ) : (
-          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-800 text-[10px] uppercase font-black text-slate-300 border-b-2 border-indigo-500">
-                <tr><th className="px-4 py-5 w-[45%]">Estructura</th><th className="px-3 py-5 text-right bg-slate-900/50">{month1}</th><th className="px-3 py-5 text-right bg-slate-900">{month2}</th><th className="px-3 py-5 text-right text-indigo-400">Var. Absoluta</th><th className="px-3 py-5 text-right">Var. %</th></tr>
-              </thead>
-              <tbody>
-                {tree.map((cat, i) => {
-                  const sortedAccounts = [...cat.c].sort((a,b) => String(a.n).localeCompare(String(b.n)));
-                  const catVarAbs = cat.m2_u - cat.m1_u;
-                  return (
-                    <React.Fragment key={i}>
-                      <tr className="bg-[#111827]"><td className="py-3 px-4 text-indigo-400 font-black text-xs uppercase tracking-[0.2em]">{cat.n}</td><td colSpan={4}/></tr>
-                      {sortedAccounts.map((acc, j) => {
-                        const varAbs = acc.m2_u - acc.m1_u;
-                        const varPct = acc.m1_u !== 0 ? (varAbs/Math.abs(acc.m1_u))*100 : (acc.m2_u !== 0 ? 100 : 0);
-                        const colorClass = varAbs > 0 ? 'text-emerald-600' : (varAbs < 0 ? 'text-red-500' : 'text-slate-400');
-                        return (
-                          <tr key={j} className="bg-white border-b border-gray-100 hover:bg-indigo-50 transition-colors">
-                            <td className="py-2.5 px-4 font-bold text-[11px] text-slate-800 uppercase pl-6 border-l-4 border-indigo-400 truncate max-w-xs">{acc.n}</td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">{fmtR(acc.m1_u)}</td>
-                            <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-800 font-bold">{fmtR(acc.m2_u)}</td>
-                            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${varAbs !== 0 ? 'text-indigo-600' : 'text-slate-400'}`}>{fmtR(varAbs)}</td>
-                            <td className={`py-2.5 px-3 text-right font-mono text-[11px] font-bold ${colorClass}`}>{Math.abs(varPct).toFixed(2)}%</td>
-                          </tr>
-                        );
-                      })}
-                      <tr className="bg-slate-200 text-slate-800 border-t border-slate-300">
-                        <td className="py-3 px-4 font-black text-[11px] uppercase pl-6">TOTAL {cat.n}</td>
-                        <td className="py-3 px-3 text-right font-mono text-[12px] font-black">{fmtR(cat.m1_u)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-[12px] font-black">{fmtR(cat.m2_u)}</td>
-                        <td className={`py-3 px-3 text-right font-mono text-[12px] font-black ${catVarAbs !== 0 ? 'text-indigo-600' : 'text-slate-500'}`}>{fmtR(catVarAbs)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-[12px] font-black text-slate-500">{cat.m1_u!==0?Math.abs(catVarAbs/Math.abs(cat.m1_u)*100).toFixed(2):'—'}%</td>
-                      </tr>
-                    </React.Fragment>
-                  );
-                })}
-                <tr className="bg-slate-900 text-white font-black border-t-4 border-indigo-600">
-                  <td className="px-5 py-7 text-sm uppercase tracking-[0.2em]" style={{paddingLeft:28}}>RESULTADO DEL EJERCICIO</td>
-                  <td className="px-3 py-7 text-right text-base font-mono border-l border-slate-800">{fmtR(total_m1)}</td>
-                  <td className="px-3 py-7 text-right text-base font-mono border-l border-slate-800">{fmtR(total_m2)}</td>
-                  <td className={`px-3 py-7 text-right text-lg font-mono border-l border-slate-800 ${varAbsTotal > 0?'text-emerald-400':'text-red-400'}`}>{fmtR(varAbsTotal)}</td>
-                  <td className={`px-3 py-7 text-right text-lg font-mono ${varAbsTotal > 0?'text-emerald-400':'text-red-400'}`}>{total_m2!==0?Math.abs(varAbsTotal/Math.abs(total_m2)*100).toFixed(2):'—'}%</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// ============================================================================
-// 7. VISTA: BALANCE GENERAL
-// ============================================================================
-const DEP_ACUM_ACCOUNT_MAP = {
-  'MOBILIARIO':       '1.1.06.01.013-DEP. ACUMULADA MOBILIARIO',
-  'MAQUINARIA':       '1.1.06.01.004-DEP. ACUMULADA MAQUINARIA Y EQUIPOS',
-  'PLANTA ELECTRICA': '1.1.06.01.017-DEP. ACUMULADA PLANTA ELECTRICA',
-  'GALPON':           '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
-  'INMUEBLE':         '1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)',
-  'VEHICULO':         '1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS',
-};
-
-// ─── Mapa de cuentas contables de depreciación por rubro ─────────────────────
-// DEBE = gasto/costo, HABER = depreciación acumulada
-// Algunos rubros tienen partida operativa (OP) y administrativa (ADM)
-const RUBRO_DEPR_MAP = {
-  'GALPÓN E INMUEBLES': {
-    debe:  [{ cta: '5.1.03.05.009', nombre: 'DEPRECIACIÓN GALPON (OP)' }],
-    haber: [{ cta: '1.1.06.01.002', nombre: 'DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)' }],
-  },
-  'MAQUINARIA Y EQUIPOS': {
-    debe:  [{ cta: '5.1.03.05.010', nombre: 'DEPRECIACIÓN MAQUINARIA Y EQUIPOS (OP)' }],
-    haber: [{ cta: '1.1.06.01.004', nombre: 'DEP. ACUMULADA MAQUINARIA Y EQUIPOS' }],
-  },
-  'HERRAMIENTAS MENORES': {
-    debe:  [{ cta: '5.1.03.05.013', nombre: 'DEPRECIACIÓN MONTACARGAS (OP)' }],
-    haber: [{ cta: '1.1.06.01.004', nombre: 'DEP. ACUMULADA MAQUINARIA Y EQUIPOS' }],
-  },
-  'MOBILIARIO Y EQUIPO DE OFICINA': {
-    debe:  [
-      { cta: '5.1.03.05.011', nombre: 'DEPRECIACIÓN MOBILIARIO Y EQUIPO (OP)' },
-      { cta: '6.2.02.02.006', nombre: 'DEP. MOBILIARIO' },
-    ],
-    haber: [{ cta: '1.1.06.01.013', nombre: 'DEP. ACUMULADA MOBILIARIO' }],
-  },
-  'VEHÍCULOS': {
-    debe:  [
-      { cta: '5.1.03.05.012', nombre: 'DEPRECIACIÓN VEHÍCULOS DE OPERACIONES (OP)' },
-      { cta: '6.2.02.02.004', nombre: 'DEP. VEHÍCULOS' },
-    ],
-    haber: [{ cta: '1.1.06.01.009', nombre: 'DEP. ACUMULADA VEHÍCULOS' }],
-  },
-  'PLANTA ELÉCTRICA': {
-    debe:  [{ cta: '5.1.03.05.014', nombre: 'DEPRECIACIÓN PLANTA ELECTRICA (OP)' }],
-    haber: [{ cta: '1.1.06.01.017', nombre: 'DEP. ACUMULADA PLANTA ELECTRICA' }],
-  },
-  'EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES': {
-    debe:  [
-      { cta: '5.1.03.05.015', nombre: 'DEP. EQUIPOS DE COMPUTACIÓN (OP)' },
-      { cta: '6.2.02.02.003', nombre: 'DEP. EQUIPOS DE COMPUTACIÓN' },
-    ],
-    haber: [{ cta: '1.1.06.01.007', nombre: 'DEP. ACUMULADA EQUIPOS DE COMPUTACIÓN' }],
-  },
-};
-const BALANCE_ACCOUNT_PATH = {
-  '1.1.01.01': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','CAJA MONEDA EXTRANJERA'],
-  '1.1.01.02': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','BANCOS NACIONALES'],
-  '1.1.01.03': ['ACTIVOS','ACTIVO CIRCULANTE','DISPONIBLE','BANCOS NACIONALES MONEDA EXT.'],
-  '1.1.02.01': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','CLIENTES'],
-  '1.1.02.02': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','INTERCOMPAÑIAS'],
-  '1.1.02.03': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','DIRECTORES'],
-  '1.1.02.04': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','EMPLEADOS'],
-  '1.1.02.05': ['ACTIVOS','ACTIVO CIRCULANTE','EFECTOS Y CUENTAS POR COBRAR','ANTICIPOS Y OTRAS CUENTAS'],
-  '1.1.03.01': ['ACTIVOS','ACTIVO CIRCULANTE','INVERSIONES A CORTO PLAZO','INVENTARIOS'],
-  '1.1.04.01': ['ACTIVOS','ACTIVO CIRCULANTE','RETENCIONES Y APORTES','RETENCIONES Y CREDITOS FISCALES'],
-  '1.1.05.01': ['ACTIVOS','ACTIVO CIRCULANTE','PREPAGADOS','GASTOS PAGADOS POR ANTICIPADO'],
-  // Activos Fijos 1.1.06 → handled separately by AF_CATEGORY_MAP_BY_CODE
-  '2.1.01.01': ['PASIVO','PASIVO CIRCULANTE','CTAS Y EFECTOS POR PAGAR','CUENTAS POR PAGAR'],
-  '2.1.01.02': ['PASIVO','PASIVO CIRCULANTE','OTRAS CUENTAS POR PAGAR','OTRAS CUENTAS POR PAGAR'],
-  '2.1.01.04': ['PASIVO','PASIVO CIRCULANTE','DIRECTORES','DIRECTORES'],
-  '2.1.02.01': ['PASIVO','PASIVO CIRCULANTE','RET. Y APORTES POR ENTERAR','RETENCIONES E IMPUESTOS POR ENTERAR'],
-  '2.1.02.02': ['PASIVO','PASIVO CIRCULANTE','RET. Y APORTES POR ENTERAR','CONTRIBUYENTE I.V.A.'],
-  '2.1.02.03': ['PASIVO','PASIVO CIRCULANTE','RET. Y APORTES POR ENTERAR','IMPUESTOS REGIONALES Y APORTES'],
-  '2.1.03.01': ['PASIVO','PASIVO CIRCULANTE','PASIVOS LABORALES','PASIVOS NOMINALES'],
-  '2.2.02.01': ['PASIVO','PASIVO A LARGO PLAZO','APARTADOS','APARTADOS'],
-  '2.2.03.01': ['PASIVO','DIFERIDOS','DIFERIDOS','DIFERIDOS'],
-  '3.1.01.01': ['PATRIMONIO','CAPITAL SOCIAL','CAPITAL SOCIAL','CAPITAL SOCIAL'],
-  '3.1.03.01': ['PATRIMONIO','UTILIDADES NO DISTRIBUIDAS','UTILIDADES NO DISTRIBUIDAS','UTILIDADES NO DISTRIBUIDAS'],
-  '3.1.05.01': ['PATRIMONIO','RESULTADO DEL EJERCICIO','RESULTADO DEL EJERCICIO','RESULTADO DEL EJERCICIO'],
-};
-
-// Categoría de Propiedad, Planta y Equipos por código exacto
-const AF_CATEGORY_MAP_BY_CODE = {
-  '1.1.06.01.001': 'INMUEBLE (GALPON)',        // costo
-  '1.1.06.01.002': 'INMUEBLE (GALPON)',        // dep. acum.
-  '1.1.06.01.003': 'MAQUINARIAS Y EQUIPOS',   // costo
-  '1.1.06.01.004': 'MAQUINARIAS Y EQUIPOS',   // dep. acum.
-  '1.1.06.01.005': 'EQUIPOS DE COMPUTACIÓN',  // costo
-  '1.1.06.01.006': 'EQUIPOS DE COMPUTACIÓN',  // dep. acum. (algunas versiones)
-  '1.1.06.01.007': 'EQUIPOS DE COMPUTACIÓN',  // dep. acum. (cuenta correcta, verificada),
-  '1.1.06.01.008': 'VEHÍCULOS',               // costo
-  '1.1.06.01.009': 'VEHÍCULOS',               // dep. acum.
-  '1.1.06.01.010': 'VEHÍCULOS',
-  '1.1.06.01.011': 'VEHÍCULOS',
-  '1.1.06.01.012': 'MOBILIARIO',              // costo
-  '1.1.06.01.013': 'MOBILIARIO',              // dep. acum.
-  '1.1.06.01.014': 'MOBILIARIO',
-  '1.1.06.01.015': 'MOBILIARIO',
-  '1.1.06.01.016': 'MOBILIARIO',
-  '1.1.06.01.017': 'PLANTA ELÉCTRICA',
-  '1.1.06.01.018': 'PLANTA ELÉCTRICA',
-};
-
-function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConfig, activosFijosData, tasaByMonth = {}, onSaveTasa }) {
-  const availableMonths = useMemo(() => {
-    const MORD_B = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-    const months = new Set();
-
-    // Solo meses con DATOS DE BALANCE reales (cuentas 1/2/3)
-    // Esto evita que Enero/Febrero/Marzo (solo P&L) aparezcan aquí
-    dbData.forEach(d => {
-      if (d.month && d.month !== 'Sin Mes') {
-        const isBalRec = /^[123]/.test(d.name) ||
-          (d.path||'').toUpperCase().includes('ACTIV') ||
-          (d.path||'').toUpperCase().includes('PASIV') ||
-          (d.path||'').toUpperCase().includes('PATRIMON');
-        if (isBalRec) months.add(d.month);
       }
-    });
-
-    // Meses con AF cargado también pueden tener balance (AF reemplaza 1.1.06.x)
-    Object.keys(afByMonth || {}).forEach(m => {
-      if (m && m !== 'Sin Mes' && afByMonth[m]?.records?.length) months.add(m);
-    });
-
-    // Meses con tasa guardada y al menos aux cargado
-    Object.keys(tasaByMonth || {}).forEach(m => {
-      if (m && m !== 'Sin Mes') {
-        const hasAux = auxByMonth?.[m] && Object.values(auxByMonth[m]).some(v => Array.isArray(v) && v.length > 0);
-        if (hasAux) months.add(m);
-      }
-    });
-
-    return [...months].filter(Boolean).sort((a, b) => {
-      if (a === 'Saldos Iniciales') return -1;
-      if (b === 'Saldos Iniciales') return 1;
-      return (MORD_B[a] || 99) - (MORD_B[b] || 99);
-    });
-  }, [dbData, afByMonth, auxByMonth, tasaByMonth]);
-  const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[availableMonths.length - 1] || '');
-  // Sincronizar cuando llegan nuevos meses (ej: se carga Mayo después del montaje)
-  useEffect(() => {
-    if (availableMonths.length > 0) {
-      setSelectedMonth(prev => {
-        if (!prev || !availableMonths.includes(prev)) return availableMonths[availableMonths.length - 1];
-        return prev; // mantener el mes actual si sigue siendo válido
-      });
-    }
-  }, [availableMonths]);
-  const [defaultOpen, setDefaultOpen] = useState(false);
-  const [expandKey, setExpandKey] = useState(0);
-  const [activeCode, setActiveCode] = useState(null);
-  // Tasa por mes: se carga automáticamente al cambiar de mes y se guarda al editar
-  const [tasa, setTasaLocal] = useState(() => tasaByMonth[availableMonths[availableMonths.length-1] || ''] || 90);
-  const handleTasaChange = (v) => { setTasaLocal(v); if(onSaveTasa && selectedMonth) onSaveTasa(selectedMonth, v); };
-  // Sincronizar tasa al cambiar de mes O cuando llega una tasa guardada desde config
-  useEffect(() => {
-    if (selectedMonth) {
-      const saved = tasaByMonth[selectedMonth];
-      if (saved) setTasaLocal(saved);
-    }
-  }, [selectedMonth, tasaByMonth]);
-  const [highlightedAccounts, setHighlightedAccounts] = useState(() => new Set());
-  const [currency, setCurrency] = useState('both');
-  // 'Saldos Iniciales' se muestra como 'ABRIL' — si hay AMBOS, quitar el duplicado
-  const displayMonths = useMemo(() => {
-    const hasSI    = availableMonths.includes('Saldos Iniciales');
-    const hasAbril = availableMonths.includes('Abril');
-    if (hasSI && hasAbril) return availableMonths.filter(m => m !== 'Saldos Iniciales');
-    return availableMonths;
-  }, [availableMonths]);
-  const monthLabel = (m) => m === 'Saldos Iniciales' ? 'Abril' : m;
-
-  // Obtener aux y AF para el mes seleccionado (per-month → fallback legacy → fallback cualquier mes disponible)
-  const currentAux = (() => {
-    const hasData = (obj) => obj && Object.values(obj).some(v => Array.isArray(v) && v.length > 0);
-    // 1. Mes exacto
-    if (hasData(auxByMonth?.[selectedMonth])) return auxByMonth[selectedMonth];
-    // 2. Legacy key
-    if (hasData(auxDataConfig)) return auxDataConfig;
-    // 3. Para 'Saldos Iniciales': aux más reciente disponible sin límite
-    if (selectedMonth === 'Saldos Iniciales' && auxByMonth && Object.keys(auxByMonth).length > 0) {
-      const MORD_A = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      const sorted = Object.entries(auxByMonth).filter(([,v]) => hasData(v))
-        .sort((a,b) => (MORD_A[b[0]]||0) - (MORD_A[a[0]]||0));
-      if (sorted.length > 0) return sorted[0][1];
-    }
-    // 4. Para cualquier otro mes: más reciente disponible ≤ ese mes, o cualquiera si no hay
-    if (auxByMonth && Object.keys(auxByMonth).length > 0) {
-      const MORD_A = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-      const mesNum = MORD_A[selectedMonth] || 99;
-      const cands = Object.entries(auxByMonth).filter(([m,v]) => hasData(v) && (MORD_A[m]||99) <= mesNum)
-        .sort((a,b) => (MORD_A[b[0]]||0) - (MORD_A[a[0]]||0));
-      if (cands.length > 0) return cands[0][1];
-      const any = Object.entries(auxByMonth).filter(([,v]) => hasData(v))
-        .sort((a,b) => (MORD_A[b[0]]||0) - (MORD_A[a[0]]||0));
-      if (any.length > 0) return any[0][1];
-    }
-    return {};
-  })();
-  const currentAF  = (() => {
-    const MORD2 = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-    // 1. Mes exacto
-    if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
-    // 2. Legacy key
-    if (activosFijosData?.records?.length) return activosFijosData;
-    if (afByMonth && Object.keys(afByMonth).length > 0) {
-      const entries = Object.entries(afByMonth).filter(([,v]) => v?.records?.length);
-      if (!entries.length) return {records:[]};
-      // Para 'Saldos Iniciales' o 'Abril': usar el AF MÁS ANTIGUO (base de Abril)
-      // Crítico: evita que el AF de Mayo (activos nuevos) cambie los valores del balance de Abril
-      if (selectedMonth === 'Saldos Iniciales' || selectedMonth === 'Abril') {
-        return entries.sort((a,b) => (MORD2[a[0]]||99) - (MORD2[b[0]]||99))[0][1];
-      }
-      // Para otros meses: AF más reciente ≤ ese mes
-      const mesNum = MORD2[selectedMonth] || 99;
-      const cands = entries.filter(([m]) => (MORD2[m]||99) <= mesNum)
-        .sort((a,b) => (MORD2[b[0]]||0) - (MORD2[a[0]]||0));
-      return (cands.length > 0 ? cands[0] : entries.sort((a,b)=>(MORD2[b[0]]||0)-(MORD2[a[0]]||0))[0])[1];
-    }
-    return {records:[]};
-  })();
-
-  const MORD = {'Saldos Iniciales':0,Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-
-  const tree = useMemo(() => {
-    const root = [];
-
-    // ── Calcular _currentAF y _currentAux DENTRO del useMemo para siempre tener datos frescos ──
-    const MORD_AF = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-    const _currentAF = (() => {
-      if (afByMonth?.[selectedMonth]?.records?.length) return afByMonth[selectedMonth];
-      if (activosFijosData?.records?.length) return activosFijosData;
-      if (afByMonth && Object.keys(afByMonth).length > 0) {
-        const entries = Object.entries(afByMonth).filter(([,v]) => v?.records?.length);
-        if (!entries.length) return {records:[]};
-        // Abril/Saldos Iniciales: AF más antiguo disponible (base)
-        if (selectedMonth === 'Saldos Iniciales' || selectedMonth === 'Abril') {
-          return entries.sort((a,b) => (MORD_AF[a[0]]||99) - (MORD_AF[b[0]]||99))[0][1];
-        }
-        const mesNum = MORD_AF[selectedMonth] || 99;
-        const cands = entries.filter(([m]) => (MORD_AF[m]||99) <= mesNum)
-          .sort((a,b) => (MORD_AF[b[0]]||0) - (MORD_AF[a[0]]||0));
-        return (cands.length > 0 ? cands[0] : entries.sort((a,b)=>(MORD_AF[b[0]]||0)-(MORD_AF[a[0]]||0))[0])[1];
-      }
-      return {records:[]};
-    })();
-    const hasData_aux = (obj) => obj && Object.values(obj).some(v => Array.isArray(v) && v.length > 0);
-    const _currentAux = (() => {
-      if (hasData_aux(auxByMonth?.[selectedMonth])) return auxByMonth[selectedMonth];
-      if (hasData_aux(auxDataConfig)) return auxDataConfig;
-      if (auxByMonth && Object.keys(auxByMonth).length > 0) {
-        const mesNum = MORD_AF[selectedMonth] || 99;
-        const cands = Object.entries(auxByMonth).filter(([m,v]) => hasData_aux(v) && (MORD_AF[m]||99) <= mesNum)
-          .sort((a,b) => (MORD_AF[b[0]]||0) - (MORD_AF[a[0]]||0));
-        if (cands.length > 0) return cands[0][1];
-        const any = Object.entries(auxByMonth).filter(([,v]) => hasData_aux(v))
-          .sort((a,b) => (MORD_AF[b[0]]||0) - (MORD_AF[a[0]]||0));
-        if (any.length > 0) return any[0][1];
-      }
-      return {};
-    })();
-    const hasAFAuxiliar = false; // PPE viene del archivo de balance — no inyectar AF aquí
-
-    // Para 'Abril': combinar registros de 'Abril' + 'Saldos Iniciales' como complemento
-    const exactData = dbData.filter(d => d.month === selectedMonth);
-    const siData    = dbData.filter(d => d.month === 'Saldos Iniciales');
-    let monthData;
-    if ((selectedMonth === 'Abril' || selectedMonth === 'Saldos Iniciales') && siData.length > 0) {
-      if (selectedMonth === 'Saldos Iniciales') {
-        monthData = siData;
-      } else {
-        // Abril: usar los datos de Abril + los de Saldos Iniciales para cuentas no cubiertas
-        const exactNames = new Set(exactData.map(d => (d.name||'').toUpperCase().trim()));
-        const siSupplement = siData.filter(d => !exactNames.has((d.name||'').toUpperCase().trim()));
-        monthData = [...exactData, ...siSupplement];
-      }
-    } else {
-      monthData = exactData;
-    }
-    const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
-
-    // Inserta una hoja en el árbol siguiendo la ruta canónica
-    const insertLeaf = (pathArray, name, usdVal, bsVal) => {
-      let cur = root;
-      pathArray.forEach(folderName => {
-        const key = normKey(folderName);
-        let folder = cur.find(n => normKey(n.n) === key);
-        if (!folder) { folder = { n: folderName, c: [], u: 0, b: 0 }; cur.push(folder); }
-        cur = folder.c;
-      });
-      const leafKey = normKey(name);
-      const leaf = cur.find(n => normKey(n.n) === leafKey && n.isLeaf);
-      if (!leaf) cur.push({ n: name.trim(), u: usdVal, b: bsVal, isLeaf: true });
-      else { leaf.u += usdVal; leaf.b += bsVal; }
+      const existing = cur.find(n => normKey(n.n) === normKey(leafName) && n.isLeaf);
+      if (!existing) cur.push({n:leafName, u:usdVal, b:bsVal, isLeaf:true});
+      else { existing.u += usdVal; existing.b += bsVal; }
     };
 
-    // ── Procesar cuentas de dbData usando mapa canónico ───────────────────────
-
+    // Procesar cuentas del archivo de balance
     monthData.forEach(item => {
       const fullCodeMatch = item.name.match(/^(\d+\.\d+\.\d+\.\d+\.\d+)/);
       if (!fullCodeMatch) return;
       const fullCode = fullCodeMatch[1];
-      const prefix   = fullCode.substring(0, fullCode.lastIndexOf('.'));
       const isDepAcum = /DEP.*ACUM|ACUMULAD/i.test(item.name);
       const isAF = fullCode.startsWith('1.1.06');
 
       if (isAF) {
-        if (hasAFAuxiliar) return; // el auxiliar de activos fijos tiene datos más precisos
-        // Activos fijos: costo en USD del archivo; dep. acum. en Bs → convierte con tasa del balance
+        if (hasAFAuxiliar) return; // PPE viene del AF auxiliar cargado para este mes
         const category = AF_CATEGORY_MAP_BY_CODE[fullCode] || 'PROPIEDAD, PLANTA Y EQUIPOS';
         const afPath = ['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS', category];
         let usdV, bsV;
         if (isDepAcum) {
-          bsV  = -Math.abs(item.bs  || 0);
-          usdV = tasa > 0 ? bsV / tasa : 0;
+          bsV = Math.abs(item.bs || 0);
+          usdV = tasa > 0 ? bsV / tasa : Math.abs(item.usd || 0);
+          insertLeaf(afPath, item.name, -usdV, -bsV);
         } else {
-          usdV = item.usd || 0;
-          bsV  = item.bs  || (usdV * tasa);
+          usdV = Math.abs(item.usd || 0);
+          bsV = usdV * tasa;
+          insertLeaf(afPath, item.name, usdV, bsV);
         }
-        insertLeaf(afPath, item.name, usdV, bsV);
         return;
       }
 
-      const canonPath = BALANCE_ACCOUNT_PATH[prefix];
+      // Cuentas normales de balance
+      const prefix4 = fullCode.substring(0, fullCode.lastIndexOf('.'));
+      const canonPath = BALANCE_ACCOUNT_PATH[prefix4] || BALANCE_ACCOUNT_PATH[fullCode.substring(0,fullCode.indexOf('.',fullCode.indexOf('.')+1)+2)];
       if (!canonPath) return;
-
-      let usdV, bsV;
-
-      if (fullCode === '3.1.03.01.002') {
-        // Preservar el monto del archivo sin conversión por tasa, pero siempre positivo
-        // para que sume correctamente al TOTAL PATRIMONIO
-        usdV = Math.abs(item.usd ?? 0);
-        bsV  = Math.abs(item.bs  ?? 0);
-      } else {
-        usdV = (item.usd != null) ? item.usd : (item.bs ? item.bs / tasa : 0);
-        bsV  = (item.bs  != null && item.bs !== 0) ? item.bs : (item.usd ? item.usd * tasa : 0);
-
-        // Forzar negativo SOLO en depreciaciones acumuladas
-        const isContraAccount = /DEP.*ACUM/i.test(item.name);
-        if (isContraAccount) {
-          usdV = -Math.abs(usdV);
-          bsV  = -Math.abs(bsV);
-        } else {
-          usdV = Math.abs(usdV);
-          bsV  = Math.abs(bsV);
-        }
-      }
-
-      insertLeaf(canonPath, item.name, usdV, bsV);
+      let usdV = Math.abs(item.usd || 0);
+      let bsV  = Math.abs(item.bs  || 0);
+      if (bsV === 0) bsV = usdV * tasa;
+      if (usdV === 0 && bsV > 0) usdV = tasa > 0 ? bsV / tasa : 0;
+      const sign3 = /^3\.1\.03\.01\.002/.test(fullCode) ? (item.usd < 0 ? -1 : 1) : 1;
+      insertLeaf(canonPath, item.name, usdV * sign3, bsV * sign3);
     });
 
-    // ── Inyectar CxC / CxP desde auxiliares ──────────────────────────────────
-    {
-      Object.entries(ACCOUNT_MAPS).forEach(([code, info]) => {
-        const allRecords = _currentAux?.[info.type] || [];
-        const forThisCode = allRecords.filter(d => (d.cuentaContable||'').trim().startsWith(code));
-        const isSharedBucket = Object.values(ACCOUNT_MAPS).filter(m => m.type === info.type).length > 1;
-        const records = forThisCode.length > 0 ? forThisCode : (isSharedBucket ? [] : allRecords);
-        const total = records.reduce((s, r) => s + r.monto, 0);
-        if (total === 0) return;
-        const prefixMatch = code.match(/^(\d+\.\d+\.\d+\.\d+)/);
-        if (!prefixMatch) return;
-        const canonPath = BALANCE_ACCOUNT_PATH[prefixMatch[1]];
-        if (!canonPath) return;
-        const leafName = `${code}-${info.label}`;
-        let cur = root; let ok = true;
-        for (const f of canonPath) { const node = cur?.find(n => normKey(n.n) === normKey(f)); if (!node) { ok = false; break; } cur = node.c; }
-        if (ok) { const i = cur.findIndex(n => normKey(n.n)===normKey(leafName)&&n.isLeaf); if (i!==-1) cur.splice(i,1); }
-        insertLeaf(canonPath, leafName, total, total * tasa);
+    // Inyectar PPE desde AF auxiliar del mes (cuando está cargado)
+    if (hasAFAuxiliar) {
+      const MNUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
+      const extraM = Math.max(0, (MNUM[selectedMonth]||4) - 4);
+      const getRubro = (r) => {
+        const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
+        if (s.includes('VEHICUL')||s.includes('CAMION')) return 'VEHÍCULOS';
+        if (s.includes('GALPON')||s.includes('INMUEBLE')) return 'INMUEBLE (GALPON)';
+        if (s.includes('COMPUT')||s.includes('LAPTOP')||s.includes('MONITOR')||s.includes('IMPRES')) return 'EQUIPOS DE COMPUTACIÓN';
+        if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')) return 'MOBILIARIO';
+        if (s.includes('PLANTA')||s.includes('ELECTR')||s.includes('GENERA')) return 'PLANTA ELÉCTRICA';
+        return 'MAQUINARIAS Y EQUIPOS';
+      };
+      const COSTO = {'INMUEBLE (GALPON)':'1.1.06.01.001-INMUEBLE (GALPON)','MOBILIARIO':'1.1.06.01.012-MOBILIARIO Y EQUIPO','MAQUINARIAS Y EQUIPOS':'1.1.06.01.003-MAQUINARIAS Y EQUIPOS','EQUIPOS DE COMPUTACIÓN':'1.1.06.01.005-EQUIPOS DE COMPUTACIÓN','VEHÍCULOS':'1.1.06.01.008-VEHÍCULOS','PLANTA ELÉCTRICA':'1.1.06.01.017-PLANTA ELÉCTRICA'};
+      const DEPREC = {'INMUEBLE (GALPON)':'1.1.06.01.002-DEP. ACUMULADA MEJORAS AL INMUEBLE (GALPON)','MOBILIARIO':'1.1.06.01.013-DEP. ACUMULADA MOBILIARIO','MAQUINARIAS Y EQUIPOS':'1.1.06.01.004-DEP. ACUMULADA MAQUINARIA Y EQUIPOS','EQUIPOS DE COMPUTACIÓN':'1.1.06.01.007-DEP. ACUMULADA EQUIPOS DE COMPUTACIÓN','VEHÍCULOS':'1.1.06.01.009-DEP. ACUMULADA VEHÍCULOS','PLANTA ELÉCTRICA':'1.1.06.01.017-DEP. ACUMULADA PLANTA ELECTRICA'};
+      const PPE = ['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS'];
+      const costos={}, deps={};
+      _af.records.forEach(r => {
+        const rubro = getRubro(r);
+        if (!costos[rubro]) costos[rubro]={usd:0};
+        costos[rubro].usd += r.costoUSD||0;
+        const dep = (r.depAcum||0) + extraM*(r.depreMensual||0);
+        if (dep>0){ if(!deps[rubro]) deps[rubro]=0; deps[rubro]+=dep; }
       });
+      Object.entries(costos).forEach(([rubro,v])=>{ if(v.usd>0) insertLeaf([...PPE,rubro],COSTO[rubro]||rubro,v.usd,v.usd*tasa); });
+      Object.entries(deps).forEach(([rubro,bs])=>{ insertLeaf([...PPE,rubro],DEPREC[rubro]||`DEP. ACUMULADA ${rubro}`,-(bs/tasa),-bs); });
     }
+
+    // Inyectar CxC / CxP desde auxiliares del mes
+    Object.entries(ACCOUNT_MAPS).forEach(([code,info])=>{
+      const allRec = _aux?.[info.type]||[];
+      const forCode = allRec.filter(d=>(d.cuentaContable||'').trim().startsWith(code));
+      const shared = Object.values(ACCOUNT_MAPS).filter(m=>m.type===info.type).length>1;
+      const recs = forCode.length>0?forCode:(shared?[]:allRec);
+      const total = recs.reduce((s,r)=>s+r.monto,0);
+      if(total===0) return;
+      const pm = code.match(/^(\d+\.\d+\.\d+\.\d+)/); if(!pm) return;
+      const cp = BALANCE_ACCOUNT_PATH[pm[1]]; if(!cp) return;
+      const ln = `${code}-${info.label}`;
+      let cur=root; let ok=true;
+      for(const f of cp){const nd=cur?.find(n=>normKey(n.n)===normKey(f));if(!nd){ok=false;break;}cur=nd.c;}
+      if(ok){const idx=cur.findIndex(n=>normKey(n.n)===normKey(ln)&&n.isLeaf);if(idx!==-1)cur.splice(idx,1);}
+      insertLeaf(cp,ln,total,total*tasa);
+    });
 
     // ── Calcular totales de nodos padre ───────────────────────────────────────
     const compute = (nodes) => {
@@ -2234,6 +1524,8 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
     });
 
     return root;
+  }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData, afByMonth, auxByMonth]);
+
   }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData, afByMonth, auxByMonth]);
 
   let totalActivos = 0; let totalPasPat = 0;
