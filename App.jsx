@@ -3885,6 +3885,16 @@ function ReportesFinancierosApp() {
               {MESES_CFG.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
+          <div className="flex items-center gap-2 border-l-2 border-slate-700 pl-4">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tasa Bs/USD ({configMes}):</span>
+            <input
+              type="number" min="0" step="0.01"
+              value={tasaByMonth[configMes] ?? ''}
+              onChange={e => setTasaByMonth(prev => ({ ...prev, [configMes]: parseFloat(e.target.value) || 0 }))}
+              placeholder="Ej: 90"
+              className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs rounded-lg p-1.5 w-24 font-black outline-none"
+            />
+          </div>
         </header>
         <main className="p-4 md:p-8 max-w-5xl mx-auto pb-16">
           <div className="bg-white px-8 py-8 border-t-4 border-orange-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
