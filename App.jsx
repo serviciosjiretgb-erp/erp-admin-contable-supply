@@ -400,6 +400,32 @@ const buildLetterheadRows = (title, subtitle) => [
   [],
 ];
 
+// ============================================================================
+// sortTreeNodes: ordena los HIJOS de cada nodo del árbol de menor a mayor
+// según su código contable (ej. 001, 002... 010, 011), de forma NUMÉRICA
+// (no alfabética) y RECURSIVA — cada grupo se ordena por separado, sin
+// mezclar cuentas de un grupo con las de otro.
+// ============================================================================
+const sortTreeNodes = (nodes) => {
+  nodes.forEach(n => { if (n.c && n.c.length) sortTreeNodes(n.c); });
+  nodes.sort((a, b) => {
+    const codeA = a.n.match(/^(\d[\d.]*)/)?.[1];
+    const codeB = b.n.match(/^(\d[\d.]*)/)?.[1];
+    if (codeA && codeB) {
+      const pa = codeA.split('.').map(Number), pb = codeB.split('.').map(Number);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const d = (pa[i]||0) - (pb[i]||0);
+        if (d !== 0) return d;
+      }
+      return 0;
+    }
+    if (codeA && !codeB) return -1;
+    if (!codeA && codeB) return 1;
+    return a.n.localeCompare(b.n);
+  });
+  return nodes;
+};
+
 const flattenTreeForExcel = (nodes, openStates, level = 0, rows = []) => {
   nodes.forEach(n => {
     const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
@@ -1421,6 +1447,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
       const applySign = (nodes) => nodes.forEach(n => { n.u *= multiplier; n.b *= multiplier; if (!n.isLeaf) applySign(n.c); });
       applySign([rootNode]);
     });
+    root.forEach(cat => { if (cat.c && cat.c.length) sortTreeNodes(cat.c); });
     return root;
   }, [dbData, selectedMonth, activosFijosData]);
 
@@ -1624,6 +1651,7 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
       cat.c.forEach(acc => { acc.m1_u *= multiplier; acc.m2_u *= multiplier; cat_m1 += acc.m1_u; cat_m2 += acc.m2_u; });
       cat.m1_u = cat_m1; cat.m2_u = cat_m2;
     });
+    root.forEach(cat => { if (cat.c && cat.c.length) sortTreeNodes(cat.c); });
     return root;
   }, [dbData, month1, month2, activosFijosData]);
 
@@ -2124,6 +2152,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
       const o = n => { const u=n.toUpperCase(); return u.includes('ACTIV')?1:u.includes('PASIV')?2:u.includes('PATRIM')?3:4; };
       return o(a.n) - o(b.n);
     });
+    root.forEach(cat => { if (cat.c && cat.c.length) sortTreeNodes(cat.c); });
 
     return root;
   }, [dbData, selectedMonth, tasa, auxDataConfig, activosFijosData]);
@@ -3441,8 +3470,8 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
   const MESES_ORDER = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   const allMeses = useMemo(() => {
-    const balMs = new Set(dbData.filter(d=>/^[123]/.test(d.name)).map(d=>d.month));
-    const resMs = new Set(dbData.filter(d=>/^[456]/.test(d.name)).map(d=>d.month));
+    const balMs = new Set(dbData.filter(isBalRecord).map(d=>d.month));
+    const resMs = new Set(dbData.filter(isResRecord).map(d=>d.month));
     const realMonths = [...new Set([...resMs, ...balMs])].filter(m=>m!=='Saldos Iniciales' && m!=='Sin Mes');
     if (realMonths.length === 0 && balMs.has('Saldos Iniciales')) realMonths.push('Saldos Iniciales');
     return realMonths.sort((a,b)=>(MESES_ORDER.indexOf(a)+1||99)-(MESES_ORDER.indexOf(b)+1||99));
@@ -3459,11 +3488,11 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
   const showBS  = currency !== 'usd';
 
   const rows = useMemo(() => {
-    const exactBal = dbData.filter(d => d.month === selectedMonth && /^[123]/.test(d.name));
-    const initBal  = dbData.filter(d => d.month === 'Saldos Iniciales' && /^[123]/.test(d.name));
+    const exactBal = dbData.filter(d => d.month === selectedMonth && isBalRecord(d));
+    const initBal  = dbData.filter(d => d.month === 'Saldos Iniciales' && isBalRecord(d));
     const balData  = exactBal.length > 0 ? exactBal : initBal;
 
-    const resData  = dbData.filter(d => d.month === selectedMonth && /^[456]/.test(d.name));
+    const resData  = dbData.filter(d => d.month === selectedMonth && isResRecord(d));
 
     const map = {};
     [...balData, ...resData].forEach(item => {
@@ -3740,6 +3769,25 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
 // remonta constantemente, lo que puede cortar la selección de archivo
 // mientras el diálogo del sistema operativo sigue abierto.
 // ============================================================================
+// ============================================================================
+// isResRecord / isBalRecord: definidos UNA sola vez a nivel de módulo y
+// reutilizados tanto al guardar los datos (handleUploadResultados/Saldos)
+// como al calcular los indicadores "Sin cargar / Listo" de Configuración.
+// Antes había dos copias de esta lógica (una para guardar, otra para
+// mostrar el estado) y se desincronizaron: un nombre de proveedor que
+// empieza con un dígito (ej. "261 Agencia de Viajes") hacía que el
+// indicador de Balance se marcara como cargado aunque el dato real
+// guardado fuera de Estado de Resultado.
+// ============================================================================
+const isResRecord = (p) => {
+  const pathUp = (p.path||'').toUpperCase();
+  return !pathUp.includes('ACTIVO') && !pathUp.includes('PASIVO') && !pathUp.includes('PATRIMONIO') && !/^[123]\.\d/.test(p.name);
+};
+const isBalRecord = (p) => {
+  const pathUp = (p.path||'').toUpperCase();
+  return pathUp.includes('ACTIV') || pathUp.includes('PASIV') || pathUp.includes('PATRIMON') || /^[123]\.\d/.test(p.name);
+};
+
 const StepCard = ({ num, title, subtitle, isGlobal, loaded, countLabel, onUpload, onClear, accentClass, accept="*.xlsx,*.xls,*.csv,*.txt" }) => (
   <div className={`rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap border ${loaded ? 'bg-emerald-950/30 border-emerald-700' : 'bg-slate-900 border-slate-700'} ${accentClass||''}`}>
     <div className="flex items-center gap-4 min-w-0">
@@ -3835,14 +3883,6 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const parsed = await processFiles(e.target.files);
-      // FIX: antes se exigía que el NOMBRE de cada línea empezara con 4/5/6.
-      // Los archivos con desglose por proveedor (ej. Junio) tienen el monto en
-      // líneas hijas (nombre del proveedor, sin código de cuenta), así que ese
-      // filtro las descartaba todas. Ahora se identifica P&L por la RUTA.
-      const isResRecord = (p) => {
-        const pathUp = (p.path||'').toUpperCase();
-        return !pathUp.includes('ACTIVO') && !pathUp.includes('PASIVO') && !pathUp.includes('PATRIMONIO') && !/^[123]\.\d/.test(p.name);
-      };
       const resParsed = parsed.filter(isResRecord);
       setDbData(prev => {
         const meses = new Set(parsed.map(p => p.month));
@@ -3867,13 +3907,6 @@ function ReportesFinancierosApp() {
     try {
       const parsed = await processSaldosBalance(e.target.files[0], planCuentas);
       const mes = parsed[0]?.month || configMes;
-      // FIX: mismo problema que Estado de Resultado — se identifica el Balance
-      // por la RUTA contable, no exigiendo que el nombre de la línea empiece
-      // con 1/2/3 (eso fallaba si el balance viene desglosado por sub-cuenta).
-      const isBalRecord = (p) => {
-        const pathUp = (p.path||'').toUpperCase();
-        return pathUp.includes('ACTIV') || pathUp.includes('PASIV') || pathUp.includes('PATRIMON') || /^[123]\.\d/.test(p.name);
-      };
       const balParsed = parsed.filter(isBalRecord);
       setDbData(prev => [...prev.filter(d => d.month !== mes || !isBalRecord(d)), ...balParsed]);
       alert(`✅ Balance / Saldos (${mes}): ${balParsed.length} cuentas`);
@@ -3925,9 +3958,9 @@ function ReportesFinancierosApp() {
 
   const clearSlot = (key) => {
     if (!window.confirm('¿Seguro que deseas borrar estos datos?')) return;
-    if (key === 'resultados') setDbData(prev => prev.filter(d => !/^[456]/.test(d.name)));
+    if (key === 'resultados') setDbData(prev => prev.filter(d => !isResRecord(d)));
     else if (key === 'plan') setPlanCuentas({});
-    else if (key === 'saldos') setDbData(prev => prev.filter(d => !/^[123]/.test(d.name)));
+    else if (key === 'saldos') setDbData(prev => prev.filter(d => !isBalRecord(d)));
     else if (key === 'cxc') setAuxByMonth(prev => ({ ...prev, [configMes]: { ...getAuxForMonth(configMes), cxc_general:[], cxc_zuliana:[] } }));
     else if (key === 'cxp') setAuxByMonth(prev => ({ ...prev, [configMes]: { ...getAuxForMonth(configMes), cxp_autototal:[], cxp_surepack:[], cxp_pacomela:[], cxp_yancarlos:[], cxp_general:[] } }));
     else if (key === 'activos') { setAfByMonth(prev => ({ ...prev, [configMes]: { records:[] } })); setActivosFijosData({records:[]}); }
@@ -4022,17 +4055,17 @@ function ReportesFinancierosApp() {
     const afCount = afByMonth[configMes]?.records?.length || 0;
     const planCount = Object.keys(planCuentas).length;
     const planLoaded = planCount > 0;
-    const balanceLoaded = dbData.some(d=>d.month===configMes && /^[123]/.test(d.name));
-    const resultadoLoaded = dbData.some(d=>d.month===configMes && /^[456]/.test(d.name));
-    const mesesConPL = MESES_ORDER_FULL.filter(m => dbData.some(d=>d.month===m && /^[456]/.test(d.name)));
+    const balanceLoaded = dbData.some(d=>d.month===configMes && isBalRecord(d));
+    const resultadoLoaded = dbData.some(d=>d.month===configMes && isResRecord(d));
+    const mesesConPL = MESES_ORDER_FULL.filter(m => dbData.some(d=>d.month===m && isResRecord(d)));
     const resultadoSubtitle = mesesConPL.length > 0
       ? `Ya cargados: ${mesesConPL.filter(m=>m!==configMes).join(', ') || '—'} · Solo se agrega ${configMes}`
       : `Se agregará ${configMes}`;
 
     const datosGuardadosPorMes = MESES_ORDER_FULL.filter(m => mesesEnMemoria.has(m)).map(m => {
       const tags = [];
-      if (dbData.some(d=>d.month===m && /^[123]/.test(d.name))) tags.push({label:'BAL', color:'blue'});
-      if (dbData.some(d=>d.month===m && /^[456]/.test(d.name))) tags.push({label:'P&L', color:'emerald'});
+      if (dbData.some(d=>d.month===m && isBalRecord(d))) tags.push({label:'BAL', color:'blue'});
+      if (dbData.some(d=>d.month===m && isResRecord(d))) tags.push({label:'P&L', color:'emerald'});
       const aux = auxByMonth[m] || {};
       if ((aux.cxc_general?.length||0)+(aux.cxc_zuliana?.length||0) > 0) tags.push({label:'CxC', color:'sky'});
       if ((aux.cxp_autototal?.length||0)+(aux.cxp_surepack?.length||0)+(aux.cxp_pacomela?.length||0)+(aux.cxp_yancarlos?.length||0)+(aux.cxp_general?.length||0) > 0) tags.push({label:'CxP', color:'rose'});
