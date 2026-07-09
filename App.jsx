@@ -402,23 +402,38 @@ const buildLetterheadRows = (title, subtitle) => [
 
 // ============================================================================
 // sortTreeNodes: ordena los HIJOS de cada nodo del árbol de menor a mayor
-// según su código contable (ej. 001, 002... 010, 011), de forma NUMÉRICA
-// (no alfabética) y RECURSIVA — cada grupo se ordena por separado, sin
-// mezclar cuentas de un grupo con las de otro.
+// según su código contable, de forma NUMÉRICA (no alfabética) y RECURSIVA.
+// Las carpetas SIN código propio (ej. "DISPONIBLE", "PREPAGADOS") toman como
+// código efectivo el MENOR código entre las cuentas que contienen, para que
+// el grupo de "Caja" (001) quede antes que "Prepagados" (005) aunque sus
+// nombres, alfabéticamente, digan lo contrario.
 // ============================================================================
+const compareCodeArrays = (pa, pb) => {
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i]||0) - (pb[i]||0);
+    if (d !== 0) return d;
+  }
+  return 0;
+};
+const getEffectiveCode = (node) => {
+  const own = node.n.match(/^(\d[\d.]*)/)?.[1];
+  if (own) return own.split('.').map(Number);
+  if (node.c && node.c.length) {
+    let best = null;
+    node.c.forEach(child => {
+      const code = getEffectiveCode(child);
+      if (code && (!best || compareCodeArrays(code, best) < 0)) best = code;
+    });
+    return best;
+  }
+  return null;
+};
 const sortTreeNodes = (nodes) => {
   nodes.forEach(n => { if (n.c && n.c.length) sortTreeNodes(n.c); });
   nodes.sort((a, b) => {
-    const codeA = a.n.match(/^(\d[\d.]*)/)?.[1];
-    const codeB = b.n.match(/^(\d[\d.]*)/)?.[1];
-    if (codeA && codeB) {
-      const pa = codeA.split('.').map(Number), pb = codeB.split('.').map(Number);
-      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-        const d = (pa[i]||0) - (pb[i]||0);
-        if (d !== 0) return d;
-      }
-      return 0;
-    }
+    const codeA = getEffectiveCode(a);
+    const codeB = getEffectiveCode(b);
+    if (codeA && codeB) return compareCodeArrays(codeA, codeB);
     if (codeA && !codeB) return -1;
     if (!codeA && codeB) return 1;
     return a.n.localeCompare(b.n);
