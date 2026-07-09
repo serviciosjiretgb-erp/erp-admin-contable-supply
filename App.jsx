@@ -3732,6 +3732,83 @@ function BalanceComprobacionView({ onBack, dbData, tasaByMonth = {} }) {
 // ============================================================================
 // 12. APP PRINCIPAL
 // ============================================================================
+// ============================================================================
+// StepCard: definido a NIVEL DE MÓDULO (no dentro de ReportesFinancierosApp)
+// a propósito — si se define dentro de un componente que se re-renderiza
+// seguido (como el reloj en vivo del panel, que actualiza cada segundo),
+// React lo trata como un componente "nuevo" en cada render y lo desmonta/
+// remonta constantemente, lo que puede cortar la selección de archivo
+// mientras el diálogo del sistema operativo sigue abierto.
+// ============================================================================
+const StepCard = ({ num, title, subtitle, isGlobal, loaded, countLabel, onUpload, onClear, accentClass, accept="*.xlsx,*.xls,*.csv,*.txt" }) => (
+  <div className={`rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap border ${loaded ? 'bg-emerald-950/30 border-emerald-700' : 'bg-slate-900 border-slate-700'} ${accentClass||''}`}>
+    <div className="flex items-center gap-4 min-w-0">
+      <div className="flex flex-col items-start gap-1.5 flex-shrink-0 w-14">
+        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Paso {String(num).padStart(2,'0')}</span>
+        <div className="flex gap-1 flex-wrap">
+          {isGlobal && <span className="text-[8px] font-black uppercase bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">Global</span>}
+          {loaded && <span className="text-[8px] font-black uppercase bg-emerald-600 text-white px-1.5 py-0.5 rounded flex items-center gap-0.5"><CheckCircle size={8}/>Listo</span>}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <p className="font-black text-white text-sm uppercase truncate">{title}</p>
+        <p className="text-[10px] text-slate-400 truncate">{subtitle}</p>
+      </div>
+    </div>
+    <div className="flex items-center gap-3 flex-shrink-0">
+      <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap hidden sm:inline">{loaded ? countLabel : 'Sin cargar'}</span>
+      {loaded ? (
+        <div className="flex gap-2">
+          <label className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black uppercase px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors">
+            <Upload size={11}/> Reemplazar
+            <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
+          </label>
+          {onClear && <button onClick={onClear} className="text-red-400 hover:text-red-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap"><Trash2 size={11}/> Limpiar</button>}
+        </div>
+      ) : (
+        <label className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-lg cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors">
+          <Upload size={11}/> Cargar
+          <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
+        </label>
+      )}
+    </div>
+  </div>
+);
+
+const MiniSparkline = ({ points, color }) => {
+  const w=140,h=44;
+  const max=Math.max(...points), min=Math.min(...points), range=(max-min)||1;
+  const xs = points.map((_,i)=>i/(points.length-1)*w);
+  const ys = points.map(p=>h-2-((p-min)/range)*(h-4));
+  const pts = xs.map((x,i)=>`${x},${ys[i]}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-11">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+};
+const MiniBars = ({ values, color, highlightIdx }) => {
+  const w=140,h=44,gap=4,bw=w/values.length-gap;
+  const max=Math.max(...values,1);
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-11">
+      {values.map((v,i)=>{
+        const bh=Math.max((v/max)*(h-2),2);
+        return <rect key={i} x={i*(bw+gap)} y={h-bh} width={bw} height={bh} rx={2} fill={highlightIdx===i?color:'#e2e8f0'}/>;
+      })}
+    </svg>
+  );
+};
+const MiniProgressRows = ({ rows }) => (
+  <div className="flex flex-col gap-2.5 w-full py-2">
+    {rows.map((r,i)=>(
+      <div key={i} className="flex gap-1">
+        {r.map((seg,j)=>(<div key={j} className="h-2.5 rounded-full flex-1" style={{background:seg}}/>))}
+      </div>
+    ))}
+  </div>
+);
+
 function ReportesFinancierosApp() {
   const [currentView, setCurrentView] = useState('panel');
   const [dbData, setDbData] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_erp_db_data')||'null'); return (Array.isArray(s)&&s.length)?s:((JIRET_SEED_DATA&&JIRET_SEED_DATA.dbData)||[]); } catch(e){ return ((JIRET_SEED_DATA&&JIRET_SEED_DATA.dbData)||[]); } });
@@ -3934,41 +4011,6 @@ function ReportesFinancierosApp() {
   if (currentView === 'comprobacion') return <BalanceComprobacionView onBack={()=>setCurrentView('panel')} dbData={dbData} tasaByMonth={tasaByMonth}/>;
 
   if (currentView === 'config') {
-    const StepCard = ({ num, title, subtitle, isGlobal, loaded, countLabel, onUpload, onClear, accentClass, accept="*.xlsx,*.xls,*.csv,*.txt" }) => (
-      <div className={`rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap border ${loaded ? 'bg-emerald-950/30 border-emerald-700' : 'bg-slate-900 border-slate-700'} ${accentClass||''}`}>
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="flex flex-col items-start gap-1.5 flex-shrink-0 w-14">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Paso {String(num).padStart(2,'0')}</span>
-            <div className="flex gap-1 flex-wrap">
-              {isGlobal && <span className="text-[8px] font-black uppercase bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">Global</span>}
-              {loaded && <span className="text-[8px] font-black uppercase bg-emerald-600 text-white px-1.5 py-0.5 rounded flex items-center gap-0.5"><CheckCircle size={8}/>Listo</span>}
-            </div>
-          </div>
-          <div className="min-w-0">
-            <p className="font-black text-white text-sm uppercase truncate">{title}</p>
-            <p className="text-[10px] text-slate-400 truncate">{subtitle}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap hidden sm:inline">{loaded ? countLabel : 'Sin cargar'}</span>
-          {loaded ? (
-            <div className="flex gap-2">
-              <label className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black uppercase px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors">
-                <Upload size={11}/> Reemplazar
-                <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
-              </label>
-              {onClear && <button onClick={onClear} className="text-red-400 hover:text-red-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap"><Trash2 size={11}/> Limpiar</button>}
-            </div>
-          ) : (
-            <label className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-lg cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors">
-              <Upload size={11}/> Cargar
-              <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
-            </label>
-          )}
-        </div>
-      </div>
-    );
-
     const TAG_COLOR_CLASSES = {
       blue: 'bg-blue-600', emerald: 'bg-emerald-600', sky: 'bg-sky-600',
       rose: 'bg-rose-600', purple: 'bg-purple-600', amber: 'bg-amber-600',
@@ -4111,39 +4153,6 @@ function ReportesFinancierosApp() {
     );
   }
 
-  const MiniSparkline = ({ points, color }) => {
-    const w=140,h=44;
-    const max=Math.max(...points), min=Math.min(...points), range=(max-min)||1;
-    const xs = points.map((_,i)=>i/(points.length-1)*w);
-    const ys = points.map(p=>h-2-((p-min)/range)*(h-4));
-    const pts = xs.map((x,i)=>`${x},${ys[i]}`).join(' ');
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-11">
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    );
-  };
-  const MiniBars = ({ values, color, highlightIdx }) => {
-    const w=140,h=44,gap=4,bw=w/values.length-gap;
-    const max=Math.max(...values,1);
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-11">
-        {values.map((v,i)=>{
-          const bh=Math.max((v/max)*(h-2),2);
-          return <rect key={i} x={i*(bw+gap)} y={h-bh} width={bw} height={bh} rx={2} fill={highlightIdx===i?color:'#e2e8f0'}/>;
-        })}
-      </svg>
-    );
-  };
-  const MiniProgressRows = ({ rows }) => (
-    <div className="flex flex-col gap-2.5 w-full py-2">
-      {rows.map((r,i)=>(
-        <div key={i} className="flex gap-1">
-          {r.map((seg,j)=>(<div key={j} className="h-2.5 rounded-full flex-1" style={{background:seg}}/>))}
-        </div>
-      ))}
-    </div>
-  );
 
   const MODULES = [
     { key:'resultados',   label:'Estado de Resultados',    icon:<LineChart size={20}/>,  iconBg:'bg-slate-900',   desc:'P&L mensual y acumulado por cuentas',
