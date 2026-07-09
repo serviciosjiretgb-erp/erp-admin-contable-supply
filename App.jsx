@@ -3847,6 +3847,68 @@ function ReportesFinancierosApp() {
     setTasaByMonth(prev => { const c={...prev}; delete c[mes]; return c; });
   };
 
+  // ==========================================================================
+  // Reloj en vivo (header del Panel Principal)
+  // ==========================================================================
+  const [clock, setClock] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t); }, []);
+  const DIAS_ABR = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
+  const MESES_ABR = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  const clockStr = `${String(clock.getHours()).padStart(2,'0')}:${String(clock.getMinutes()).padStart(2,'0')}:${String(clock.getSeconds()).padStart(2,'0')} · ${DIAS_ABR[clock.getDay()]} ${clock.getDate()} ${MESES_ABR[clock.getMonth()]}. ${clock.getFullYear()}`;
+
+  // ==========================================================================
+  // Meses en memoria + totales globales (para el Panel y Configuración)
+  // ==========================================================================
+  const MESES_ORDER_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const mesesEnMemoria = useMemo(() => {
+    const set = new Set();
+    dbData.forEach(d => { if (d.month && d.month !== 'Sin Mes') set.add(d.month); });
+    Object.keys(auxByMonth||{}).forEach(m => { if (m!=='Sin Mes' && Object.values(auxByMonth[m]||{}).some(v=>Array.isArray(v)&&v.length)) set.add(m); });
+    Object.keys(afByMonth||{}).forEach(m => { if (m!=='Sin Mes' && afByMonth[m]?.records?.length) set.add(m); });
+    Object.keys(tasaByMonth||{}).forEach(m => { if (m!=='Sin Mes' && tasaByMonth[m]) set.add(m); });
+    return set;
+  }, [dbData, auxByMonth, afByMonth, tasaByMonth]);
+
+  const totalCxCReg = useMemo(() => Object.values(auxByMonth).reduce((s,m)=>s+(m?.cxc_general?.length||0)+(m?.cxc_zuliana?.length||0),0), [auxByMonth]);
+  const totalCxPReg = useMemo(() => Object.values(auxByMonth).reduce((s,m)=>s+(m?.cxp_autototal?.length||0)+(m?.cxp_surepack?.length||0)+(m?.cxp_pacomela?.length||0)+(m?.cxp_yancarlos?.length||0)+(m?.cxp_general?.length||0),0), [auxByMonth]);
+  const totalActivosReg = useMemo(() => {
+    const fromMonths = Object.values(afByMonth).reduce((s,m)=>s+(m?.records?.length||0),0);
+    return fromMonths || (activosFijosData?.records?.length || 0);
+  }, [afByMonth, activosFijosData]);
+
+  // ==========================================================================
+  // Compartir con Directivos: exportar/importar paquete .json con todos los datos
+  // ==========================================================================
+  const handleExportPaquete = () => {
+    try {
+      const paquete = { dbData, planCuentas, tasaByMonth, auxByMonth, afByMonth, activosFijosData, auxDataConfig, exportedAt: new Date().toISOString() };
+      const blob = new Blob([JSON.stringify(paquete)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `JIRET_Paquete_${new Date().toLocaleDateString('es-VE').replace(/\//g,'-')}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(err) { alert('❌ Error exportando paquete: '+err.message); }
+  };
+  const handleImportPaquete = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data.dbData) setDbData(data.dbData);
+      if (data.planCuentas) setPlanCuentas(data.planCuentas);
+      if (data.tasaByMonth) setTasaByMonth(data.tasaByMonth);
+      if (data.auxByMonth) setAuxByMonth(data.auxByMonth);
+      if (data.afByMonth) setAfByMonth(data.afByMonth);
+      if (data.activosFijosData) setActivosFijosData(data.activosFijosData);
+      if (data.auxDataConfig) setAuxDataConfig(data.auxDataConfig);
+      alert('✅ Paquete importado correctamente');
+    } catch(err) { alert('❌ Error importando paquete: '+err.message); }
+    e.target.value = '';
+  };
+
   if (currentView === 'resultados')   return <EstadoResultadoView onBack={()=>setCurrentView('panel')} dbData={dbData} activosFijosData={activosFijosData}/>;
   if (currentView === 'balance')      return <BalanceGeneralView onBack={()=>setCurrentView('panel')} dbData={dbData} auxByMonth={auxByMonth} afByMonth={afByMonth} auxDataConfig={getAuxForMonth(configMes)} activosFijosData={activosFijosData} tasaByMonth={tasaByMonth} onSaveTasa={onSaveTasa}/>;
   if (currentView === 'comparativo')  return <AnalisisComparativoView onBack={()=>setCurrentView('panel')} dbData={dbData} activosFijosData={activosFijosData}/>;
@@ -3855,28 +3917,73 @@ function ReportesFinancierosApp() {
   if (currentView === 'comprobacion') return <BalanceComprobacionView onBack={()=>setCurrentView('panel')} dbData={dbData} tasaByMonth={tasaByMonth}/>;
 
   if (currentView === 'config') {
-    const UploadSlot = ({ label, icon, onUpload, onClear, count, accept="*.xlsx,*.xls,*.csv,*.txt", color="orange" }) => (
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <span className={`flex items-center gap-2 font-black text-xs uppercase text-slate-700`}>{icon} {label}</span>
-          {count > 0 && <span className={`text-[10px] font-black px-2 py-0.5 rounded-full bg-${color}-100 text-${color}-700`}>{count}</span>}
+    const StepCard = ({ num, title, subtitle, isGlobal, loaded, countLabel, onUpload, onClear, accentClass, accept="*.xlsx,*.xls,*.csv,*.txt" }) => (
+      <div className={`rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap border ${loaded ? 'bg-emerald-950/30 border-emerald-700' : 'bg-slate-900 border-slate-700'} ${accentClass||''}`}>
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="flex flex-col items-start gap-1.5 flex-shrink-0 w-14">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Paso {String(num).padStart(2,'0')}</span>
+            <div className="flex gap-1 flex-wrap">
+              {isGlobal && <span className="text-[8px] font-black uppercase bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">Global</span>}
+              {loaded && <span className="text-[8px] font-black uppercase bg-emerald-600 text-white px-1.5 py-0.5 rounded flex items-center gap-0.5"><CheckCircle size={8}/>Listo</span>}
+            </div>
+          </div>
+          <div className="min-w-0">
+            <p className="font-black text-white text-sm uppercase truncate">{title}</p>
+            <p className="text-[10px] text-slate-400 truncate">{subtitle}</p>
+          </div>
         </div>
-        <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-${color}-300 hover:border-${color}-500 hover:bg-${color}-50 rounded-xl py-4 cursor-pointer transition-colors`}>
-          <Upload size={16} className={`text-${color}-500`}/>
-          <span className="text-[10px] font-black uppercase text-slate-500">Subir archivo</span>
-          <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
-        </label>
-        {onClear && <button onClick={onClear} className="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase flex items-center gap-1 justify-center"><Trash2 size={11}/> Borrar datos</button>}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap hidden sm:inline">{loaded ? countLabel : 'Sin cargar'}</span>
+          {loaded ? (
+            <div className="flex gap-2">
+              <label className="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black uppercase px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors">
+                <Upload size={11}/> Reemplazar
+                <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
+              </label>
+              {onClear && <button onClick={onClear} className="text-red-400 hover:text-red-300 text-[10px] font-black uppercase flex items-center gap-1 whitespace-nowrap"><Trash2 size={11}/> Limpiar</button>}
+            </div>
+          ) : (
+            <label className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-lg cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors">
+              <Upload size={11}/> Cargar
+              <input type="file" multiple accept={accept} className="hidden" onChange={onUpload}/>
+            </label>
+          )}
+        </div>
       </div>
     );
+
+    const TAG_COLOR_CLASSES = {
+      blue: 'bg-blue-600', emerald: 'bg-emerald-600', sky: 'bg-sky-600',
+      rose: 'bg-rose-600', purple: 'bg-purple-600', amber: 'bg-amber-600',
+    };
+
     const currentAux = getAuxForMonth(configMes);
     const cxcCount = (currentAux.cxc_general?.length||0) + (currentAux.cxc_zuliana?.length||0);
     const cxpCount = (currentAux.cxp_autototal?.length||0)+(currentAux.cxp_surepack?.length||0)+(currentAux.cxp_pacomela?.length||0)+(currentAux.cxp_yancarlos?.length||0)+(currentAux.cxp_general?.length||0);
     const afCount = afByMonth[configMes]?.records?.length || 0;
-    const loadedMonths = [...new Set(dbData.map(d=>d.month))].filter(m=>m&&m!=='Sin Mes');
+    const planCount = Object.keys(planCuentas).length;
+    const planLoaded = planCount > 0;
+    const balanceLoaded = dbData.some(d=>d.month===configMes && /^[123]/.test(d.name));
+    const resultadoLoaded = dbData.some(d=>d.month===configMes && /^[456]/.test(d.name));
+    const mesesConPL = MESES_ORDER_FULL.filter(m => dbData.some(d=>d.month===m && /^[456]/.test(d.name)));
+    const resultadoSubtitle = mesesConPL.length > 0
+      ? `Ya cargados: ${mesesConPL.filter(m=>m!==configMes).join(', ') || '—'} · Solo se agrega ${configMes}`
+      : `Se agregará ${configMes}`;
+
+    const datosGuardadosPorMes = MESES_ORDER_FULL.filter(m => mesesEnMemoria.has(m)).map(m => {
+      const tags = [];
+      if (dbData.some(d=>d.month===m && /^[123]/.test(d.name))) tags.push({label:'BAL', color:'blue'});
+      if (dbData.some(d=>d.month===m && /^[456]/.test(d.name))) tags.push({label:'P&L', color:'emerald'});
+      const aux = auxByMonth[m] || {};
+      if ((aux.cxc_general?.length||0)+(aux.cxc_zuliana?.length||0) > 0) tags.push({label:'CxC', color:'sky'});
+      if ((aux.cxp_autototal?.length||0)+(aux.cxp_surepack?.length||0)+(aux.cxp_pacomela?.length||0)+(aux.cxp_yancarlos?.length||0)+(aux.cxp_general?.length||0) > 0) tags.push({label:'CxP', color:'rose'});
+      if (afByMonth[m]?.records?.length > 0) tags.push({label:'AF', color:'purple'});
+      if (tasaByMonth[m]) tags.push({label:'TASA', color:'amber'});
+      return { mes: m, tags };
+    });
 
     return (
-      <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
+      <div className="min-h-screen bg-[#0b0f19]">
         <header className="bg-[#111111] border-b-4 border-orange-500 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg flex-wrap gap-3">
           <button onClick={()=>setCurrentView('panel')} className="flex items-center gap-2 font-black text-xs text-slate-400 uppercase hover:text-orange-400"><ArrowLeft size={16}/> Panel</button>
           <div className="flex items-center gap-2">
@@ -3885,41 +3992,98 @@ function ReportesFinancierosApp() {
               {MESES_CFG.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
-          <div className="flex items-center gap-2 border-l-2 border-slate-700 pl-4">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tasa Bs/USD ({configMes}):</span>
-            <input
-              type="number" min="0" step="0.01"
-              value={tasaByMonth[configMes] ?? ''}
-              onChange={e => setTasaByMonth(prev => ({ ...prev, [configMes]: parseFloat(e.target.value) || 0 }))}
-              placeholder="Ej: 90"
-              className="bg-amber-500/10 border border-amber-500/40 text-amber-300 text-xs rounded-lg p-1.5 w-24 font-black outline-none"
-            />
-          </div>
         </header>
-        <main className="p-4 md:p-8 max-w-5xl mx-auto pb-16">
-          <div className="bg-white px-8 py-8 border-t-4 border-orange-500 shadow-md flex flex-col items-center text-center mb-6 rounded-b-2xl">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500 mb-1">Servicios Jiret G&B, C.A.</p>
-            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Configuración de Datos</h1>
-            <p className="text-slate-400 text-xs font-bold mt-2">Carga tus archivos por módulo. Cargando para: <span className="text-orange-500">{configMes}</span></p>
+        <main className="p-4 md:p-8 max-w-4xl mx-auto pb-16 space-y-5">
+
+          <div>
+            <p className="text-orange-400 font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Database size={16}/> Archivos — {configMes}</p>
+            <div className="space-y-3">
+              <StepCard num={1} title="Plan de Cuentas" subtitle="Aplica a todos los meses" isGlobal loaded={planLoaded}
+                countLabel={`✓ ${planCount} cuentas cargadas`} onUpload={handleUploadPlan} onClear={()=>clearSlot('plan')} accept="*.txt,*.csv"/>
+              <StepCard num={2} title={`Balance General — ${configMes}`} subtitle="Saldos de cuentas 1,2,3 del balance" loaded={balanceLoaded}
+                countLabel="✓ cargado" onUpload={handleUploadSaldos} onClear={()=>clearSlot('saldos')}/>
+              <StepCard num={3} title={`Estado de Resultado — ${configMes}`} subtitle={resultadoSubtitle} loaded={resultadoLoaded}
+                countLabel="✓ cargado" onUpload={handleUploadResultados} onClear={()=>clearSlot('resultados')}/>
+              <StepCard num={4} title={`Auxiliar CxC — ${configMes}`} subtitle="Cuentas por cobrar de clientes" loaded={cxcCount>0}
+                countLabel={`✓ ${cxcCount} registros`} onUpload={handleUploadCxC} onClear={()=>clearSlot('cxc')} accentClass="border-l-4 border-l-blue-500"/>
+              <StepCard num={5} title={`Auxiliar CxP — ${configMes}`} subtitle="Cuentas por pagar a proveedores" loaded={cxpCount>0}
+                countLabel={`✓ ${cxpCount} registros`} onUpload={handleUploadCxP} onClear={()=>clearSlot('cxp')} accentClass="border-l-4 border-l-rose-500"/>
+              <StepCard num={6} title={`Activos Fijos — ${configMes}`} subtitle="Inventario de activos fijos y depreciación" loaded={afCount>0}
+                countLabel={`✓ ${afCount} registros`} onUpload={handleUploadActivosFijos} onClear={()=>clearSlot('activos')}/>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <UploadSlot label="Estado de Resultados" icon={<LineChart size={14} className="text-emerald-500"/>} onUpload={handleUploadResultados} onClear={()=>clearSlot('resultados')} count={dbData.filter(d=>/^[456]/.test(d.name)).length} color="emerald"/>
-            <UploadSlot label="Plan de Cuentas" icon={<BookOpen size={14} className="text-blue-500"/>} onUpload={handleUploadPlan} onClear={()=>clearSlot('plan')} count={Object.keys(planCuentas).length} accept="*.txt,*.csv" color="blue"/>
-            <UploadSlot label="Saldos / Balance" icon={<Scale size={14} className="text-indigo-500"/>} onUpload={handleUploadSaldos} onClear={()=>clearSlot('saldos')} count={dbData.filter(d=>/^[123]/.test(d.name)).length} color="indigo"/>
-            <UploadSlot label="Activos Fijos" icon={<Landmark size={14} className="text-purple-500"/>} onUpload={handleUploadActivosFijos} onClear={()=>clearSlot('activos')} count={afCount} color="purple"/>
-            <UploadSlot label={`Auxiliar CxC — ${configMes}`} icon={<Users size={14} className="text-sky-500"/>} onUpload={handleUploadCxC} onClear={()=>clearSlot('cxc')} count={cxcCount} color="sky"/>
-            <UploadSlot label={`Auxiliar CxP — ${configMes}`} icon={<Briefcase size={14} className="text-red-500"/>} onUpload={handleUploadCxP} onClear={()=>clearSlot('cxp')} count={cxpCount} color="red"/>
+          {datosGuardadosPorMes.length > 0 && (
+            <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700">
+              <p className="text-[11px] font-black text-emerald-400 uppercase tracking-widest mb-4 flex items-center gap-2"><CheckCircle size={13}/> Datos Guardados por Mes</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {datosGuardadosPorMes.map(({mes, tags}) => (
+                  <div key={mes} className={`rounded-lg p-3 border ${mes===configMes ? 'bg-orange-950/40 border-orange-500' : 'bg-slate-800 border-slate-700'}`}>
+                    <div className="flex items-center justify-between mb-1.5 gap-2">
+                      <span className="font-black text-white text-xs uppercase truncate">{mes}</span>
+                      {mes===configMes && <span className="text-[8px] font-black bg-orange-500 text-white px-1.5 py-0.5 rounded uppercase flex-shrink-0">Activo</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {tags.length === 0 && <span className="text-[8px] text-slate-500 font-bold uppercase">Sin datos</span>}
+                      {tags.map(t => <span key={t.label} className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded text-white ${TAG_COLOR_CLASSES[t.color]}`}>{t.label}</span>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-indigo-950/40 border border-indigo-700 rounded-xl p-4 flex gap-3 items-start">
+            <AlertTriangle size={16} className="text-indigo-400 flex-shrink-0 mt-0.5"/>
+            <p className="text-[11px] text-indigo-200 font-bold leading-relaxed">
+              Todo lo que cargues aquí se guarda <span className="text-indigo-100 font-black">exclusivamente para el mes {configMes.toUpperCase()}</span>. Los datos de otros meses no se modifican. Cada mes tiene su propio Balance, CxC, CxP, AF y Tasa.
+            </p>
           </div>
 
-          {loadedMonths.length > 0 && (
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Meses con datos cargados</p>
+          <div className="bg-slate-900 border border-amber-600/60 rounded-xl p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-amber-400 font-black text-xs uppercase tracking-widest mb-1">Tasa de Cambio — {configMes}</p>
+              <p className="text-[10px] text-slate-400">Tasa Bs/USD al cierre del mes. Se aplica al Balance y se guarda solo para {configMes}.</p>
+            </div>
+            <input type="number" min="0" step="0.01" value={tasaByMonth[configMes] ?? ''}
+              onChange={e=>setTasaByMonth(prev=>({...prev,[configMes]:parseFloat(e.target.value)||0}))}
+              placeholder="Ej: 90.00"
+              className="bg-slate-800 border border-amber-600/40 text-amber-300 font-black text-sm rounded-lg px-4 py-2.5 w-36 outline-none"/>
+          </div>
+
+          <div className="bg-emerald-950/30 border border-emerald-700 rounded-xl p-4">
+            <p className="text-emerald-400 font-black text-[11px] uppercase tracking-widest mb-3 flex items-center gap-2"><CheckCircle size={13}/> Estado de Resultado — Meses ya en Memoria (no se pierden)</p>
+            <div className="flex flex-wrap gap-2">
+              {mesesConPL.filter(m=>m!==configMes).map(m => <span key={m} className="text-[10px] font-black uppercase bg-emerald-700 text-white px-2.5 py-1 rounded-full">{m}</span>)}
+              <span className="text-[10px] font-black uppercase bg-slate-700 text-slate-300 px-2.5 py-1 rounded-full">{configMes} — {resultadoLoaded ? 'cargado' : 'pendiente'}</span>
+            </div>
+          </div>
+
+          <div className="bg-violet-950/30 border border-violet-700 rounded-xl p-5">
+            <p className="text-violet-300 font-black text-[11px] uppercase tracking-widest mb-1.5 flex items-center gap-2"><FileOutput size={13}/> Compartir con Directivos</p>
+            <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">
+              Exporta <span className="text-slate-200 font-bold">todos los datos cargados</span> en un archivo .json. Los directivos lo importan una sola vez y ven la información actualizada — sin adjuntar ningún archivo contable.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button onClick={handleExportPaquete} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-black text-xs uppercase tracking-wide py-3 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                <FileOutput size={14}/> Exportar Paquete
+              </button>
+              <label className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-black text-xs uppercase tracking-wide py-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors">
+                <Upload size={14}/> Importar Paquete
+                <input type="file" accept=".json" className="hidden" onChange={handleImportPaquete}/>
+              </label>
+            </div>
+            <p className="text-center text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-4">Incluye: Balance · Estado de Resultado · CxC · CxP · Activos Fijos · Tasas · Plan de Cuentas</p>
+          </div>
+
+          {mesesEnMemoria.size > 0 && (
+            <div className="bg-slate-900 rounded-2xl p-5 border border-slate-700">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Eliminar datos de un mes</p>
               <div className="flex flex-wrap gap-2">
-                {loadedMonths.map(m => (
-                  <div key={m} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
-                    <span className="text-[10px] font-black text-slate-600 uppercase">{m}</span>
-                    <button onClick={()=>handleDeleteMonth(m)} className="text-red-400 hover:text-red-600"><Trash2 size={11}/></button>
+                {[...mesesEnMemoria].map(m => (
+                  <div key={m} className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5">
+                    <span className="text-[10px] font-black text-slate-300 uppercase">{m}</span>
+                    <button onClick={()=>handleDeleteMonth(m)} className="text-red-400 hover:text-red-300"><Trash2 size={11}/></button>
                   </div>
                 ))}
               </div>
@@ -3930,41 +4094,99 @@ function ReportesFinancierosApp() {
     );
   }
 
+  const MiniSparkline = ({ points, color }) => {
+    const w=140,h=44;
+    const max=Math.max(...points), min=Math.min(...points), range=(max-min)||1;
+    const xs = points.map((_,i)=>i/(points.length-1)*w);
+    const ys = points.map(p=>h-2-((p-min)/range)*(h-4));
+    const pts = xs.map((x,i)=>`${x},${ys[i]}`).join(' ');
+    return (
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-11">
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  };
+  const MiniBars = ({ values, color, highlightIdx }) => {
+    const w=140,h=44,gap=4,bw=w/values.length-gap;
+    const max=Math.max(...values,1);
+    return (
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-11">
+        {values.map((v,i)=>{
+          const bh=Math.max((v/max)*(h-2),2);
+          return <rect key={i} x={i*(bw+gap)} y={h-bh} width={bw} height={bh} rx={2} fill={highlightIdx===i?color:'#e2e8f0'}/>;
+        })}
+      </svg>
+    );
+  };
+  const MiniProgressRows = ({ rows }) => (
+    <div className="flex flex-col gap-2.5 w-full py-2">
+      {rows.map((r,i)=>(
+        <div key={i} className="flex gap-1">
+          {r.map((seg,j)=>(<div key={j} className="h-2.5 rounded-full flex-1" style={{background:seg}}/>))}
+        </div>
+      ))}
+    </div>
+  );
+
   const MODULES = [
-    { key:'dashboard',    label:'Dashboard Financiero',    icon:<BarChart2 size={22}/>,  color:'from-indigo-500 to-indigo-700',  desc:'KPIs, tendencias y gráficos' },
-    { key:'resultados',   label:'Estado de Resultados',    icon:<LineChart size={22}/>,  color:'from-emerald-500 to-emerald-700',desc:'Ingresos, costos y utilidad' },
-    { key:'balance',      label:'Balance General',         icon:<Scale size={22}/>,      color:'from-orange-500 to-orange-700',  desc:'Activos, pasivos y patrimonio' },
-    { key:'comparativo',  label:'Análisis Comparativo',    icon:<GitCompare size={22}/>, color:'from-purple-500 to-purple-700',  desc:'Variaciones entre períodos' },
-    { key:'activos',      label:'Activos Fijos',           icon:<Landmark size={22}/>,   color:'from-blue-500 to-blue-700',      desc:'Inversiones y depreciación' },
-    { key:'comprobacion', label:'Balance de Comprobación', icon:<FileOutput size={22}/>, color:'from-teal-500 to-teal-700',      desc:'Saldos deudores y acreedores' },
-    { key:'config',       label:'Configuración',           icon:<Database size={22}/>,   color:'from-slate-600 to-slate-800',    desc:'Carga de archivos y datos' },
+    { key:'resultados',   label:'Estado de Resultados',    icon:<LineChart size={20}/>,  iconBg:'bg-slate-900',   desc:'P&L mensual y acumulado por cuentas',
+      viz: <MiniSparkline points={[4,6,5,7,6,9,8,11,10]} color="#f97316"/> },
+    { key:'balance',      label:'Balance General',         icon:<Scale size={20}/>,      iconBg:'bg-blue-600',    desc:'Situación financiera multimoneda USD / Bs.',
+      viz: <MiniBars values={[3,4,5,6,7,8]} color="#f97316"/> },
+    { key:'dashboard',    label:'Dashboard Financiero',    icon:<BarChart2 size={20}/>,  iconBg:'bg-indigo-600',  desc:'Indicadores visuales · Balance y P&L',
+      viz: <MiniProgressRows rows={[['#e0e7ff','#6366f1','#e0e7ff'],['#fed7aa','#f97316','#fed7aa']]}/> },
+    { key:'comparativo',  label:'Análisis de Variaciones', icon:<GitCompare size={20}/>, iconBg:'bg-violet-600',  desc:'Comparativo mes a mes de resultados',
+      viz: <MiniBars values={[3,5,3,7,4,8,5,9,6]} color="#f97316"/> },
+    { key:'activos',      label:'Activos Fijos',           icon:<Landmark size={20}/>,   iconBg:'bg-emerald-600', desc:'Registro y depreciación de activos fijos',
+      viz: <MiniBars values={[3,3,3,8,3,3]} color="#f97316" highlightIdx={3}/> },
+    { key:'config',       label:'Configuración',           icon:<Database size={20}/>,   iconBg:'bg-slate-500',   desc:'Plan · meses · auxiliares · activos', isConfig:true },
   ];
 
   return (
     <div className="min-h-screen" style={{background:'#f3f2ef',backgroundImage:'radial-gradient(circle,#c8c8c8 1px,transparent 1px)',backgroundSize:'22px 22px'}}>
-      <header className="bg-[#111111] border-b-4 border-orange-500 px-6 py-6 shadow-lg">
-        <div className="max-w-5xl mx-auto flex items-center justify-between flex-wrap gap-3">
+      <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center flex-shrink-0"><LineChart size={20}/></div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500 mb-1">Supply G&B</p>
-            <h1 className="text-2xl font-black text-white uppercase tracking-tight">Servicios Jiret G&B, C.A.</h1>
-            <p className="text-[10px] text-slate-400 font-bold mt-1">RIF: J-412309374 · Reportes Financieros</p>
+            <h1 className="font-black text-sm text-slate-900 tracking-tight">JIRET G&amp;B <span className="text-orange-500">FINANCE</span></h1>
+            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">Servicios Jiret G&amp;B, C.A. · RIF: J-412309374</p>
           </div>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-[10px] font-mono text-slate-400 border border-slate-200 rounded-lg px-3 py-2 whitespace-nowrap">{clockStr}</div>
+          <div className="bg-orange-500 text-white text-[10px] font-black uppercase tracking-wide px-3 py-2 rounded-lg whitespace-nowrap">{mesesEnMemoria.size} Meses en Memoria</div>
+          <button onClick={()=>setCurrentView('config')} className="border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wide px-3 py-2 rounded-lg flex items-center gap-1.5 hover:bg-slate-50 transition-colors"><Database size={13}/> Config.</button>
+        </div>
       </header>
-      <main className="max-w-5xl mx-auto p-4 md:p-8 pb-16">
+      <main className="max-w-6xl mx-auto p-4 md:p-8 pb-16">
+        <div className="text-center mb-9">
+          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-[0.15em] inline-block relative pb-3">
+            Panel Principal Financiero
+            <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-1 bg-orange-500 rounded-full"/>
+          </h2>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {MODULES.map(mod => (
-            <button key={mod.key} onClick={()=>setCurrentView(mod.key)}
-              className={`bg-gradient-to-br ${mod.color} rounded-2xl p-6 text-left shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-200 group`}>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-white/90 group-hover:scale-110 transition-transform">{mod.icon}</span>
-                <ChevronRight className="text-white/50 group-hover:text-white group-hover:translate-x-1 transition-all" size={18}/>
+            <div key={mod.key} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col">
+              <div className={`w-11 h-11 rounded-xl ${mod.iconBg} text-white flex items-center justify-center mb-4`}>{mod.icon}</div>
+              <h3 className="font-black text-sm text-slate-900 uppercase tracking-tight mb-1">{mod.label}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-4 leading-relaxed">{mod.desc}</p>
+              <div className="flex-1 flex items-center mb-4">
+                {mod.isConfig ? (
+                  <div className="text-[11px] space-y-1 py-1 w-full">
+                    <p className="text-slate-500">Plan: <span className={Object.keys(planCuentas).length>0 ? 'text-emerald-600 font-black' : 'text-slate-400 font-black'}>{Object.keys(planCuentas).length>0?'Cargado':'Sin cargar'}</span> &nbsp;|&nbsp; Meses: <span className="font-black text-slate-700">{mesesEnMemoria.size}</span></p>
+                    <p className="text-slate-500">CxC: <span className="font-black text-slate-700">{totalCxCReg}</span> reg. &nbsp;|&nbsp; CxP: <span className="font-black text-slate-700">{totalCxPReg}</span> reg.</p>
+                    <p className="text-slate-500">Activos: <span className="font-black text-slate-700">{totalActivosReg}</span> &nbsp;|&nbsp; Base: <span className="font-black text-slate-700">{dbData.length}</span></p>
+                  </div>
+                ) : mod.viz}
               </div>
-              <h3 className="text-white font-black text-sm uppercase tracking-wide mb-1">{mod.label}</h3>
-              <p className="text-white/70 text-[11px] font-medium">{mod.desc}</p>
-            </button>
+              <button onClick={()=>setCurrentView(mod.key)} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wide py-3 rounded-xl transition-colors flex items-center justify-center gap-1.5">
+                Ir a Módulo <ChevronRight size={14}/>
+              </button>
+            </div>
           ))}
         </div>
+        <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-10">Módulo de Reportes Financieros · JIRET G&amp;B Finance V2.0</p>
       </main>
     </div>
   );
