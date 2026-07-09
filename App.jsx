@@ -3906,10 +3906,13 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const parsed = await processSaldosBalance(e.target.files[0], planCuentas);
-      const mes = parsed[0]?.month || configMes;
-      const balParsed = parsed.filter(isBalRecord);
-      setDbData(prev => [...prev.filter(d => d.month !== mes || !isBalRecord(d)), ...balParsed]);
-      alert(`✅ Balance / Saldos (${mes}): ${balParsed.length} cuentas`);
+      // FIX: antes se usaba el mes detectado del NOMBRE del archivo (ej. un
+      // archivo "Balance_Mayo...xlsx" se guardaba como Mayo aunque en pantalla
+      // estuvieras en Junio). Ahora siempre se guarda bajo el mes seleccionado
+      // en el dropdown "Mes de carga", igual que Estado de Resultado/CxC/CxP.
+      const balParsed = parsed.filter(isBalRecord).map(p => ({ ...p, month: configMes }));
+      setDbData(prev => [...prev.filter(d => d.month !== configMes || !isBalRecord(d)), ...balParsed]);
+      alert(`✅ Balance / Saldos (${configMes}): ${balParsed.length} cuentas`);
     } catch(err) { alert('❌ Error Balance/Saldos: '+err.message); } e.target.value='';
   };
 
