@@ -3758,12 +3758,21 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const parsed = await processFiles(e.target.files);
+      // FIX: antes se exigía que el NOMBRE de cada línea empezara con 4/5/6.
+      // Los archivos con desglose por proveedor (ej. Junio) tienen el monto en
+      // líneas hijas (nombre del proveedor, sin código de cuenta), así que ese
+      // filtro las descartaba todas. Ahora se identifica P&L por la RUTA.
+      const isResRecord = (p) => {
+        const pathUp = (p.path||'').toUpperCase();
+        return !pathUp.includes('ACTIVO') && !pathUp.includes('PASIVO') && !pathUp.includes('PATRIMONIO') && !/^[123]\.\d/.test(p.name);
+      };
+      const resParsed = parsed.filter(isResRecord);
       setDbData(prev => {
         const meses = new Set(parsed.map(p => p.month));
-        const kept = prev.filter(d => !meses.has(d.month) || !/^[456]/.test(d.name));
-        return [...kept, ...parsed.filter(p => /^[456]/.test(p.name))];
+        const kept = prev.filter(d => !meses.has(d.month) || !isResRecord(d));
+        return [...kept, ...resParsed];
       });
-      alert(`✅ Estado de Resultado: ${parsed.length} registros procesados`);
+      alert(`✅ Estado de Resultado: ${resParsed.length} registros procesados`);
     } catch(err) { alert('❌ Error Estado de Resultado: '+err.message); } e.target.value='';
   };
 
@@ -3781,8 +3790,16 @@ function ReportesFinancierosApp() {
     try {
       const parsed = await processSaldosBalance(e.target.files[0], planCuentas);
       const mes = parsed[0]?.month || configMes;
-      setDbData(prev => [...prev.filter(d => d.month !== mes || !/^[123]/.test(d.name)), ...parsed.filter(p => /^[123]/.test(p.name))]);
-      alert(`✅ Balance / Saldos (${mes}): ${parsed.length} cuentas`);
+      // FIX: mismo problema que Estado de Resultado — se identifica el Balance
+      // por la RUTA contable, no exigiendo que el nombre de la línea empiece
+      // con 1/2/3 (eso fallaba si el balance viene desglosado por sub-cuenta).
+      const isBalRecord = (p) => {
+        const pathUp = (p.path||'').toUpperCase();
+        return pathUp.includes('ACTIV') || pathUp.includes('PASIV') || pathUp.includes('PATRIMON') || /^[123]\.\d/.test(p.name);
+      };
+      const balParsed = parsed.filter(isBalRecord);
+      setDbData(prev => [...prev.filter(d => d.month !== mes || !isBalRecord(d)), ...balParsed]);
+      alert(`✅ Balance / Saldos (${mes}): ${balParsed.length} cuentas`);
     } catch(err) { alert('❌ Error Balance/Saldos: '+err.message); } e.target.value='';
   };
 
