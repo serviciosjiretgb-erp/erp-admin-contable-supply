@@ -877,22 +877,44 @@ const processAuxFile = async (files, expectedType = 'cxc') => {
         if (dataRows[i] && isNewAuxFormat(dataRows[i])) { headerIdx = i; break; }
       }
       if (headerIdx >= 0) {
+        const headerRow = dataRows[headerIdx];
+        const hr = headerRow.map(h => h ? String(h).toLowerCase().trim() : '');
+        const findCol = (...keys) => { for (const k of keys) { const idx = hr.findIndex(h => h.includes(k)); if (idx !== -1) return idx; } return -1; };
+        const iCod = findCol('código','codigo',' cod','cod.');
+        const iNombreCol = findCol('nombre','cliente','proveedor','razón social','razon social');
+        const iOperacion = findCol('operaci');
+        const iEmision = findCol('emisi','fecha');
+        const iVence = findCol('venc');
+        const iDias = findCol('día','dia');
+        const iDoc = findCol('documento','doc.');
+        const iDescripcion = findCol('descripci');
+        const iMonto = findCol('monto','saldo');
+        const iCuenta = findCol('cuenta contable','cuenta');
         for (let i = headerIdx + 1; i < dataRows.length; i++) {
           const row = dataRows[i];
           if (!row || row.every(c => !c)) continue;
-          const nombre = row[1] ? String(row[1]).trim().toUpperCase() : '';
-          const monto = parseVal(row[8]);
-          if (!nombre || monto === null) continue;
-          const cuentaContable = row[9] ? String(row[9]).trim() : '';
+          const monto = iMonto >= 0 ? parseVal(row[iMonto]) : null;
+          if (monto === null) continue;
+          const descRaw = iDescripcion >= 0 && row[iDescripcion] ? String(row[iDescripcion]).trim() : '';
+          // Si no hay columna de nombre propia (como en el export de "Descripción de
+          // Operación"), el cliente/proveedor viene como el primer segmento del texto,
+          // ej. "ALIMENTOS DOÑA EMILIA S.A - N.E. NE-00170 - ..."
+          let nombre = iNombreCol >= 0 && row[iNombreCol] ? String(row[iNombreCol]).trim().toUpperCase() : '';
+          if (!nombre && descRaw) nombre = descRaw.split(' - ')[0].trim().toUpperCase();
+          if (!nombre) continue;
+          const cuentaContable = iCuenta >= 0 && row[iCuenta] ? String(row[iCuenta]).trim() : '';
           const codeMatch = cuentaContable.match(/^(\d[\d\.]+)/);
           const accountCode = codeMatch ? codeMatch[1] : null;
           const mapInfo = accountCode ? ACCOUNT_MAPS[accountCode] : null;
           const bucket = (mapInfo && result[mapInfo.type] !== undefined) ? mapInfo.type : defaultBucket;
           result[bucket].push({
-            cod: row[0] ? String(row[0]).trim() : '-', nombre, operacion: row[2] ? String(row[2]).trim() : '-',
-            emision: parseDate(row[3]), vence: parseDate(row[4]),
-            dias: row[5] !== null && row[5] !== undefined ? String(row[5]).trim() : '-',
-            doc: row[6] ? String(row[6]).trim() : '-', descripcion: row[7] ? String(row[7]).trim() : '-',
+            cod: iCod >= 0 && row[iCod] ? String(row[iCod]).trim() : '-', nombre,
+            operacion: iOperacion >= 0 && row[iOperacion] ? String(row[iOperacion]).trim() : '-',
+            emision: iEmision >= 0 ? parseDate(row[iEmision]) : '-',
+            vence: iVence >= 0 ? parseDate(row[iVence]) : '-',
+            dias: iDias >= 0 && row[iDias] !== null && row[iDias] !== undefined ? String(row[iDias]).trim() : '-',
+            doc: iDoc >= 0 && row[iDoc] ? String(row[iDoc]).trim() : '-',
+            descripcion: descRaw || '-',
             monto, cuentaContable,
           });
         }
