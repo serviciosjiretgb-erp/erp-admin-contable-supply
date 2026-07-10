@@ -881,13 +881,17 @@ const processAuxFile = async (files, expectedType = 'cxc') => {
         const hr = headerRow.map(h => h ? String(h).toLowerCase().trim() : '');
         const findCol = (...keys) => { for (const k of keys) { const idx = hr.findIndex(h => h.includes(k)); if (idx !== -1) return idx; } return -1; };
         const iCod = findCol('código','codigo',' cod','cod.');
-        const iNombreCol = findCol('nombre','cliente','proveedor','razón social','razon social');
+        const iDescOperacion = hr.findIndex(h => h.includes('descripci') && h.includes('operaci'));
+        const iDescripcion = iDescOperacion !== -1 ? iDescOperacion : findCol('descripci');
+        const iNombrePlanoDesc = hr.findIndex(h => h.includes('descripci') && !h.includes('operaci'));
+        const iNombreCol = findCol('nombre','cliente','proveedor','razón social','razon social') !== -1
+          ? findCol('nombre','cliente','proveedor','razón social','razon social')
+          : iNombrePlanoDesc;
         const iOperacion = findCol('operaci');
         const iEmision = findCol('emisi','fecha');
         const iVence = findCol('venc');
         const iDias = findCol('día','dia');
         const iDoc = findCol('documento','doc.');
-        const iDescripcion = findCol('descripci');
         const iMonto = findCol('monto','saldo');
         const iCuenta = findCol('cuenta contable','cuenta');
         for (let i = headerIdx + 1; i < dataRows.length; i++) {
@@ -3962,11 +3966,16 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const parsed = await processAuxFile(e.target.files, 'cxc');
-      const tot = parsed.cxc_general.length + parsed.cxc_zuliana.length;
-      setAuxByMonth(prev => ({
-        ...prev,
-        [configMes]: { ...getAuxForMonth(configMes), cxc_general: parsed.cxc_general, cxc_zuliana: parsed.cxc_zuliana }
-      }));
+      const tot = Object.values(parsed).reduce((s, arr) => s + arr.length, 0);
+      setAuxByMonth(prev => {
+        const merged = { ...getAuxForMonth(configMes) };
+        merged.cxc_general = parsed.cxc_general;
+        merged.cxc_zuliana = parsed.cxc_zuliana;
+        ['cxp_autototal','cxp_surepack','cxp_pacomela','cxp_yancarlos','cxp_general'].forEach(k => {
+          if (parsed[k] && parsed[k].length > 0) merged[k] = parsed[k];
+        });
+        return { ...prev, [configMes]: merged };
+      });
       alert(`✅ CxC ${configMes}: ${tot} registros`);
     } catch(err){ alert("❌ Error CxC: "+err.message); } e.target.value='';
   };
@@ -3975,11 +3984,24 @@ function ReportesFinancierosApp() {
     if (!e.target.files.length) return;
     try {
       const parsed = await processAuxFile(e.target.files, 'cxp');
-      const tot = parsed.cxp_autototal.length+parsed.cxp_surepack.length+parsed.cxp_pacomela.length+parsed.cxp_yancarlos.length+parsed.cxp_general.length;
-      setAuxByMonth(prev => ({
-        ...prev,
-        [configMes]: { ...getAuxForMonth(configMes), cxp_autototal:parsed.cxp_autototal, cxp_surepack:parsed.cxp_surepack, cxp_pacomela:parsed.cxp_pacomela, cxp_yancarlos:parsed.cxp_yancarlos, cxp_general:parsed.cxp_general }
-      }));
+      // FIX: antes solo se guardaban los buckets cxp_* — si el archivo de CxP
+      // traía una cuenta clasificada como CxC (ej. Anticipos a Proveedores
+      // Zuliana, 1.1.05.01.008), se calculaba bien pero se descartaba al
+      // guardar. Ahora también se guarda ese bucket "cruzado", sin borrar
+      // datos de CxC que vengan de otra carga si este archivo no trae nada ahí.
+      const tot = Object.values(parsed).reduce((s, arr) => s + arr.length, 0);
+      setAuxByMonth(prev => {
+        const merged = { ...getAuxForMonth(configMes) };
+        merged.cxp_autototal = parsed.cxp_autototal;
+        merged.cxp_surepack  = parsed.cxp_surepack;
+        merged.cxp_pacomela  = parsed.cxp_pacomela;
+        merged.cxp_yancarlos = parsed.cxp_yancarlos;
+        merged.cxp_general   = parsed.cxp_general;
+        ['cxc_general','cxc_zuliana'].forEach(k => {
+          if (parsed[k] && parsed[k].length > 0) merged[k] = parsed[k];
+        });
+        return { ...prev, [configMes]: merged };
+      });
       alert(`✅ CxP ${configMes}: ${tot} registros`);
     } catch(err){ alert("❌ Error CxP: "+err.message); } e.target.value='';
   };
