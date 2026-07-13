@@ -441,6 +441,23 @@ const sortTreeNodes = (nodes) => {
   return nodes;
 };
 
+// ============================================================================
+// correctTopLevelPath: fuerza que cada línea quede bajo INGRESOS/COSTOS/GASTOS
+// según el PRIMER DÍGITO de su código de cuenta (4=Ingresos, 5=Costos,
+// 6=Gastos), sin importar cómo el archivo origen la haya agrupado. Esto
+// corrige archivos donde, por ejemplo, una cuenta 5.2.xx (costo) aparece
+// anidada bajo la sección "GASTOS" del pivote exportado.
+// ============================================================================
+const CODE_TOP_LEVEL = { '4': 'INGRESOS', '5': 'COSTOS', '6': 'GASTOS' };
+const correctTopLevelPath = (pathArray, itemName) => {
+  const codeDigit = itemName.match(/^(\d)/)?.[1];
+  const correctTop = codeDigit && CODE_TOP_LEVEL[codeDigit];
+  if (correctTop && pathArray.length > 0 && pathArray[0].trim().toUpperCase() !== correctTop) {
+    return [correctTop, ...pathArray.slice(1)];
+  }
+  return pathArray;
+};
+
 const flattenTreeForExcel = (nodes, openStates, level = 0, rows = []) => {
   nodes.forEach(n => {
     const isAccountNode = /^\d\./.test(n.n) || (!n.c || n.c.length === 0);
@@ -1388,7 +1405,7 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
     const resData = monthData.filter(item => !item.path.toUpperCase().includes('ACTIVO') && !item.path.toUpperCase().includes('PASIVO') && !item.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(item.name));
     const normKey = s => s.trim().replace(/\s+/g,' ').toUpperCase();
     resData.forEach(item => {
-      const pathArray = item.path.split('>');
+      const pathArray = correctTopLevelPath(item.path.split('>'), item.name);
       let cur = root;
       pathArray.forEach(folderName => {
         const key = normKey(folderName);
@@ -1635,7 +1652,7 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
     const getData = (m) => dbData.filter(d => d.month === m && !d.path.toUpperCase().includes('ACTIVO') && !d.path.toUpperCase().includes('PASIVO') && !d.path.toUpperCase().includes('PATRIMONIO') && !/^[123]/.test(d.name));
     const m1Data = getData(month1); const m2Data = getData(month2);
     const processItem = (item, isM1) => {
-      const pathParts = item.path.split('>');
+      const pathParts = correctTopLevelPath(item.path.split('>'), item.name);
       const mainCategory = pathParts[0] ? pathParts[0].trim().toUpperCase() : 'OTROS';
       let accountOriginalName = pathParts.length > 1 ? pathParts[pathParts.length - 1].trim() : item.name.trim();
       if (!/^(\d[\d\.]+)/.test(accountOriginalName) && /^(\d[\d\.]+)/.test(item.name.trim())) accountOriginalName = item.name.trim();
@@ -3094,7 +3111,7 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {}, afByMonth =
     const root = [];
     const normKey = s => (s||'').trim().replace(/\s+/g,' ').toUpperCase();
     resData.forEach(item => {
-      const pathArray = (item.path||'').split('>').filter(Boolean);
+      const pathArray = correctTopLevelPath((item.path||'').split('>').filter(Boolean), item.name);
       let cur = root;
       pathArray.forEach(folderName => {
         const key = normKey(folderName);
