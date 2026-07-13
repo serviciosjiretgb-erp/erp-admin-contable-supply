@@ -686,7 +686,7 @@ const exportActivosFijosExcelGrouped = async (records, getRubo, fileName, mesCor
     const ws = {};
     let r = 1;
     for(let i=0;i<8;i++){for(let c=0;c<nCols;c++) ws[String.fromCharCode(65+c)+r]=mkCell('',{}); r++;}
-    const hdrs=['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum Bs.','Val.Neto Bs.','Dep.Mensual Bs.','Tasa'];
+    const hdrs=['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum USD','Val.Neto USD','Dep.Mensual USD','Tasa'];
     const grupos={};
     records.forEach(rec=>{const g=getRubo(rec);if(!grupos[g])grupos[g]=[];grupos[g].push(rec);});
     const RUBRO_ORDER=['MOBILIARIO Y EQUIPO DE OFICINA','EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES','HERRAMIENTAS MENORES','MAQUINARIA Y EQUIPOS','PLANTA ELÉCTRICA','GALPÓN E INMUEBLES','VEHÍCULOS'];
@@ -1410,8 +1410,8 @@ function EstadoResultadoView({ onBack, dbData, activosFijosData }) {
 
       const depByCtaGasto = {};
       afRecords.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
-        const perMesBs  = r.depreMensual;
-        const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
+        const perMesUSD = r.depreMensual;
+        const perMesBs  = r.tasa > 0 ? perMesUSD * r.tasa : perMesUSD;
         const ctaGasto  = (r.cuentaGasto||'').trim();
 
         if (ctaGasto && /^\d/.test(ctaGasto)) {
@@ -1660,8 +1660,7 @@ function AnalisisComparativoView({ onBack, dbData, activosFijosData }) {
           if (!map) return;
           const nDebe = map.debe.length;
 
-          const perMesBs = r.depreMensual;
-          const perMesUSD = r.tasa > 0 ? perMesBs / r.tasa : 0;
+          const perMesUSD = r.depreMensual;
 
           map.debe.forEach(d => {
             const key = `${d.cta}-${d.nombre}`;
@@ -2142,11 +2141,11 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
           costoByRubro[rubro].usd += r.costoUSD || 0;
           costoByRubro[rubro].bs  += r.costoBS  || 0;
-          const depActual = r.depAcum || 0;
-          if (depActual > 0) {
+          const depActualUSD = r.depAcum || 0;
+          if (depActualUSD > 0) {
             const ctaHaber = AF_DEP_LABEL[rubro] || `DEP. ACUMULADA ${rubro}`;
-            if (!depByAccount[ctaHaber]) depByAccount[ctaHaber] = { bs: 0, rubro };
-            depByAccount[ctaHaber].bs += depActual;
+            if (!depByAccount[ctaHaber]) depByAccount[ctaHaber] = { usd: 0, rubro };
+            depByAccount[ctaHaber].usd += depActualUSD;
           }
         });
         const PPE_PATH = ['ACTIVOS','ACTIVO CIRCULANTE','PROPIEDAD, PLANTA Y EQUIPOS'];
@@ -2154,7 +2153,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           if (v.usd > 0) insertLeaf([...PPE_PATH, rubro], AF_COSTO_LABEL[rubro]||rubro, v.usd, v.usd * tasa);
         });
         Object.entries(depByAccount).forEach(([ctaLabel, info]) => {
-          insertLeaf([...PPE_PATH, info.rubro], ctaLabel, -(info.bs / tasa), -info.bs);
+          insertLeaf([...PPE_PATH, info.rubro], ctaLabel, -info.usd, -(info.usd * tasa));
         });
       }
     }
@@ -2424,7 +2423,8 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
       const montoPorRubro = {};
       records.filter(r => r.costoUSD > 0 && r.depreMensual > 0).forEach(r => {
         const rubro = getRubro(r);
-        montoPorRubro[rubro] = (montoPorRubro[rubro] || 0) + r.depreMensual;
+        const depreMensualBs = r.depreMensual * (r.tasa || 1);
+        montoPorRubro[rubro] = (montoPorRubro[rubro] || 0) + depreMensualBs;
       });
       const debeLines = [], haberLines = [];
       Object.entries(montoPorRubro).forEach(([rubro, totalBs]) => {
@@ -2537,9 +2537,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                 {label:'Vida Útil Transcurrida (meses)', key:'vidaUtilTrans', type:'number'},
                 {label:'Costo Adq. USD', key:'costoUSD', type:'number'},
                 {label:'Costo Adq. Bs.', key:'costoBS', type:'number'},
-                {label:'DEP.ACUM (Bs. base)', key:'depAcum', type:'number'},
-                {label:'Valor Neto Libros (Bs.)', key:'valorNeto', type:'number'},
-                {label:'Dep. Mensual (Bs.)', key:'depreMensual', type:'number'},
+                {label:'DEP.ACUM (USD)', key:'depAcum', type:'number'},
+                {label:'Valor Neto Libros (USD)', key:'valorNeto', type:'number'},
+                {label:'Dep. Mensual (USD)', key:'depreMensual', type:'number'},
                 {label:'Tasa histórica', key:'tasa', type:'number'},
               ].map(f=>(
                 <div key={f.key} className={f.full ? 'col-span-2' : ''}>
@@ -2607,10 +2607,10 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
             const sUSD=items.reduce((s,r)=>s+r.costoUSD,0), sBS=items.reduce((s,r)=>s+r.costoBS,0), sDA=items.reduce((s,r)=>s+getDepAcumActual(r),0), sN=items.reduce((s,r)=>s+getValorNetoActual(r),0), sM=items.reduce((s,r)=>s+r.depreMensual,0);
             rowsHtml += `<tr class="total" style="background:#f7f7f7;font-weight:900;"><td colspan="6" style="text-align:left">SUBTOTAL ${rubro}</td><td style="text-align:right">${fmtP(sUSD)}</td><td style="text-align:right">${fmtP(sBS)}</td><td style="text-align:right">${fmtP(sDA)}</td><td style="text-align:right">${fmtP(sN)}</td><td style="text-align:right">${fmtP(sM)}</td><td></td></tr>`;
           });
-          const thHtml = ['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum Bs.','Val.Neto Bs.','Dep.Mensual Bs.','Tasa'].map(h=>`<th>${h}</th>`).join('');
+          const thHtml = ['Cant','Descripción','Sede','Fecha Adq.','V.U. Asig.','V.U. Trans.','Costo USD','Costo Bs.','Dep.Acum USD','Val.Neto USD','Dep.Mensual USD','Tasa'].map(h=>`<th>${h}</th>`).join('');
           printReport(
             `<h1>Registro de Activos Fijos</h1><h2>Corte: ${mesCorte}</h2>`,
-            `<table><thead><tr>${thHtml}</tr></thead><tbody>${rowsHtml}<tr class="grand-total" style="background:#111;color:#fff;font-weight:900;"><td colspan="6" style="text-align:left">TOTAL GENERAL</td><td style="text-align:right;color:#fff">USD ${fmtP(totalCostoUSD)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalCostoBS)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalDepAcum)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalNeto)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalMensual)}</td><td></td></tr></tbody></table>`
+            `<table><thead><tr>${thHtml}</tr></thead><tbody>${rowsHtml}<tr class="grand-total" style="background:#111;color:#fff;font-weight:900;"><td colspan="6" style="text-align:left">TOTAL GENERAL</td><td style="text-align:right;color:#fff">USD ${fmtP(totalCostoUSD)}</td><td style="text-align:right;color:#fff">Bs. ${fmtP(totalCostoBS)}</td><td style="text-align:right;color:#fff">USD ${fmtP(totalDepAcum)}</td><td style="text-align:right;color:#fff">USD ${fmtP(totalNeto)}</td><td style="text-align:right;color:#fff">USD ${fmtP(totalMensual)}</td><td></td></tr></tbody></table>`
           );
         }} className="px-4 py-1.5 bg-orange-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-orange-700 flex items-center gap-1.5 shadow-md transition-colors">
           <FileText size={13}/> PDF
@@ -2625,9 +2625,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
           {[
             {label:'Costo Adq. USD', val:`USD ${fmt(totalCostoUSD)}`, color:'text-blue-700', bg:'bg-blue-50 border-blue-200'},
             {label:'Costo Histórico Bs.', val:`Bs. ${fmt(totalCostoBS)}`, color:'text-slate-700', bg:'bg-white border-slate-200'},
-            {label:`Dep. Acum Bs. (${mesCorte})`, val:`Bs. ${fmt(totalDepAcum)}`, color:'text-red-600', bg:'bg-red-50 border-red-200'},
-            {label:'Valor Neto Bs.', val:`Bs. ${fmt(totalNeto)}`, color:'text-orange-600', bg:'bg-orange-50 border-orange-200'},
-            {label:'Dep. Mensual Bs.', val:`Bs. ${fmt(totalMensual)}`, color:'text-emerald-600', bg:'bg-emerald-50 border-emerald-200'},
+            {label:`Dep. Acum USD (${mesCorte})`, val:`USD ${fmt(totalDepAcum)}`, color:'text-red-600', bg:'bg-red-50 border-red-200'},
+            {label:'Valor Neto USD', val:`USD ${fmt(totalNeto)}`, color:'text-orange-600', bg:'bg-orange-50 border-orange-200'},
+            {label:'Dep. Mensual USD', val:`USD ${fmt(totalMensual)}`, color:'text-emerald-600', bg:'bg-emerald-50 border-emerald-200'},
           ].map(k=>(
             <div key={k.label} className={`rounded-xl p-4 border ${k.bg} shadow-sm`}>
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{k.label}</p>
@@ -2653,9 +2653,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                 <div className="flex gap-5 text-right text-[10px]">
                   <div><p className="text-slate-400 text-[8px] uppercase font-bold">Costo USD</p><p className={`font-mono font-black ${colors.text}`}>USD {fmt(gCostoUSD)}</p></div>
                   <div><p className="text-slate-400 text-[8px] uppercase font-bold">Costo Bs.</p><p className="font-mono font-black text-slate-700">Bs. {fmt(gCostoBS)}</p></div>
-                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Dep. Acum</p><p className="font-mono font-black text-red-600">Bs. {fmt(gDepAcum)}</p></div>
-                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Val. Neto</p><p className="font-mono font-black text-orange-600">Bs. {fmt(gNeto)}</p></div>
-                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Dep/Mes</p><p className="font-mono font-black text-emerald-600">Bs. {fmt(gMensual)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Dep. Acum</p><p className="font-mono font-black text-red-600">USD {fmt(gDepAcum)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Val. Neto</p><p className="font-mono font-black text-orange-600">USD {fmt(gNeto)}</p></div>
+                  <div><p className="text-slate-400 text-[8px] uppercase font-bold">Dep/Mes</p><p className="font-mono font-black text-emerald-600">USD {fmt(gMensual)}</p></div>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -2670,9 +2670,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                       <th className="px-2 py-2 text-center text-slate-400 w-14">V.U. Trans</th>
                       <th className="px-2 py-2 text-right text-blue-600 w-28 bg-blue-50/60">Costo Adq. USD</th>
                       <th className="px-2 py-2 text-right text-slate-500 w-28 bg-slate-100">Costo Adq. Bs.</th>
-                      <th className="px-2 py-2 text-right text-red-500 w-28 bg-red-50">DEP.ACUM Bs.</th>
-                      <th className="px-2 py-2 text-right text-orange-600 w-28 bg-orange-50">Val. Neto Bs.</th>
-                      <th className="px-2 py-2 text-right text-emerald-600 w-24 bg-emerald-50">Dep. Mensual Bs.</th>
+                      <th className="px-2 py-2 text-right text-red-500 w-28 bg-red-50">DEP.ACUM USD</th>
+                      <th className="px-2 py-2 text-right text-orange-600 w-28 bg-orange-50">Val. Neto USD</th>
+                      <th className="px-2 py-2 text-right text-emerald-600 w-24 bg-emerald-50">Dep. Mensual USD</th>
                       <th className="px-2 py-2 text-right text-slate-400 w-14">Tasa</th>
                       <th className="px-2 py-2 text-center w-10"></th>
                     </tr>
@@ -2690,9 +2690,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                           <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
                           <td className="px-2 py-2 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/40 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
                           <td className="px-2 py-2 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
-                          <td className="px-2 py-2 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">Bs. {fmt(getDepAcumActual(a))}</td>
-                          <td className="px-2 py-2 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">Bs. {fmt(getValorNetoActual(a))}</td>
-                          <td className="px-2 py-2 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">Bs. {fmt(a.depreMensual)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">USD {fmt(getDepAcumActual(a))}</td>
+                          <td className="px-2 py-2 text-right font-mono font-bold text-[11px] text-orange-600 bg-orange-50/40 whitespace-nowrap">USD {fmt(getValorNetoActual(a))}</td>
+                          <td className="px-2 py-2 text-right font-mono text-[10px] text-emerald-600 bg-emerald-50/30 whitespace-nowrap">USD {fmt(a.depreMensual)}</td>
                           <td className="px-2 py-2 text-right font-mono text-[10px] text-slate-400 whitespace-nowrap">{(a.tasa||0).toFixed(2)}</td>
                           <td className="px-2 py-2 text-center">
                             <button onClick={()=>openEdit(a, globalIdx)}
@@ -2709,9 +2709,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                       <td colSpan={6} className="px-3 py-2.5 text-slate-600 uppercase tracking-wider">Subtotal {rubro}</td>
                       <td className="px-2 py-2.5 text-right font-mono text-blue-700 whitespace-nowrap">USD {fmt(gCostoUSD)}</td>
                       <td className="px-2 py-2.5 text-right font-mono text-slate-700 whitespace-nowrap">Bs. {fmt(gCostoBS)}</td>
-                      <td className="px-2 py-2.5 text-right font-mono text-red-600 whitespace-nowrap">Bs. {fmt(gDepAcum)}</td>
-                      <td className="px-2 py-2.5 text-right font-mono text-orange-700 whitespace-nowrap">Bs. {fmt(gNeto)}</td>
-                      <td className="px-2 py-2.5 text-right font-mono text-emerald-600 whitespace-nowrap">Bs. {fmt(gMensual)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-red-600 whitespace-nowrap">USD {fmt(gDepAcum)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-orange-700 whitespace-nowrap">USD {fmt(gNeto)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono text-emerald-600 whitespace-nowrap">USD {fmt(gMensual)}</td>
                       <td colSpan={2}/>
                     </tr>
                   </tfoot>
@@ -2728,7 +2728,7 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                 <p className="text-[9px] font-black text-violet-200 uppercase tracking-widest">Libro Diario</p>
                 <p className="text-white font-black text-sm">Asientos Contables de Depreciación por Mes</p>
               </div>
-              <p className="text-violet-200 text-[10px] font-bold">Depreciación mensual: Bs. {fmt(totalMensual)}</p>
+              <p className="text-violet-200 text-[10px] font-bold">Depreciación mensual: USD {fmt(totalMensual)}</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse" style={{minWidth:'900px'}}>
@@ -2797,9 +2797,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
           <div className="flex gap-6 text-right flex-wrap">
             <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo USD</p><p className="font-mono font-black text-blue-400">USD {fmt(totalCostoUSD)}</p></div>
             <div><p className="text-[8px] text-slate-400 font-bold uppercase">Costo Bs.</p><p className="font-mono font-black text-white">Bs. {fmt(totalCostoBS)}</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep. Acum Bs.</p><p className="font-mono font-black text-red-400">Bs. {fmt(totalDepAcum)}</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Valor Neto Bs.</p><p className="font-mono font-black text-orange-400">Bs. {fmt(totalNeto)}</p></div>
-            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep/Mes Bs.</p><p className="font-mono font-black text-emerald-400">Bs. {fmt(totalMensual)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep. Acum USD</p><p className="font-mono font-black text-red-400">USD {fmt(totalDepAcum)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Valor Neto USD</p><p className="font-mono font-black text-orange-400">USD {fmt(totalNeto)}</p></div>
+            <div><p className="text-[8px] text-slate-400 font-bold uppercase">Dep/Mes USD</p><p className="font-mono font-black text-emerald-400">USD {fmt(totalMensual)}</p></div>
           </div>
         </div>
       </main>
@@ -3121,9 +3121,9 @@ function DashboardFinancieroView({ onBack, dbData, tasaByMonth = {}, afByMonth =
     if (afRecs.length > 0) {
       const depByLabel = {};
       afRecs.filter(r=>r.costoUSD>0&&r.depreMensual>0).forEach(r => {
-        const perMesBs  = r.depreMensual;
+        const perMesUSD = r.depreMensual;
         const t = r.tasa || tasaByMonth[m] || 1;
-        const perMesUSD = t > 0 ? perMesBs / t : 0;
+        const perMesBs  = t > 0 ? perMesUSD * t : perMesUSD;
         const ctaGasto  = (r.cuentaGasto||'').trim();
         if (ctaGasto && /^\d/.test(ctaGasto)) {
           const label = ctaGasto.includes('-') ? ctaGasto : `${ctaGasto}-DEPRECIACIÓN`;
