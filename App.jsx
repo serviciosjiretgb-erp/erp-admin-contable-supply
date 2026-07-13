@@ -2110,11 +2110,6 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
       });
 
       if (currentAF?.records?.length) {
-        const MNUM = {Enero:1,Febrero:2,Marzo:3,Abril:4,Mayo:5,Junio:6,Julio:7,Agosto:8,Septiembre:9,Octubre:10,Noviembre:11,Diciembre:12};
-        const BASE_MONTH_NUM = 4;
-        const mesNum = MNUM[selectedMonth] || MNUM['Abril'];
-        const extraM = Math.max(0, mesNum - BASE_MONTH_NUM);
-
         const getRubroBalance = (r) => {
           const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
           if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
@@ -2147,7 +2142,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           if (!costoByRubro[rubro]) costoByRubro[rubro] = { usd: 0, bs: 0 };
           costoByRubro[rubro].usd += r.costoUSD || 0;
           costoByRubro[rubro].bs  += r.costoBS  || 0;
-          const depActual = (r.depAcum || 0) + extraM * (r.depreMensual || 0);
+          const depActual = r.depAcum || 0;
           if (depActual > 0) {
             const ctaHaber = AF_DEP_LABEL[rubro] || `DEP. ACUMULADA ${rubro}`;
             if (!depByAccount[ctaHaber]) depByAccount[ctaHaber] = { bs: 0, rubro };
@@ -2391,11 +2386,9 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
   const sedes = useMemo(()=>['all',...new Set(records.map(r=>r.sede).filter(s=>s&&s!=='-'))],[records]);
   const rubros = useMemo(()=>['all',...new Set(records.map(getRubro))],[records]);
   const mesesCorte = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const extraMeses = Math.max(0, (MONTH_NUM[mesCorte]||4) - BASE_MONTH);
-
   const getTasaHist = (r) => r.tasa || (r.costoUSD ? r.costoBS / r.costoUSD : 1);
-  const getDepAcumActual = (r) => r.depAcum + extraMeses * r.depreMensual;
-  const getValorNetoActual = (r) => r.valorNeto - extraMeses * r.depreMensual;
+  const getDepAcumActual = (r) => r.depAcum;
+  const getValorNetoActual = (r) => r.valorNeto;
 
   const INVALID = new Set(['CUENTA','CUENTA CONTABLE','MOBILIARIO Y EQUIPO','-','']);
   const filteredValid = useMemo(()=>{
