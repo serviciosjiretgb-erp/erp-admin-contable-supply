@@ -2236,6 +2236,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 
   const handlePrintBalance = () => {
     const fmtP = (v) => new Intl.NumberFormat('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(v||0));
+    const fmtPct = (v) => totalActivos ? ((Math.abs(v||0)/totalActivos)*100).toFixed(2)+'%' : '';
     const showUSD = currency !== 'bs'; const showBS = currency !== 'usd';
     const cols = ['Cuenta', ...(showUSD?['USD']:[]), ...(showBS?['Bs.']:[]), '%'].map(c=>`<th>${c}</th>`).join('');
     const openStates = getOpenSet();
@@ -2246,20 +2247,20 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
       if (!n.isLeaf && n.c?.length) {
         if (!isAccountNode) {
           const childRows = buildRows(n.c, lvl+1);
-          return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+          return `<tr class="section"><td>${indent}${n.n}</td>${showUSD?'<td></td>':''}${showBS?'<td></td>':''}<td></td></tr>${childRows}<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${fmtPct(n.u)}</td></tr>`;
         } else {
           const isOpen = !openStates || openStates.has(n.n.trim().toUpperCase());
-          let html = `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+          let html = `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${fmtPct(n.u)}</td></tr>`;
           if (isOpen) {
             html += buildRows(n.c, lvl+1);
-            html += `<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+            html += `<tr class="total"><td>${indent}TOTAL ${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${fmtPct(n.u)}</td></tr>`;
           }
           return html;
         }
       }
-      return `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td></td></tr>`;
+      return `<tr><td>${indent}${n.n}</td>${showUSD?`<td>${fmtP(n.u)}</td>`:''}${showBS?`<td>${fmtP(n.b)}</td>`:''}<td>${fmtPct(n.u)}</td></tr>`;
     }).join('');
-    const content = `<table><thead><tr>${cols}</tr></thead><tbody>${buildRows(tree)}<tr class="grand-total"><td>TOTAL PASIVO Y PATRIMONIO</td>${showUSD?`<td>${fmtP(-totalPasPat)}</td>`:''}${showBS?'<td></td>':''}<td></td></tr><tr class="grand-total"><td>TOTAL ACTIVOS</td>${showUSD?`<td>${fmtP(totalActivos)}</td>`:''}${showBS?'<td></td>':''}<td></td></tr><tr class="grand-total" style="background:${Math.abs(balanceDiff)<0.01?'#006622':'#990000'}"><td>ACTIVO − (PASIVO+PATRIMONIO)</td>${showUSD?`<td>${fmtP(balanceDiff)}</td>`:''}${showBS?'<td></td>':''}<td>${Math.abs(balanceDiff)<0.01?'✓ CUADRADO':''}</td></tr></tbody></table>`;
+    const content = `<table><thead><tr>${cols}</tr></thead><tbody>${buildRows(tree)}<tr class="grand-total"><td>TOTAL PASIVO Y PATRIMONIO</td>${showUSD?`<td>${fmtP(-totalPasPat)}</td>`:''}${showBS?'<td></td>':''}<td>${fmtPct(totalPasPat)}</td></tr><tr class="grand-total"><td>TOTAL ACTIVOS</td>${showUSD?`<td>${fmtP(totalActivos)}</td>`:''}${showBS?'<td></td>':''}<td>${fmtPct(totalActivos)}</td></tr><tr class="grand-total" style="background:${Math.abs(balanceDiff)<0.01?'#006622':'#990000'}"><td>ACTIVO − (PASIVO+PATRIMONIO)</td>${showUSD?`<td>${fmtP(balanceDiff)}</td>`:''}${showBS?'<td></td>':''}<td>${Math.abs(balanceDiff)<0.01?'✓ CUADRADO':''}</td></tr></tbody></table>`;
     printReport(`<h1>Balance de Situación Financiera</h1><h2>Corte: ${monthLabel(selectedMonth)} | Tasa: ${tasa} Bs/USD</h2>`, content);
   };
 
