@@ -2134,6 +2134,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
           const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
           if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
           if (s.includes('GALPON')||s.includes('INMUEBLE')||s.includes('LOCAL')) return 'INMUEBLE (GALPON)';
+          if (s.includes('FLEXOGRAF')||s.includes('ROTOGRABADO')||s.includes('OFFSET')||s.includes('TIPOGRAF')||s.includes('SERIGRAF')||s.includes('TROQUEL')||s.includes('LAMINADORA')) return 'MAQUINARIAS Y EQUIPOS';
           if (s.includes('COMPUT')||s.includes('LAPTOP')||s.includes('MONITOR')||s.includes('IMPRES')) return 'EQUIPOS DE COMPUTACIÓN';
           if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')) return 'MOBILIARIO';
           if (s.includes('PLANTA')||s.includes('ELECTRIC')||s.includes('GENERA')) return 'PLANTA ELÉCTRICA';
@@ -2386,6 +2387,9 @@ const getRubro = (r) => {
   if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')||s.includes('MOTO')) return 'VEHÍCULOS';
   if (s.includes('PLANTA ELECTR')||s.includes('PLANTA ELEC')||s.includes('GENERATOR')||s.includes('GENERADOR')) return 'PLANTA ELÉCTRICA';
   if (s.includes('GALPON')||s.includes('GALPÓN')||s.includes('INMUEBLE')||s.includes('LOCAL')||s.includes('MEJORA')||s.includes('EDIFICIO')||s.includes('TERRENO')) return 'GALPÓN E INMUEBLES';
+  // Prensas/máquinas industriales de impresión (van a Maquinaria, NO a Computación,
+  // aunque su nombre contenga "IMPRESORA"/"IMPRES").
+  if (s.includes('FLEXOGRAF')||s.includes('ROTOGRABADO')||s.includes('OFFSET')||s.includes('TIPOGRAF')||s.includes('SERIGRAF')||s.includes('TROQUEL')||s.includes('LAMINADORA')) return 'MAQUINARIA Y EQUIPOS';
   if (s.includes('COMPUT')||s.includes('LAPTOP')||s.includes('MONITOR')||s.includes('IMPRES')||s.includes('TELECO')||s.includes('TELEFON')||s.includes('SERVER')||s.includes('RED ')||s.includes('SWITCH')||s.includes('ROUTER')||s.includes('SCANER')) return 'EQUIPOS DE COMPUTACIÓN Y TELECOMUNICACIONES';
   if (s.includes('MAQUINAR')||s.includes('TORNO')||s.includes('PRENSA')||s.includes('SOLDAD')||s.includes('COMPRESOR')||s.includes('BOMBA')) return 'MAQUINARIA Y EQUIPOS';
   if (s.includes('MOBIL')||s.includes('ESCRITORIO')||s.includes('SILLA')||s.includes('MUEBLE')||s.includes('ESTANTE')||s.includes('ARCHIV')||s.includes('VITRINA')||s.includes('MOSTRADOR')) return 'MOBILIARIO Y EQUIPO DE OFICINA';
