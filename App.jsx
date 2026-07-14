@@ -3918,6 +3918,15 @@ function ReportesFinancierosApp() {
   const [activosFijosData, setActivosFijosData] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_erp_activos_fijos')||'null'); return s||(JIRET_SEED_DATA.activosFijosData||{records:[]}); } catch(e){ return JIRET_SEED_DATA.activosFijosData||{records:[]}; } });
   const [auxDataConfig, setAuxDataConfig] = useState(() => { try { const s=JSON.parse(localStorage.getItem('jiret_erp_aux_data_config')||'null'); return s||(JIRET_SEED_DATA.auxDataConfig||{}); } catch(e){ return JIRET_SEED_DATA.auxDataConfig||{}; } });
   const [configMes, setConfigMes] = useState('Abril');
+
+  // ==========================================================================
+  // TEMPORAL — solo para depurar el caso de Montacargas. Expone los datos
+  // reales de Activos Fijos a la consola del navegador (F12 → Console).
+  // No afecta nada del funcionamiento normal de la app.
+  // ==========================================================================
+  useEffect(() => {
+    window.__DEBUG_AF = { activosFijosData, afByMonth };
+  });
   const MESES_CFG = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   useEffect(() => { try { localStorage.setItem('jiret_erp_db_data', JSON.stringify(dbData)); } catch(e){} }, [dbData]);
