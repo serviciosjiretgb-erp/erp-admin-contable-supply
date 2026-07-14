@@ -739,7 +739,7 @@ const exportActivosFijosExcelGrouped = async (records, getRubo, fileName, mesCor
       let odd=true;
       items.forEach(rec=>{
         const bg=odd?'FFFFFF':bgRgb; odd=!odd;
-        const vals=[rec.cant,rec.descripcion,rec.sede,rec.fechaAdq,rec.vidaUtilAsig,rec.vidaUtilTrans,n(rec.costoUSD),n(rec.costoBS),n(getDepAcumFn(rec)),n(getNetoFn(rec)),n(rec.depreMensual),n(rec.tasa)];
+        const vals=[rec.cant,rec.descripcion,rec.sede,rec.fechaAdq,rec.vidaUtilAsig,rec.vidaUtilTrans!=null?parseFloat(rec.vidaUtilTrans.toFixed(1)):rec.vidaUtilTrans,n(rec.costoUSD),n(rec.costoBS),n(getDepAcumFn(rec)),n(getNetoFn(rec)),n(rec.depreMensual),n(rec.tasa)];
         const isNumCol=[false,false,false,false,false,false,true,true,true,true,true,true];
         vals.forEach((v,ci)=>{
           const addr=String.fromCharCode(65+ci)+r;
@@ -2131,7 +2131,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 
       if (currentAF?.records?.length) {
         const getRubroBalance = (r) => {
-          const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
+          const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
           if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')) return 'VEHÍCULOS';
           if (s.includes('GALPON')||s.includes('INMUEBLE')||s.includes('LOCAL')) return 'INMUEBLE (GALPON)';
           if (s.includes('FLEXOGRAF')||s.includes('ROTOGRABADO')||s.includes('OFFSET')||s.includes('TIPOGRAF')||s.includes('SERIGRAF')||s.includes('TROQUEL')||s.includes('LAMINADORA')) return 'MAQUINARIAS Y EQUIPOS';
@@ -2382,7 +2382,7 @@ function BalanceGeneralView({ onBack, dbData, auxByMonth, afByMonth, auxDataConf
 // 8. VISTA: ACTIVOS FIJOS (Valores en Bs — Tasa Histórica)
 // ============================================================================
 const getRubro = (r) => {
-  const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase();
+  const s = ((r.cuenta||'')+(r.descripcion||'')).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   if (s.includes('HERRAMIENTA')) return 'HERRAMIENTAS MENORES';
   if (s.includes('VEHICUL')||s.includes('CAMION')||s.includes('CARRO')||s.includes('MOTO')) return 'VEHÍCULOS';
   if (s.includes('PLANTA ELECTR')||s.includes('PLANTA ELEC')||s.includes('GENERATOR')||s.includes('GENERADOR')) return 'PLANTA ELÉCTRICA';
@@ -2628,7 +2628,7 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
             const items = gruposPDF[rubro];
             rowsHtml += `<tr class="section"><td colspan="12" style="font-weight:900; background:#f3f3f3; color:#E05A00; text-align:left;">${rubro.toUpperCase()}</td></tr>`;
             items.forEach(r => {
-              rowsHtml += `<tr><td style="text-align:center">${r.cant}</td><td style="text-align:left">${r.descripcion}</td><td style="text-align:center">${r.sede}</td><td style="text-align:center">${r.fechaAdq||'-'}</td><td style="text-align:center">${r.vidaUtilAsig||'-'}</td><td style="text-align:center">${r.vidaUtilTrans||'-'}</td><td style="text-align:right">${fmtP(r.costoUSD)}</td><td style="text-align:right">${fmtP(r.costoBS)}</td><td style="text-align:right">${fmtP(getDepAcumActual(r))}</td><td style="text-align:right;font-weight:bold">${fmtP(getValorNetoActual(r))}</td><td style="text-align:right">${fmtP(r.depreMensual)}</td><td style="text-align:right">${fmtP(r.tasa)}</td></tr>`;
+              rowsHtml += `<tr><td style="text-align:center">${r.cant}</td><td style="text-align:left">${r.descripcion}</td><td style="text-align:center">${r.sede}</td><td style="text-align:center">${r.fechaAdq||'-'}</td><td style="text-align:center">${r.vidaUtilAsig||'-'}</td><td style="text-align:center">${r.vidaUtilTrans!=null?r.vidaUtilTrans.toFixed(1):'-'}</td><td style="text-align:right">${fmtP(r.costoUSD)}</td><td style="text-align:right">${fmtP(r.costoBS)}</td><td style="text-align:right">${fmtP(getDepAcumActual(r))}</td><td style="text-align:right;font-weight:bold">${fmtP(getValorNetoActual(r))}</td><td style="text-align:right">${fmtP(r.depreMensual)}</td><td style="text-align:right">${fmtP(r.tasa)}</td></tr>`;
             });
             const sUSD=items.reduce((s,r)=>s+r.costoUSD,0), sBS=items.reduce((s,r)=>s+r.costoBS,0), sDA=items.reduce((s,r)=>s+getDepAcumActual(r),0), sN=items.reduce((s,r)=>s+getValorNetoActual(r),0), sM=items.reduce((s,r)=>s+r.depreMensual,0);
             rowsHtml += `<tr class="total" style="background:#f7f7f7;font-weight:900;"><td colspan="6" style="text-align:left">SUBTOTAL ${rubro}</td><td style="text-align:right">${fmtP(sUSD)}</td><td style="text-align:right">${fmtP(sBS)}</td><td style="text-align:right">${fmtP(sDA)}</td><td style="text-align:right">${fmtP(sN)}</td><td style="text-align:right">${fmtP(sM)}</td><td></td></tr>`;
@@ -2713,7 +2713,7 @@ function InversionesView({ onBack, activosFijosData, setActivosFijosData }) {
                           <td className="px-2 py-2 text-center text-[10px] font-bold text-slate-500">{a.sede}</td>
                           <td className="px-2 py-2 font-mono text-[10px] text-slate-500 whitespace-nowrap">{a.fechaAdq||'-'}</td>
                           <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilAsig||'-'}</td>
-                          <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans||'-'}</td>
+                          <td className="px-2 py-2 text-center font-mono text-[10px] text-slate-400">{a.vidaUtilTrans!=null?a.vidaUtilTrans.toFixed(1):'-'}</td>
                           <td className="px-2 py-2 text-right font-mono font-bold text-[10px] text-blue-700 bg-blue-50/40 whitespace-nowrap">USD {fmt(a.costoUSD)}</td>
                           <td className="px-2 py-2 text-right font-mono text-[10px] text-slate-600 bg-slate-50 whitespace-nowrap">Bs. {fmt(a.costoBS)}</td>
                           <td className="px-2 py-2 text-right font-mono text-[10px] text-red-600 bg-red-50/30 whitespace-nowrap">USD {fmt(getDepAcumActual(a))}</td>
