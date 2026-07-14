@@ -1073,8 +1073,12 @@ const processActivosFijosExcel = async (files) => {
 
       const allCuentaCols = hRow.reduce((a,h,i)=>{ if(h.includes('cuenta')) a.push(i); return a; }, []);
       const resolvedCuenta     = iCuenta     >= 0 ? iCuenta     : (allCuentaCols[0] ?? -1);
-      const resolvedCtaGasto   = iCuentaGasto   >= 0 ? iCuentaGasto   : (allCuentaCols.find(i=>i>resolvedCuenta) ?? -1);
-      const resolvedCtaDepAcum = iCuentaDepAcum >= 0 ? iCuentaDepAcum : (allCuentaCols.find(i=>i>resolvedCtaGasto&&i!==resolvedCtaGasto) ?? -1);
+      // FIX: en archivos donde las columnas se llaman literalmente "DEPRECIACION"
+      // y "DEPRECIACION ACUM" (sin la palabra "cuenta"), iDeprMet/iDepAcum1 ya las
+      // ubican correctamente — se priorizan sobre la búsqueda por posición, que
+      // fallaba y dejaba cuentaGasto/cuentaDepAcum vacíos.
+      const resolvedCtaGasto   = iCuentaGasto   >= 0 ? iCuentaGasto   : (iDeprMet  >= 0 ? iDeprMet  : (allCuentaCols.find(i=>i>resolvedCuenta) ?? -1));
+      const resolvedCtaDepAcum = iCuentaDepAcum >= 0 ? iCuentaDepAcum : (iDepAcum1 >= 0 ? iDepAcum1 : (allCuentaCols.find(i=>i>resolvedCtaGasto&&i!==resolvedCtaGasto) ?? -1));
       const g=(row,i)=>i>=0&&i<row.length?row[i]:null;
       for (let ri=hIdx+1;ri<raw.length;ri++){
         const row=raw[ri];
